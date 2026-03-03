@@ -99,6 +99,18 @@ Notes:
 - If `GRANTFLOW_PREFLIGHT_GROUNDING_POLICY_MODE` is not set, it falls back to `GRANTFLOW_GROUNDING_GATE_MODE`.
 - `strict_preflight=true` blocks when either readiness risk or grounding risk is `high`.
 
+### 4.1) (Optional) Configure pipeline runner mode
+
+```bash
+export GRANTFLOW_JOB_RUNNER_MODE=background_tasks   # or inmemory_queue
+export GRANTFLOW_JOB_RUNNER_WORKER_COUNT=2
+export GRANTFLOW_JOB_RUNNER_QUEUE_MAXSIZE=200
+```
+
+Notes:
+- `background_tasks` keeps existing FastAPI per-request scheduling behavior.
+- `inmemory_queue` runs pipeline jobs on internal worker threads and can return `503` when queue is full.
+
 ### 5) (Optional) Run preflight readiness check
 
 ```bash

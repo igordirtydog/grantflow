@@ -53,7 +53,8 @@ def _job_donor_id(job: Dict[str, Any], *, default: str = "") -> str:
     donor_id = state_donor_id(_job_state_dict(job), default="")
     if donor_id:
         return donor_id
-    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
+    metadata_raw = job.get("client_metadata")
+    metadata: Dict[str, Any] = metadata_raw if isinstance(metadata_raw, dict) else {}
     token = str(metadata.get("donor_id") or metadata.get("donor") or "").strip().lower()
     return token or default
 

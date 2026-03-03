@@ -65,12 +65,21 @@ class RAGConfig(BaseModel):
     chunk_overlap: int = 200
 
 
+class JobRunnerConfig(BaseModel):
+    """Конфигурация исполнения job-пайплайна."""
+
+    mode: str = "background_tasks"
+    worker_count: int = 2
+    queue_maxsize: int = 200
+
+
 class GrantFlowConfig(BaseModel):
     """Основная конфигурация GrantFlow."""
 
     llm: LLMConfig = LLMConfig()
     graph: GraphConfig = GraphConfig()
     rag: RAGConfig = RAGConfig()
+    job_runner: JobRunnerConfig = JobRunnerConfig()
     api_host: str = "0.0.0.0"
     api_port: int = 8000
     debug: bool = False
@@ -146,6 +155,11 @@ class GrantFlowConfig(BaseModel):
                 mel_citation_high_confidence_threshold=float(
                     _env("GRANTFLOW_MEL_CITATION_HIGH_CONFIDENCE_THRESHOLD", "0.33")
                 ),
+            ),
+            job_runner=JobRunnerConfig(
+                mode=_env("GRANTFLOW_JOB_RUNNER_MODE", "background_tasks"),
+                worker_count=int(_env("GRANTFLOW_JOB_RUNNER_WORKER_COUNT", "2")),
+                queue_maxsize=int(_env("GRANTFLOW_JOB_RUNNER_QUEUE_MAXSIZE", "200")),
             ),
             api_host=_env("GRANTFLOW_API_HOST", "0.0.0.0"),
             api_port=int(_env("GRANTFLOW_API_PORT", "8000")),

@@ -8,8 +8,9 @@ import re
 import tempfile
 import uuid
 import zipfile
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Literal, Optional
+from typing import Any, AsyncIterator, Callable, Dict, Literal, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
@@ -75,6 +76,7 @@ from grantflow.api.security import (
 )
 from grantflow.api.webhooks import send_job_webhook_event
 from grantflow.core.config import config
+from grantflow.core.job_runner import InMemoryJobRunner
 from grantflow.core.stores import create_ingest_audit_store_from_env, create_job_store_from_env
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.core.version import __version__
@@ -94,14 +96,12 @@ from grantflow.swarm.retrieval_query import donor_query_preset_terms
 from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.state_contract import normalize_state_contract, normalized_state_copy, state_donor_id
 
-app = FastAPI(
-    title="GrantFlow API",
-    description="Enterprise-grade grant proposal automation",
-    version=__version__,
-)
-
 JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
+JOB_RUNNER = InMemoryJobRunner(
+    worker_count=int(getattr(config.job_runner, "worker_count", 2) or 2),
+    queue_maxsize=int(getattr(config.job_runner, "queue_maxsize", 200) or 200),
+)
 
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
@@ -111,6 +111,7 @@ CRITIC_FINDING_SLA_HOURS = {"high": 24, "medium": 72, "low": 120}
 REVIEW_COMMENT_DEFAULT_SLA_HOURS = 72
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 MAX_IDEMPOTENCY_RECORDS = 300
+JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue"}
 STATUS_WEBHOOK_EVENTS = {
     "running": "job.started",
     "pending_hitl": "job.pending_hitl",
@@ -136,8 +137,48 @@ GROUNDING_POLICY_MODES = {"off", "warn", "strict"}
 TENANT_HEADER = "x-tenant-id"
 
 
+def _job_runner_mode() -> str:
+    raw_mode = str(getattr(config.job_runner, "mode", "background_tasks") or "background_tasks").strip().lower()
+    if raw_mode not in JOB_RUNNER_MODES:
+        return "background_tasks"
+    return raw_mode
+
+
+def _uses_inmemory_queue_runner() -> bool:
+    return _job_runner_mode() == "inmemory_queue"
+
+
+@asynccontextmanager
+async def _app_lifespan(_: FastAPI) -> AsyncIterator[None]:
+    if _uses_inmemory_queue_runner():
+        JOB_RUNNER.start()
+    try:
+        yield
+    finally:
+        if _uses_inmemory_queue_runner():
+            JOB_RUNNER.stop()
+
+
+app = FastAPI(
+    title="GrantFlow API",
+    description="Enterprise-grade grant proposal automation",
+    version=__version__,
+    lifespan=_app_lifespan,
+)
+
+
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _dispatch_pipeline_task(background_tasks: BackgroundTasks, fn: Callable[..., None], *args: Any) -> str:
+    if _uses_inmemory_queue_runner():
+        accepted = JOB_RUNNER.submit(fn, *args)
+        if not accepted:
+            raise HTTPException(status_code=503, detail="Job queue is full. Retry shortly.")
+        return "inmemory_queue"
+    background_tasks.add_task(fn, *args)
+    return "background_tasks"
 
 
 def _parse_iso_utc(value: Any) -> Optional[datetime]:
@@ -1036,9 +1077,12 @@ def _tenant_from_namespace(namespace: Any) -> Optional[str]:
 def _job_tenant_id(job: Dict[str, Any]) -> Optional[str]:
     if not isinstance(job, dict):
         return None
-    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
-    state = job.get("state") if isinstance(job.get("state"), dict) else {}
-    preflight = job.get("generate_preflight") if isinstance(job.get("generate_preflight"), dict) else {}
+    metadata_raw = job.get("client_metadata")
+    state_raw = job.get("state")
+    preflight_raw = job.get("generate_preflight")
+    metadata: Dict[str, Any] = metadata_raw if isinstance(metadata_raw, dict) else {}
+    state: Dict[str, Any] = state_raw if isinstance(state_raw, dict) else {}
+    preflight: Dict[str, Any] = preflight_raw if isinstance(preflight_raw, dict) else {}
     candidates = [
         metadata.get("tenant_id"),
         metadata.get("tenant"),
@@ -1069,7 +1113,8 @@ def _job_donor_id(job: Dict[str, Any], *, default: str = "") -> str:
     donor_id = state_donor_id(state_dict, default="")
     if donor_id:
         return donor_id
-    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
+    metadata_raw = job.get("client_metadata")
+    metadata: Dict[str, Any] = metadata_raw if isinstance(metadata_raw, dict) else {}
     token = str(metadata.get("donor_id") or metadata.get("donor") or "").strip().lower()
     return token or default
 
@@ -1077,7 +1122,8 @@ def _job_donor_id(job: Dict[str, Any], *, default: str = "") -> str:
 def _checkpoint_tenant_id(checkpoint: Dict[str, Any]) -> Optional[str]:
     if not isinstance(checkpoint, dict):
         return None
-    snapshot = checkpoint.get("state_snapshot") if isinstance(checkpoint.get("state_snapshot"), dict) else {}
+    snapshot_raw = checkpoint.get("state_snapshot")
+    snapshot: Dict[str, Any] = snapshot_raw if isinstance(snapshot_raw, dict) else {}
     candidates = [
         checkpoint.get("tenant_id"),
         snapshot.get("tenant_id"),
@@ -1468,7 +1514,8 @@ def _normalize_critic_fatal_flaws_for_job(job_id: str) -> Optional[Dict[str, Any
 
     now_iso = _utcnow_iso()
     normalized_with_due = [_ensure_finding_due_at(item, now_iso=now_iso) for item in raw_flaws]
-    existing_notes = state.get("critic_notes") if isinstance(state.get("critic_notes"), dict) else {}
+    existing_notes_raw = state.get("critic_notes")
+    existing_notes: Dict[str, Any] = existing_notes_raw if isinstance(existing_notes_raw, dict) else {}
     existing_notes_flaws = existing_notes.get("fatal_flaws") if isinstance(existing_notes.get("fatal_flaws"), list) else []
     existing_state_flaws = state.get("critic_fatal_flaws") if isinstance(state.get("critic_fatal_flaws"), list) else []
     changed = normalized_with_due != existing_notes_flaws or normalized_with_due != existing_state_flaws
@@ -1539,7 +1586,8 @@ def _recompute_review_workflow_sla(
 
     next_state = state_dict
     state_changed = False
-    existing_notes = state_dict.get("critic_notes") if isinstance(state_dict.get("critic_notes"), dict) else {}
+    existing_notes_raw = state_dict.get("critic_notes")
+    existing_notes: Dict[str, Any] = existing_notes_raw if isinstance(existing_notes_raw, dict) else {}
     existing_notes_flaws = existing_notes.get("fatal_flaws") if isinstance(existing_notes.get("fatal_flaws"), list) else []
     existing_state_flaws = state_dict.get("critic_fatal_flaws") if isinstance(state_dict.get("critic_fatal_flaws"), list) else []
     if isinstance(state, dict) and (next_flaws != existing_notes_flaws or next_flaws != existing_state_flaws):
@@ -2577,6 +2625,11 @@ def _health_diagnostics() -> dict[str, Any]:
         "job_store": {"mode": job_store_mode},
         "hitl_store": {"mode": hitl_store_mode},
         "ingest_store": {"mode": ingest_store_mode},
+        "job_runner": {
+            "mode": _job_runner_mode(),
+            "queue_enabled": _uses_inmemory_queue_runner(),
+            "queue": JOB_RUNNER.diagnostics(),
+        },
         "auth": {
             "api_key_configured": bool(api_key_configured()),
             "read_auth_required": bool(read_auth_required()),
@@ -2682,7 +2735,12 @@ def health_check():
 @app.get("/ready")
 def readiness_check():
     vector_ready = _vector_store_readiness()
-    ready = bool(vector_ready.get("ready"))
+    job_runner_mode = _job_runner_mode()
+    job_runner_diag = JOB_RUNNER.diagnostics()
+    job_runner_ready = True
+    if _uses_inmemory_queue_runner():
+        job_runner_ready = bool(job_runner_diag.get("running"))
+    ready = bool(vector_ready.get("ready")) and job_runner_ready
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
@@ -2690,6 +2748,11 @@ def readiness_check():
         "status": "ready" if ready else "degraded",
         "checks": {
             "vector_store": vector_ready,
+            "job_runner": {
+                "mode": job_runner_mode,
+                "ready": job_runner_ready,
+                "queue": job_runner_diag,
+            },
             "preflight_grounding_policy": {
                 "mode": _configured_preflight_grounding_policy_mode(),
                 "thresholds": preflight_grounding_thresholds,
@@ -3001,10 +3064,31 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
         grounding_policy_mode=str(grounding_policy.get("mode") or ""),
         grounding_policy_blocking=bool(grounding_policy.get("blocking")),
     )
-    if req.hitl_enabled:
-        background_tasks.add_task(_run_hitl_pipeline, job_id, initial_state, "start")
-    else:
-        background_tasks.add_task(_run_pipeline_to_completion, job_id, initial_state)
+    try:
+        queue_backend = "background_tasks"
+        if req.hitl_enabled:
+            queue_backend = _dispatch_pipeline_task(background_tasks, _run_hitl_pipeline, job_id, initial_state, "start")
+        else:
+            queue_backend = _dispatch_pipeline_task(background_tasks, _run_pipeline_to_completion, job_id, initial_state)
+    except HTTPException as exc:
+        _set_job(
+            job_id,
+            {
+                "status": "error",
+                "error": str(exc.detail),
+                "state": initial_state,
+                "hitl_enabled": req.hitl_enabled,
+            },
+        )
+        _record_job_event(
+            job_id,
+            "job_dispatch_failed",
+            backend=_job_runner_mode(),
+            hitl_enabled=bool(req.hitl_enabled),
+            reason=str(exc.detail),
+        )
+        raise
+    _record_job_event(job_id, "job_dispatch_queued", backend=queue_backend, hitl_enabled=bool(req.hitl_enabled))
     return {"status": "accepted", "job_id": job_id, "preflight": preflight_payload}
 
 
@@ -3088,7 +3172,28 @@ async def resume_job(job_id: str, background_tasks: BackgroundTasks, request: Re
         checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
         resuming_from=start_at,
     )
-    background_tasks.add_task(_run_hitl_pipeline, job_id, state, start_at)
+    try:
+        queue_backend = _dispatch_pipeline_task(background_tasks, _run_hitl_pipeline, job_id, state, start_at)
+    except HTTPException as exc:
+        _update_job(
+            job_id,
+            status="pending_hitl",
+            state=state,
+            resume_from=job.get("resume_from"),
+            checkpoint_id=checkpoint_id,
+            checkpoint_stage=checkpoint.get("stage"),
+            checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
+        )
+        _record_job_event(
+            job_id,
+            "resume_dispatch_failed",
+            backend=_job_runner_mode(),
+            checkpoint_id=str(checkpoint_id),
+            resuming_from=start_at,
+            reason=str(exc.detail),
+        )
+        raise
+    _record_job_event(job_id, "resume_dispatch_queued", backend=queue_backend, resuming_from=start_at)
     return {
         "status": "accepted",
         "job_id": job_id,

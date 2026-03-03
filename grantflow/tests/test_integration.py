@@ -34,6 +34,9 @@ def test_health_endpoint():
     assert diagnostics["job_store"]["mode"] in {"inmem", "sqlite"}
     assert diagnostics["hitl_store"]["mode"] in {"inmem", "sqlite"}
     assert diagnostics["ingest_store"]["mode"] in {"inmem", "sqlite"}
+    assert diagnostics["job_runner"]["mode"] in {"background_tasks", "inmemory_queue"}
+    assert isinstance(diagnostics["job_runner"]["queue_enabled"], bool)
+    assert isinstance(diagnostics["job_runner"]["queue"]["queue_size"], int)
     assert isinstance(diagnostics["auth"]["api_key_configured"], bool)
     assert isinstance(diagnostics["auth"]["read_auth_required"], bool)
     assert diagnostics["vector_store"]["backend"] in {"chroma", "memory"}
@@ -287,6 +290,9 @@ def test_ready_endpoint():
     checks = body["checks"]
     assert checks["vector_store"]["backend"] in {"chroma", "memory"}
     assert checks["vector_store"]["ready"] is True
+    assert checks["job_runner"]["mode"] in {"background_tasks", "inmemory_queue"}
+    assert isinstance(checks["job_runner"]["ready"], bool)
+    assert isinstance(checks["job_runner"]["queue"]["queue_size"], int)
     preflight_policy = checks["preflight_grounding_policy"]
     assert preflight_policy["mode"] in {"warn", "strict", "off"}
     thresholds = preflight_policy["thresholds"]
@@ -5918,6 +5924,95 @@ def test_resume_clears_hitl_runtime_flags_before_relaunch(monkeypatch):
     assert job["state"]["hitl_pending"] is False
     assert job.get("checkpoint_id") is None
     assert job.get("checkpoint_stage") is None
+
+
+def test_generate_uses_inmemory_queue_dispatch_when_enabled(monkeypatch):
+    captured: dict = {}
+
+    def _submit_stub(fn, *args, **kwargs):
+        captured["fn"] = fn
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return True
+
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "inmemory_queue")
+    monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", _submit_stub)
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Queue dispatch", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    job_id = body["job_id"]
+
+    assert captured["fn"] == api_app_module._run_pipeline_to_completion
+    assert captured["args"][0] == job_id
+    queued_state = captured["args"][1]
+    assert queued_state["donor_id"] == "usaid"
+
+    status_resp = client.get(f"/status/{job_id}")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] == "accepted"
+
+
+def test_generate_returns_503_when_inmemory_queue_is_full(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "inmemory_queue")
+    monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", lambda *args, **kwargs: False)
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Queue full", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 503
+    assert "Job queue is full" in str(response.json()["detail"])
+
+
+def test_resume_returns_503_and_keeps_pending_hitl_when_queue_full(monkeypatch):
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Resume queue full", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    checkpoint_id = status["checkpoint_id"]
+
+    approve = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": checkpoint_id, "approved": True, "feedback": "approved"},
+    )
+    assert approve.status_code == 200
+
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "inmemory_queue")
+    monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", lambda *args, **kwargs: False)
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 503
+    assert "Job queue is full" in str(resume.json()["detail"])
+
+    status_after = client.get(f"/status/{job_id}")
+    assert status_after.status_code == 200
+    body = status_after.json()
+    assert body["status"] == "pending_hitl"
+    assert body["checkpoint_id"] == checkpoint_id
+    assert body["checkpoint_stage"] == "toc"
 
 
 def test_generate_rejects_old_contract_shape():
