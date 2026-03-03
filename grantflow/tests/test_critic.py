@@ -122,6 +122,75 @@ def test_rule_based_critic_applies_usaid_donor_specific_checks():
     assert any(f["code"] == "USAID_ASSUMPTIONS_MISSING" and f["section"] == "toc" for f in flaws)
 
 
+def test_rule_based_critic_flags_fallback_dominant_architect_grounding_when_rag_enabled():
+    state = {
+        "architect_rag_enabled": True,
+        "draft_versions": [
+            {"version_id": "toc_v1", "sequence": 1, "section": "toc", "content": {}},
+            {"version_id": "logframe_v1", "sequence": 2, "section": "logframe", "content": {}},
+        ],
+        "toc_validation": {"valid": True, "errors": [], "schema_name": "GenericTOC"},
+        "toc_draft": {
+            "toc": {
+                "project_goal": "Improve services",
+                "objectives": [
+                    {"title": "Objective 1", "description": "Outcome pathway one"},
+                    {"title": "Objective 2", "description": "Outcome pathway two"},
+                ],
+            }
+        },
+        "logframe_draft": {"indicators": [{"indicator_id": "IND_001"}]},
+        "citations": [
+            {
+                "stage": "architect",
+                "used_for": "toc_claim",
+                "statement_path": "toc.project_goal",
+                "citation_type": "fallback_namespace",
+                "citation_confidence": 0.1,
+                "confidence_threshold": 0.4,
+            },
+            {
+                "stage": "architect",
+                "used_for": "toc_claim",
+                "statement_path": "toc.objectives[0].description",
+                "citation_type": "fallback_namespace",
+                "citation_confidence": 0.1,
+                "confidence_threshold": 0.4,
+            },
+            {
+                "stage": "architect",
+                "used_for": "toc_claim",
+                "statement_path": "toc.objectives[1].description",
+                "citation_type": "fallback_namespace",
+                "citation_confidence": 0.1,
+                "confidence_threshold": 0.4,
+            },
+            {
+                "stage": "mel",
+                "label": "doc",
+                "used_for": "IND_001",
+                "citation_type": "rag_result",
+                "citation_confidence": 0.8,
+            },
+        ],
+        "toc_generation_meta": {
+            "claim_coverage": {
+                "key_claim_coverage_ratio": 1.0,
+                "fallback_claim_ratio": 1.0,
+            }
+        },
+    }
+
+    report = evaluate_rule_based_critic(state)
+    checks = [c.model_dump() if hasattr(c, "model_dump") else c.dict() for c in report.checks]
+    flaws = [f.model_dump() if hasattr(f, "model_dump") else f.dict() for f in report.fatal_flaws]
+
+    assert any(c["code"] == "TOC_CLAIM_GROUNDING_BALANCE" and c["status"] == "fail" for c in checks)
+    assert any(c["code"] == "TOC_CLAIM_CONFIDENCE_HIT_RATE" and c["status"] == "fail" for c in checks)
+    assert any(f["code"] == "TOC_CLAIM_GROUNDING_FALLBACK_DOMINANT" for f in flaws)
+    assert any(f["code"] == "TOC_CLAIM_CONFIDENCE_HIT_RATE_CRITICAL" for f in flaws)
+
+
 def test_red_team_critic_marks_sparse_input_brief_for_revision():
     state = {
         "donor_strategy": object(),

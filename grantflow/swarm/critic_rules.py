@@ -101,6 +101,43 @@ def _check(
     checks.append(RuleCheckResult(code=code, status=status, section=section, detail=detail))
 
 
+def _estimate_key_toc_claim_count(toc_payload: Any) -> int:
+    if not isinstance(toc_payload, dict):
+        return 1
+    count = 0
+    for field_name in (
+        "project_goal",
+        "project_development_objective",
+        "program_goal",
+        "programme_objective",
+        "overall_objective",
+    ):
+        value = toc_payload.get(field_name)
+        if isinstance(value, dict) and value:
+            count += 1
+        elif isinstance(value, str) and value.strip():
+            count += 1
+    for list_field in (
+        "development_objectives",
+        "specific_objectives",
+        "expected_outcomes",
+        "objectives",
+        "results_chain",
+        "outcomes",
+    ):
+        value = toc_payload.get(list_field)
+        if not isinstance(value, list):
+            continue
+        count += len([row for row in value if isinstance(row, (dict, str)) and bool(row)])
+    return max(1, min(16, count))
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    if denominator <= 0:
+        return 0.0
+    return round(float(numerator) / float(denominator), 4)
+
+
 def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
     checks: List[RuleCheckResult] = []
     flaws: List[CriticFatalFlaw] = []
@@ -247,6 +284,175 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
             message="No architect citation trace was recorded for the ToC draft.",
             fix_hint="Enable/verify architect citation capture and donor namespace grounding.",
         )
+
+    architect_claim_citations = [
+        c
+        for c in architect_citations
+        if str(c.get("used_for") or "") == "toc_claim" and str(c.get("statement_path") or "").strip()
+    ]
+    architect_claim_paths = {
+        str(c.get("statement_path") or "").strip()
+        for c in architect_claim_citations
+        if str(c.get("statement_path") or "").strip() and str(c.get("statement_path") or "").strip() != "toc"
+    }
+    expected_key_claims = _estimate_key_toc_claim_count(toc_payload)
+    observed_claim_coverage_ratio = _safe_ratio(len(architect_claim_paths), expected_key_claims)
+    toc_generation_meta = state.get("toc_generation_meta") if isinstance(state.get("toc_generation_meta"), dict) else {}
+    claim_coverage_meta = (
+        toc_generation_meta.get("claim_coverage")
+        if isinstance(toc_generation_meta.get("claim_coverage"), dict)
+        else {}
+    )
+    try:
+        key_claim_coverage_ratio = float(claim_coverage_meta.get("key_claim_coverage_ratio"))
+    except (TypeError, ValueError):
+        key_claim_coverage_ratio = observed_claim_coverage_ratio
+    try:
+        fallback_claim_ratio = float(claim_coverage_meta.get("fallback_claim_ratio"))
+    except (TypeError, ValueError):
+        fallback_claim_ratio = _safe_ratio(
+            sum(1 for c in architect_claim_citations if str(c.get("citation_type") or "") == "fallback_namespace"),
+            len(architect_claim_citations),
+        )
+    architect_rag_enabled = bool(state.get("architect_rag_enabled", True))
+
+    if architect_claim_citations:
+        coverage_detail = (
+            f"coverage={key_claim_coverage_ratio:.0%} "
+            f"({len(architect_claim_paths)}/{expected_key_claims} key claim paths)"
+        )
+        if key_claim_coverage_ratio >= 0.8:
+            checks.append(
+                RuleCheckResult(code="TOC_KEY_CLAIM_COVERAGE", status="pass", section="toc", detail=coverage_detail)
+            )
+        elif key_claim_coverage_ratio >= 0.5:
+            checks.append(
+                RuleCheckResult(code="TOC_KEY_CLAIM_COVERAGE", status="warn", section="toc", detail=coverage_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_KEY_CLAIM_COVERAGE_LOW",
+                    severity="medium",
+                    section="toc",
+                    state=state,
+                    message="Architect citations do not cover enough key ToC objectives/results.",
+                    fix_hint="Increase claim-level grounding so key objectives/results have explicit statement_path citations.",
+                )
+        else:
+            checks.append(
+                RuleCheckResult(code="TOC_KEY_CLAIM_COVERAGE", status="fail", section="toc", detail=coverage_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_KEY_CLAIM_COVERAGE_CRITICAL",
+                    severity="high",
+                    section="toc",
+                    state=state,
+                    message="Architect claim coverage is too low for key ToC objectives/results.",
+                    fix_hint="Ground each key objective/result statement with retrieved evidence and statement_path citations.",
+                )
+    else:
+        checks.append(
+            RuleCheckResult(
+                code="TOC_KEY_CLAIM_COVERAGE",
+                status="warn",
+                section="toc",
+                detail="No architect toc_claim citations available for key-claim coverage check",
+            )
+        )
+
+    if len(architect_claim_citations) >= 3:
+        fallback_detail = (
+            f"fallback_claim_ratio={fallback_claim_ratio:.0%} "
+            f"({sum(1 for c in architect_claim_citations if str(c.get('citation_type') or '') == 'fallback_namespace')}/"
+            f"{len(architect_claim_citations)})"
+        )
+        if fallback_claim_ratio < 0.5:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="pass", section="toc", detail=fallback_detail)
+            )
+        elif fallback_claim_ratio < 0.8:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="warn", section="toc", detail=fallback_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_GROUNDING_WEAK",
+                    severity="medium",
+                    section="toc",
+                    state=state,
+                    message="Fallback namespace citations dominate too many architect claims.",
+                    fix_hint="Improve RAG retrieval quality or corpus relevance to reduce fallback-only grounding.",
+                )
+        else:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="fail", section="toc", detail=fallback_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_GROUNDING_FALLBACK_DOMINANT",
+                    severity="high",
+                    section="toc",
+                    state=state,
+                    message="Architect claim grounding is fallback-dominant and not evidence-backed enough.",
+                    fix_hint="Ingest donor-relevant corpus and ensure retriever returns traceable high-confidence evidence.",
+                )
+
+    threshold_evaluable = []
+    threshold_hits = 0
+    for citation in architect_claim_citations:
+        threshold = citation.get("confidence_threshold")
+        confidence = citation.get("citation_confidence")
+        try:
+            threshold_value = float(threshold) if threshold is not None else None
+            confidence_value = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            threshold_value = None
+            confidence_value = None
+        if threshold_value is None or confidence_value is None:
+            continue
+        threshold_evaluable.append((confidence_value, threshold_value))
+        if confidence_value >= threshold_value:
+            threshold_hits += 1
+    if len(threshold_evaluable) >= 3:
+        threshold_hit_rate = _safe_ratio(threshold_hits, len(threshold_evaluable))
+        detail = f"threshold_hit_rate={threshold_hit_rate:.0%} ({threshold_hits}/{len(threshold_evaluable)})"
+        if threshold_hit_rate >= 0.5:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_CONFIDENCE_HIT_RATE", status="pass", section="toc", detail=detail)
+            )
+        elif threshold_hit_rate >= 0.3:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_CONFIDENCE_HIT_RATE", status="warn", section="toc", detail=detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_CONFIDENCE_HIT_RATE_LOW",
+                    severity="medium",
+                    section="toc",
+                    state=state,
+                    message="Too few architect claim citations meet donor confidence thresholds.",
+                    fix_hint="Improve evidence matching and reduce weakly grounded objective/result claims.",
+                )
+        else:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_CONFIDENCE_HIT_RATE", status="fail", section="toc", detail=detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_CONFIDENCE_HIT_RATE_CRITICAL",
+                    severity="high",
+                    section="toc",
+                    state=state,
+                    message="Architect claim citations rarely meet donor confidence thresholds.",
+                    fix_hint="Refine retrieval corpus/query strategy and regenerate ToC with stronger grounded evidence.",
+                )
 
     if isinstance(indicators, list) and indicators:
         checks.append(

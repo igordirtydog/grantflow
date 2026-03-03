@@ -8,7 +8,9 @@ from grantflow.swarm.nodes.architect_generation import (
     _extract_claim_strings,
     _fallback_structured_toc,
     build_architect_claim_citations,
+    extract_architect_claim_records,
     generate_toc_under_contract,
+    summarize_architect_claim_citations,
 )
 from grantflow.swarm.nodes.architect_policy import architect_claim_confidence_threshold
 from grantflow.swarm.nodes.architect_retrieval import (
@@ -59,6 +61,10 @@ def test_architect_generates_contract_validated_toc_with_optional_retrieval_disa
     assert generation_meta.get("fallback_used") is False
     assert generation_meta.get("fallback_class") == "deterministic_mode"
     assert generation_meta.get("architect_mode") == "deterministic"
+    claim_coverage = generation_meta.get("claim_coverage") or {}
+    assert isinstance(claim_coverage, dict)
+    assert int(claim_coverage.get("claims_total") or 0) >= 1
+    assert int(claim_coverage.get("claim_citation_count") or 0) >= 0
 
     citations = out.get("citations") or []
     architect_citations = [c for c in citations if isinstance(c, dict) and c.get("stage") == "architect"]
@@ -305,6 +311,53 @@ def test_extract_claim_strings_skips_assumptions_and_risks():
     assert "toc.critical_assumptions[0]" not in paths
     assert "toc.assumptions[0]" not in paths
     assert "toc.risks[0]" not in paths
+
+
+def test_extract_architect_claim_records_prioritizes_key_objective_paths():
+    toc_payload = {
+        "project_goal": "Improve access",
+        "objectives": [
+            {"objective_id": "OBJ-1", "title": "Title 1", "description": "Description 1"},
+            {"objective_id": "OBJ-2", "title": "Title 2", "description": "Description 2"},
+        ],
+        "assumptions": ["Assumption 1"],
+    }
+    records = extract_architect_claim_records(toc_payload, max_claims=5, max_high_priority_claims=5)
+    assert records
+    paths = [str(r.get("statement_path") or "") for r in records]
+    assert "toc.project_goal" in paths
+    assert any(".objectives[0].description" in p or ".objectives[1].description" in p for p in paths)
+    assert all(".assumptions[" not in p for p in paths)
+    assert int(records[0].get("priority") or 0) >= int(records[-1].get("priority") or 0)
+
+
+def test_summarize_architect_claim_citations_reports_coverage_ratios():
+    claim_records = [
+        {"statement_path": "toc.project_goal", "statement": "Goal", "priority": 5},
+        {"statement_path": "toc.objectives[0].description", "statement": "Obj", "priority": 4},
+    ]
+    citations = [
+        {
+            "stage": "architect",
+            "used_for": "toc_claim",
+            "statement_path": "toc.project_goal",
+            "citation_type": "rag_claim_support",
+        },
+        {
+            "stage": "architect",
+            "used_for": "toc_claim",
+            "statement_path": "toc.objectives[0].description",
+            "citation_type": "fallback_namespace",
+        },
+    ]
+    stats = summarize_architect_claim_citations(claim_records=claim_records, citations=citations)
+    assert stats["claims_total"] == 2
+    assert stats["key_claims_total"] == 2
+    assert stats["claim_paths_covered"] == 2
+    assert stats["confident_claim_paths_covered"] == 1
+    assert stats["fallback_claim_count"] == 1
+    assert stats["key_claim_coverage_ratio"] == 1.0
+    assert stats["fallback_claim_ratio"] == 0.5
 
 
 def test_architect_claim_threshold_is_tuned_by_donor_and_section():

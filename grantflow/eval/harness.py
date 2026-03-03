@@ -20,9 +20,11 @@ HIGHER_IS_BETTER_METRICS = (
     "critic_score",
     "citations_total",
     "architect_citation_count",
+    "architect_claim_citation_count",
     "mel_citation_count",
     "high_confidence_citation_count",
     "architect_threshold_hit_rate",
+    "architect_key_claim_coverage_ratio",
     "draft_version_count",
     "citation_confidence_avg",
 )
@@ -33,6 +35,7 @@ LOWER_IS_BETTER_METRICS = (
     "low_confidence_citation_count",
     "rag_low_confidence_citation_count",
     "fallback_namespace_citation_count",
+    "architect_fallback_claim_ratio",
     "traceability_gap_citation_count",
     "traceability_partial_citation_count",
     "traceability_missing_citation_count",
@@ -51,6 +54,7 @@ REGRESSION_PRIORITY_WEIGHTS: dict[str, int] = {
     "high_severity_fatal_flaw_count": 5,
     "needs_revision": 4,
     "architect_threshold_hit_rate": 4,
+    "architect_key_claim_coverage_ratio": 4,
     "citation_confidence_avg": 3,
     "fatal_flaw_count": 3,
     "quality_score": 2,
@@ -58,6 +62,7 @@ REGRESSION_PRIORITY_WEIGHTS: dict[str, int] = {
     "low_confidence_citation_count": 2,
     "rag_low_confidence_citation_count": 2,
     "fallback_namespace_citation_count": 1,
+    "architect_fallback_claim_ratio": 3,
 }
 GROUNDING_RISK_MIN_CITATIONS = 5
 FALLBACK_DOMINANCE_WARN_RATIO = 0.6
@@ -206,6 +211,12 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     critic_notes = state.get("critic_notes") if isinstance(state.get("critic_notes"), dict) else {}
     fatal_flaws = critic_notes.get("fatal_flaws") if isinstance(critic_notes.get("fatal_flaws"), list) else []
     toc_validation = state.get("toc_validation") if isinstance(state.get("toc_validation"), dict) else {}
+    toc_generation_meta = (
+        state.get("toc_generation_meta") if isinstance(state.get("toc_generation_meta"), dict) else {}
+    )
+    claim_coverage_meta = (
+        toc_generation_meta.get("claim_coverage") if isinstance(toc_generation_meta.get("claim_coverage"), dict) else {}
+    )
 
     high_flaws = sum(
         1 for flaw in fatal_flaws if isinstance(flaw, dict) and str(flaw.get("severity") or "").lower() == "high"
@@ -255,10 +266,20 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     traceability_missing_count = 0
     architect_threshold_considered = 0
     architect_threshold_hits = 0
+    architect_claim_citation_count = 0
+    architect_claim_fallback_count = 0
+    architect_claim_paths: set[str] = set()
     for citation in citations:
         if not isinstance(citation, dict):
             continue
         if str(citation.get("stage") or "") == "architect":
+            if str(citation.get("used_for") or "") == "toc_claim":
+                architect_claim_citation_count += 1
+                statement_path = str(citation.get("statement_path") or "").strip()
+                if statement_path and statement_path != "toc":
+                    architect_claim_paths.add(statement_path)
+                if str(citation.get("citation_type") or "") == "fallback_namespace":
+                    architect_claim_fallback_count += 1
             threshold = citation.get("confidence_threshold")
             try:
                 threshold_value = float(threshold) if threshold is not None else None
@@ -295,6 +316,25 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
             low_confidence_count += 1
         if conf_value >= 0.7:
             high_confidence_count += 1
+    try:
+        key_claim_coverage_ratio = float(claim_coverage_meta.get("key_claim_coverage_ratio"))
+    except (TypeError, ValueError):
+        key_claim_coverage_ratio = 0.0
+    if key_claim_coverage_ratio <= 0.0 and architect_claim_paths:
+        try:
+            key_claim_total = int(claim_coverage_meta.get("key_claims_total") or 0)
+        except (TypeError, ValueError):
+            key_claim_total = 0
+        if key_claim_total <= 0:
+            key_claim_total = len(architect_claim_paths)
+        if key_claim_total > 0:
+            key_claim_coverage_ratio = round(len(architect_claim_paths) / key_claim_total, 4)
+    try:
+        architect_fallback_claim_ratio = float(claim_coverage_meta.get("fallback_claim_ratio"))
+    except (TypeError, ValueError):
+        architect_fallback_claim_ratio = (
+            round(architect_claim_fallback_count / architect_claim_citation_count, 4) if architect_claim_citation_count else 0.0
+        )
     return {
         "toc_schema_valid": bool(toc_validation.get("valid")),
         "toc_schema_name": toc_validation.get("schema_name"),
@@ -310,6 +350,7 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
         "llm_advisory_rejected_label_counts": llm_advisory_rejected_label_counts,
         "citations_total": len(citations),
         "architect_citation_count": _count_stage_citations(citations, "architect"),
+        "architect_claim_citation_count": architect_claim_citation_count,
         "mel_citation_count": _count_stage_citations(citations, "mel"),
         "high_confidence_citation_count": high_confidence_count,
         "architect_threshold_hit_rate": (
@@ -317,6 +358,8 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
             if architect_threshold_considered
             else 0.0
         ),
+        "architect_key_claim_coverage_ratio": round(key_claim_coverage_ratio, 4),
+        "architect_fallback_claim_ratio": round(architect_fallback_claim_ratio, 4),
         "citation_confidence_avg": (
             round(sum(confidence_values) / len(confidence_values), 4) if confidence_values else 0.0
         ),
@@ -358,9 +401,11 @@ def evaluate_expectations(metrics: dict[str, Any], expectations: dict[str, Any])
         ("min_critic_score", "critic_score"),
         ("min_citations_total", "citations_total"),
         ("min_architect_citations", "architect_citation_count"),
+        ("min_architect_claim_citations", "architect_claim_citation_count"),
         ("min_mel_citations", "mel_citation_count"),
         ("min_high_confidence_citations", "high_confidence_citation_count"),
         ("min_architect_threshold_hit_rate", "architect_threshold_hit_rate"),
+        ("min_architect_key_claim_coverage_ratio", "architect_key_claim_coverage_ratio"),
         ("min_citation_confidence_avg", "citation_confidence_avg"),
         ("min_draft_versions", "draft_version_count"),
     ):
@@ -377,6 +422,7 @@ def evaluate_expectations(metrics: dict[str, Any], expectations: dict[str, Any])
         ("max_low_confidence_citations", "low_confidence_citation_count"),
         ("max_rag_low_confidence_citations", "rag_low_confidence_citation_count"),
         ("max_fallback_namespace_citations", "fallback_namespace_citation_count"),
+        ("max_architect_fallback_claim_ratio", "architect_fallback_claim_ratio"),
         ("max_errors", "error_count"),
     ):
         if key in expectations:
@@ -474,12 +520,19 @@ def format_eval_suite_report(suite: dict[str, Any]) -> str:
             traceability_suffix = (
                 f" traceability_risk=traceability_gap:{traceability_risk_label}({traceability_ratio:.0%})"
             )
+        claim_cov_suffix = ""
+        try:
+            key_claim_cov = float(metrics.get("architect_key_claim_coverage_ratio") or 0.0)
+        except (TypeError, ValueError):
+            key_claim_cov = 0.0
+        if key_claim_cov > 0.0:
+            claim_cov_suffix = f" key_claim_cov={key_claim_cov:.0%}"
         lines.append(
             (
                 f"- {prefix} {case.get('case_id')} ({case.get('donor_id')}): "
                 f"q={metrics.get('quality_score')} critic={metrics.get('critic_score')} "
                 f"toc_valid={metrics.get('toc_schema_valid')} flaws={metrics.get('fatal_flaw_count')} "
-                f"citations={metrics.get('citations_total')}{grounding_suffix}{traceability_suffix}"
+                f"citations={metrics.get('citations_total')}{claim_cov_suffix}{grounding_suffix}{traceability_suffix}"
             )
         )
         for check in case.get("failed_checks") or []:

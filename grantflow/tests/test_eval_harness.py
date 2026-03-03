@@ -34,9 +34,12 @@ def test_eval_harness_expectations_detect_regression():
         "critic_score": 8.0,
         "citations_total": 3,
         "architect_citation_count": 2,
+        "architect_claim_citation_count": 2,
         "mel_citation_count": 1,
         "high_confidence_citation_count": 1,
         "architect_threshold_hit_rate": 0.5,
+        "architect_key_claim_coverage_ratio": 0.6,
+        "architect_fallback_claim_ratio": 0.5,
         "citation_confidence_avg": 0.4,
         "low_confidence_citation_count": 1,
         "rag_low_confidence_citation_count": 0,
@@ -54,9 +57,11 @@ def test_eval_harness_expectations_detect_regression():
             "toc_schema_valid": True,
             "min_quality_score": 9.0,
             "min_architect_threshold_hit_rate": 0.8,
+            "min_architect_key_claim_coverage_ratio": 0.8,
             "max_fatal_flaws": 0,
             "max_low_confidence_citations": 0,
             "max_rag_low_confidence_citations": 0,
+            "max_architect_fallback_claim_ratio": 0.4,
             "max_fallback_namespace_citations": 0,
             "require_toc_draft": True,
         },
@@ -181,8 +186,20 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
                 },
             },
             "citations": [
-                {"stage": "architect", "citation_type": "fallback_namespace", "citation_confidence": 0.1},
-                {"stage": "architect", "citation_type": "rag_low_confidence", "citation_confidence": 0.2},
+                {
+                    "stage": "architect",
+                    "used_for": "toc_claim",
+                    "statement_path": "toc.project_goal",
+                    "citation_type": "fallback_namespace",
+                    "citation_confidence": 0.1,
+                },
+                {
+                    "stage": "architect",
+                    "used_for": "toc_claim",
+                    "statement_path": "toc.objectives[0].description",
+                    "citation_type": "rag_low_confidence",
+                    "citation_confidence": 0.2,
+                },
                 {"stage": "mel", "citation_type": "rag_result", "citation_confidence": 0.8},
             ],
         }
@@ -191,6 +208,9 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
     assert metrics["low_confidence_citation_count"] == 2
     assert metrics["rag_low_confidence_citation_count"] == 1
     assert metrics["fallback_namespace_citation_count"] == 1
+    assert metrics["architect_claim_citation_count"] == 2
+    assert metrics["architect_key_claim_coverage_ratio"] == 1.0
+    assert metrics["architect_fallback_claim_ratio"] == 0.5
     assert metrics["traceability_complete_citation_count"] == 0
     assert metrics["traceability_partial_citation_count"] == 0
     assert metrics["traceability_missing_citation_count"] == 3

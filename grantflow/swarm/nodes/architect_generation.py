@@ -348,6 +348,112 @@ def _extract_claim_strings(value: Any, path: str = "toc") -> list[tuple[str, str
     return claims
 
 
+def _claim_priority(statement_path: str) -> int:
+    path = str(statement_path or "").lower()
+    if path in {
+        "toc.project_goal",
+        "toc.project_development_objective",
+        "toc.program_goal",
+        "toc.programme_objective",
+    }:
+        return 5
+    if any(token in path for token in (".development_objectives[", ".specific_objectives[", ".objectives[")):
+        if any(path.endswith(suffix) for suffix in (".description", ".title", ".expected_change", ".objective")):
+            return 5
+        return 4
+    if any(token in path for token in (".expected_outcomes[", ".results_chain[", ".outcomes[")):
+        if any(path.endswith(suffix) for suffix in (".description", ".title", ".expected_change", ".indicator_focus")):
+            return 4
+        return 3
+    if any(token in path for token in ("goal", "objective", "outcome", "result")):
+        return 3
+    if any(token in path for token in ("description", "rationale", "change")):
+        return 2
+    return 1
+
+
+def extract_architect_claim_records(
+    toc_payload: Dict[str, Any],
+    *,
+    max_claims: int = 24,
+    max_high_priority_claims: int = 16,
+) -> list[Dict[str, Any]]:
+    raw_claims = _extract_claim_strings(toc_payload, "toc")
+    deduped: list[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for statement_path, statement in raw_claims:
+        clean_statement = " ".join(str(statement).split()).strip()
+        if not clean_statement:
+            continue
+        dedupe_key = (str(statement_path).strip().lower(), clean_statement.lower())
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped.append(
+            {
+                "statement_path": statement_path,
+                "statement": clean_statement,
+                "priority": _claim_priority(statement_path),
+            }
+        )
+    deduped.sort(
+        key=lambda row: (
+            -int(row.get("priority") or 0),
+            len(str(row.get("statement_path") or "")),
+            str(row.get("statement_path") or ""),
+        )
+    )
+    high_priority = [row for row in deduped if int(row.get("priority") or 0) >= 4][:max_high_priority_claims]
+    remaining = max(0, max_claims - len(high_priority))
+    normal_priority = [row for row in deduped if int(row.get("priority") or 0) < 4][:remaining]
+    return high_priority + normal_priority
+
+
+def summarize_architect_claim_citations(
+    *,
+    claim_records: list[Dict[str, Any]],
+    citations: list[Dict[str, Any]],
+) -> Dict[str, Any]:
+    claim_paths = {
+        str(row.get("statement_path") or "").strip()
+        for row in claim_records
+        if str(row.get("statement_path") or "").strip()
+    }
+    key_claim_paths = {
+        str(row.get("statement_path") or "").strip()
+        for row in claim_records
+        if int(row.get("priority") or 0) >= 4 and str(row.get("statement_path") or "").strip()
+    }
+    claim_citations = [
+        c
+        for c in citations
+        if isinstance(c, dict) and str(c.get("used_for") or "") == "toc_claim" and str(c.get("statement_path") or "")
+    ]
+    cited_paths = {str(c.get("statement_path") or "").strip() for c in claim_citations if c.get("statement_path")}
+    confident_paths = {
+        str(c.get("statement_path") or "").strip()
+        for c in claim_citations
+        if str(c.get("citation_type") or "") == "rag_claim_support"
+    }
+    fallback_claim_count = sum(1 for c in claim_citations if str(c.get("citation_type") or "") == "fallback_namespace")
+    low_conf_claim_count = sum(1 for c in claim_citations if str(c.get("citation_type") or "") == "rag_low_confidence")
+    return {
+        "claims_total": len(claim_records),
+        "key_claims_total": len(key_claim_paths),
+        "claim_citation_count": len(claim_citations),
+        "claim_paths_covered": len(cited_paths & claim_paths),
+        "key_claim_paths_covered": len(cited_paths & key_claim_paths),
+        "confident_claim_paths_covered": len(confident_paths & claim_paths),
+        "fallback_claim_count": fallback_claim_count,
+        "low_confidence_claim_count": low_conf_claim_count,
+        "claim_coverage_ratio": round((len(cited_paths & claim_paths) / len(claim_paths)), 4) if claim_paths else 1.0,
+        "key_claim_coverage_ratio": (
+            round((len(cited_paths & key_claim_paths) / len(key_claim_paths)), 4) if key_claim_paths else 1.0
+        ),
+        "fallback_claim_ratio": round((fallback_claim_count / len(claim_citations)), 4) if claim_citations else 0.0,
+    }
+
+
 def build_architect_claim_citations(
     *,
     toc_payload: Dict[str, Any],
@@ -357,7 +463,7 @@ def build_architect_claim_citations(
 ) -> list[Dict[str, Any]]:
     hits = [h for h in evidence_hits if isinstance(h, dict)]
     namespace_normalized = vector_store.normalize_namespace(namespace)
-    claims = _extract_claim_strings(toc_payload, "toc")
+    claims = extract_architect_claim_records(toc_payload)
     citations: list[Dict[str, Any]] = []
 
     if not claims:
@@ -374,9 +480,9 @@ def build_architect_claim_citations(
         )
         return citations
 
-    bounded_claims = claims[:24]
+    bounded_claims = claims
     if not hits:
-        sample_paths = [path for path, _ in bounded_claims[:5]]
+        sample_paths = [str(row.get("statement_path") or "") for row in bounded_claims[:5]]
         citations.append(
             {
                 "stage": "architect",
@@ -399,7 +505,12 @@ def build_architect_claim_citations(
         )
         return citations
 
-    for idx, (statement_path, statement) in enumerate(bounded_claims):
+    for row in bounded_claims:
+        statement_path = str(row.get("statement_path") or "toc")
+        statement = str(row.get("statement") or "").strip()
+        priority = int(row.get("priority") or 1)
+        if not statement:
+            continue
         hit: Dict[str, Any]
         raw_claim_confidence: float
         hit, raw_claim_confidence = pick_best_architect_evidence_hit(
@@ -445,6 +556,7 @@ def build_architect_claim_citations(
                 "used_for": "toc_claim",
                 "statement_path": statement_path,
                 "statement": statement[:240],
+                "statement_priority": priority,
                 "excerpt": str(hit.get("excerpt") or "")[:240] if hit else None,
                 "citation_confidence": round(confidence if hit else 0.1, 4),
                 "raw_claim_confidence": round(raw_claim_confidence if hit else 0.1, 4),
@@ -556,11 +668,16 @@ def generate_toc_under_contract(
         model = _model_validate(schema_cls, raw_payload)
     toc_payload = _model_dump(model)
     namespace = state_rag_namespace(state, default=strategy.get_rag_collection())
+    claim_records = extract_architect_claim_records(toc_payload)
     claim_citations = build_architect_claim_citations(
         toc_payload=toc_payload,
         namespace=namespace,
         donor_id=donor_id,
         evidence_hits=evidence_hits,
+    )
+    claim_citation_stats = summarize_architect_claim_citations(
+        claim_records=claim_records,
+        citations=claim_citations,
     )
 
     validation = {
@@ -580,6 +697,7 @@ def generate_toc_under_contract(
         "fallback_class": fallback_class,
         "architect_mode": "llm" if llm_mode else "deterministic",
         "schema_name": validation["schema_name"],
+        "claim_coverage": claim_citation_stats,
         "citation_policy": {
             "default_high_confidence_threshold": ARCHITECT_CITATION_HIGH_CONFIDENCE_THRESHOLD,
             "threshold_mode": "donor_section",
