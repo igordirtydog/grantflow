@@ -3852,6 +3852,15 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert body["citations"]["traceability_gap_citation_count"] == 4
     assert body["citations"]["traceability_gap_citation_rate"] == 1.0
     assert body["citations"]["architect_threshold_hit_rate"] == 0.3333
+    assert body["architect_claims"]["claim_citation_count"] == 0
+    assert body["architect_claims"]["claims_total"] == 0
+    assert body["architect_claims"]["key_claims_total"] == 0
+    assert body["architect_claims"]["fallback_claim_count"] == 0
+    assert body["architect_claims"]["traceability_gap_citation_count"] == 0
+    assert body["architect_claims"]["threshold_hit_rate"] is None
+    assert body["architect_claims"]["claim_coverage_ratio"] is None
+    assert body["architect_claims"]["key_claim_coverage_ratio"] is None
+    assert body["architect_claims"]["fallback_claim_ratio"] is None
     assert body["architect"]["retrieval_enabled"] is True
     assert body["architect"]["retrieval_hits_count"] == 3
     assert body["architect"]["toc_schema_valid"] is True

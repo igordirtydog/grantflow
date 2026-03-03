@@ -186,8 +186,10 @@ def test_rule_based_critic_flags_fallback_dominant_architect_grounding_when_rag_
     flaws = [f.model_dump() if hasattr(f, "model_dump") else f.dict() for f in report.fatal_flaws]
 
     assert any(c["code"] == "TOC_CLAIM_GROUNDING_BALANCE" and c["status"] == "fail" for c in checks)
+    assert any(c["code"] == "TOC_CLAIM_TRACEABILITY_GAP" and c["status"] == "fail" for c in checks)
     assert any(c["code"] == "TOC_CLAIM_CONFIDENCE_HIT_RATE" and c["status"] == "fail" for c in checks)
     assert any(f["code"] == "TOC_CLAIM_GROUNDING_FALLBACK_DOMINANT" for f in flaws)
+    assert any(f["code"] == "TOC_CLAIM_TRACEABILITY_GAP_CRITICAL" for f in flaws)
     assert any(f["code"] == "TOC_CLAIM_CONFIDENCE_HIT_RATE_CRITICAL" for f in flaws)
 
 

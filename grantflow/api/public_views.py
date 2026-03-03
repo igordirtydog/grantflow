@@ -1374,6 +1374,13 @@ def public_job_quality_payload(
 
     architect_citations = [c for c in citations if isinstance(c, dict) and str(c.get("stage") or "") == "architect"]
     mel_citations = [c for c in citations if isinstance(c, dict) and str(c.get("stage") or "") == "mel"]
+    architect_claim_citations = [
+        c
+        for c in architect_citations
+        if isinstance(c, dict)
+        and str(c.get("used_for") or "") == "toc_claim"
+        and str(c.get("statement_path") or "").strip()
+    ]
     citation_type_counts = _citation_type_counts(citations)
     architect_citation_type_counts = _citation_type_counts(architect_citations)
     mel_citation_type_counts = _citation_type_counts(mel_citations)
@@ -1468,6 +1475,11 @@ def public_job_quality_payload(
     toc_generation_meta: Dict[str, Any] = (
         cast(Dict[str, Any], raw_toc_generation_meta) if isinstance(raw_toc_generation_meta, dict) else {}
     )
+    claim_coverage_meta = (
+        cast(Dict[str, Any], toc_generation_meta.get("claim_coverage"))
+        if isinstance(toc_generation_meta.get("claim_coverage"), dict)
+        else {}
+    )
     raw_mel_generation_meta = state_dict.get("mel_generation_meta")
     mel_generation_meta: Dict[str, Any] = (
         cast(Dict[str, Any], raw_mel_generation_meta) if isinstance(raw_mel_generation_meta, dict) else {}
@@ -1490,6 +1502,99 @@ def public_job_quality_payload(
     preflight_payload = _public_job_preflight_payload(job)
     export_contract_gate = _state_export_contract_gate(state_dict)
     traceability_gap = traceability_partial + traceability_missing
+    architect_claim_paths = {
+        str(c.get("statement_path") or "").strip()
+        for c in architect_claim_citations
+        if str(c.get("statement_path") or "").strip()
+    }
+    architect_key_claim_paths = {
+        str(c.get("statement_path") or "").strip()
+        for c in architect_claim_citations
+        if str(c.get("statement_path") or "").strip() and int(c.get("statement_priority") or 0) >= 4
+    }
+    architect_confident_claim_paths = {
+        str(c.get("statement_path") or "").strip()
+        for c in architect_claim_citations
+        if str(c.get("statement_path") or "").strip() and str(c.get("citation_type") or "") == "rag_claim_support"
+    }
+    architect_claim_traceability_complete = sum(
+        1 for c in architect_claim_citations if citation_traceability_status(c) == "complete"
+    )
+    architect_claim_traceability_partial = sum(
+        1 for c in architect_claim_citations if citation_traceability_status(c) == "partial"
+    )
+    architect_claim_traceability_missing = sum(
+        1 for c in architect_claim_citations if citation_traceability_status(c) == "missing"
+    )
+    architect_claim_traceability_gap = architect_claim_traceability_partial + architect_claim_traceability_missing
+    architect_claim_fallback_count = sum(
+        1 for c in architect_claim_citations if str(c.get("citation_type") or "") == "fallback_namespace"
+    )
+    architect_claim_low_confidence_count = sum(
+        1 for c in architect_claim_citations if str(c.get("citation_type") or "") == "rag_low_confidence"
+    )
+    architect_claim_threshold_considered = 0
+    architect_claim_threshold_hits = 0
+    for c in architect_claim_citations:
+        threshold = c.get("confidence_threshold")
+        confidence = c.get("citation_confidence")
+        try:
+            threshold_value = float(threshold) if threshold is not None else None
+            confidence_value = float(confidence) if confidence is not None else None
+        except (TypeError, ValueError):
+            threshold_value = None
+            confidence_value = None
+        if threshold_value is None or confidence_value is None:
+            continue
+        architect_claim_threshold_considered += 1
+        if confidence_value >= threshold_value:
+            architect_claim_threshold_hits += 1
+
+    def _claim_meta_int(key: str, fallback: int) -> int:
+        raw = claim_coverage_meta.get(key)
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            value = fallback
+        return max(0, value)
+
+    def _claim_meta_rate(key: str, fallback: Optional[float]) -> Optional[float]:
+        raw = claim_coverage_meta.get(key)
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = fallback
+        if value is None:
+            return None
+        return round(max(0.0, min(1.0, value)), 4)
+
+    claims_total = _claim_meta_int("claims_total", len(architect_claim_paths))
+    key_claims_total = _claim_meta_int("key_claims_total", len(architect_key_claim_paths))
+    claim_paths_covered = _claim_meta_int("claim_paths_covered", len(architect_claim_paths))
+    key_claim_paths_covered = _claim_meta_int("key_claim_paths_covered", len(architect_key_claim_paths))
+    confident_claim_paths_covered = _claim_meta_int("confident_claim_paths_covered", len(architect_confident_claim_paths))
+    fallback_claim_count = _claim_meta_int("fallback_claim_count", architect_claim_fallback_count)
+    low_confidence_claim_count = _claim_meta_int("low_confidence_claim_count", architect_claim_low_confidence_count)
+    claim_coverage_ratio = _claim_meta_rate(
+        "claim_coverage_ratio",
+        round(claim_paths_covered / claims_total, 4) if claims_total else None,
+    )
+    key_claim_coverage_ratio = _claim_meta_rate(
+        "key_claim_coverage_ratio",
+        round(key_claim_paths_covered / key_claims_total, 4) if key_claims_total else None,
+    )
+    fallback_claim_ratio = _claim_meta_rate(
+        "fallback_claim_ratio",
+        round(fallback_claim_count / len(architect_claim_citations), 4) if architect_claim_citations else None,
+    )
+    architect_claim_traceability_complete_rate = (
+        round(architect_claim_traceability_complete / len(architect_claim_citations), 4)
+        if architect_claim_citations
+        else None
+    )
+    architect_claim_traceability_gap_rate = (
+        round(architect_claim_traceability_gap / len(architect_claim_citations), 4) if architect_claim_citations else None
+    )
 
     return {
         "job_id": str(job_id),
@@ -1593,6 +1698,30 @@ def public_job_quality_payload(
             "toc_schema_name": sanitize_for_public_response(toc_validation.get("schema_name")),
             "toc_schema_valid": sanitize_for_public_response(toc_validation.get("valid")),
             "citation_policy": sanitize_for_public_response(toc_generation_meta.get("citation_policy")),
+        },
+        "architect_claims": {
+            "claim_citation_count": len(architect_claim_citations),
+            "claims_total": claims_total,
+            "key_claims_total": key_claims_total,
+            "claim_paths_covered": claim_paths_covered,
+            "key_claim_paths_covered": key_claim_paths_covered,
+            "confident_claim_paths_covered": confident_claim_paths_covered,
+            "fallback_claim_count": fallback_claim_count,
+            "low_confidence_claim_count": low_confidence_claim_count,
+            "claim_coverage_ratio": claim_coverage_ratio,
+            "key_claim_coverage_ratio": key_claim_coverage_ratio,
+            "fallback_claim_ratio": fallback_claim_ratio,
+            "threshold_hit_rate": (
+                round(architect_claim_threshold_hits / architect_claim_threshold_considered, 4)
+                if architect_claim_threshold_considered
+                else None
+            ),
+            "traceability_complete_citation_count": architect_claim_traceability_complete,
+            "traceability_partial_citation_count": architect_claim_traceability_partial,
+            "traceability_missing_citation_count": architect_claim_traceability_missing,
+            "traceability_gap_citation_count": architect_claim_traceability_gap,
+            "traceability_complete_rate": architect_claim_traceability_complete_rate,
+            "traceability_gap_rate": architect_claim_traceability_gap_rate,
         },
         "mel": {
             "engine": sanitize_for_public_response(mel_generation_meta.get("engine")),

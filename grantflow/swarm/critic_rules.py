@@ -5,6 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from pydantic import BaseModel, Field
 
 from grantflow.swarm.critic_donor_policy import apply_donor_specific_toc_checks
+from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.state_contract import state_input_context
 from grantflow.swarm.versioning import filter_versions
 
@@ -400,6 +401,57 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
                     state=state,
                     message="Architect claim grounding is fallback-dominant and not evidence-backed enough.",
                     fix_hint="Ingest donor-relevant corpus and ensure retriever returns traceable high-confidence evidence.",
+                )
+
+    if len(architect_claim_citations) >= 3:
+        traceability_complete = 0
+        traceability_partial = 0
+        traceability_missing = 0
+        for citation in architect_claim_citations:
+            status = citation_traceability_status(citation)
+            if status == "complete":
+                traceability_complete += 1
+            elif status == "partial":
+                traceability_partial += 1
+            else:
+                traceability_missing += 1
+        traceability_gap = traceability_partial + traceability_missing
+        traceability_gap_ratio = _safe_ratio(traceability_gap, len(architect_claim_citations))
+        traceability_detail = (
+            f"traceability_gap_rate={traceability_gap_ratio:.0%} "
+            f"({traceability_gap}/{len(architect_claim_citations)})"
+        )
+        if traceability_gap_ratio < 0.3:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="pass", section="toc", detail=traceability_detail)
+            )
+        elif traceability_gap_ratio < 0.6:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="warn", section="toc", detail=traceability_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_TRACEABILITY_GAP_HIGH",
+                    severity="medium",
+                    section="toc",
+                    state=state,
+                    message="Architect claim citations contain significant traceability gaps.",
+                    fix_hint="Ensure claim citations include traceable doc_id/source/chunk/page metadata for objective/result statements.",
+                )
+        else:
+            checks.append(
+                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="fail", section="toc", detail=traceability_detail)
+            )
+            if architect_rag_enabled:
+                _add_flaw(
+                    flaws,
+                    code="TOC_CLAIM_TRACEABILITY_GAP_CRITICAL",
+                    severity="high",
+                    section="toc",
+                    state=state,
+                    message="Architect claim citations are mostly non-traceable.",
+                    fix_hint="Regenerate ToC with retrieval evidence that includes document/source/page/chunk references.",
                 )
 
     threshold_evaluable = []

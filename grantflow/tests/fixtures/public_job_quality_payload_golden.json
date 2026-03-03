@@ -12,6 +12,26 @@
     "toc_schema_name": "USAIDToCSchema",
     "toc_schema_valid": true
   },
+  "architect_claims": {
+    "claim_citation_count": 0,
+    "claim_coverage_ratio": null,
+    "claim_paths_covered": 0,
+    "claims_total": 0,
+    "confident_claim_paths_covered": 0,
+    "fallback_claim_count": 0,
+    "fallback_claim_ratio": null,
+    "key_claim_coverage_ratio": null,
+    "key_claim_paths_covered": 0,
+    "key_claims_total": 0,
+    "low_confidence_claim_count": 0,
+    "threshold_hit_rate": null,
+    "traceability_complete_citation_count": 0,
+    "traceability_complete_rate": null,
+    "traceability_gap_citation_count": 0,
+    "traceability_gap_rate": null,
+    "traceability_missing_citation_count": 0,
+    "traceability_partial_citation_count": 0
+  },
   "citations": {
     "architect_citation_count": 2,
     "architect_citation_type_counts": {
