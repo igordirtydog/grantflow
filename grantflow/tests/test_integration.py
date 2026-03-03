@@ -5233,6 +5233,58 @@ def test_resume_requires_checkpoint_decision_before_running_again():
     assert "pending approval" in resume.json()["detail"]
 
 
+def test_resume_clears_hitl_runtime_flags_before_relaunch(monkeypatch):
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Education", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    cp_id = status["checkpoint_id"]
+
+    approve = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": cp_id, "approved": True, "feedback": "TOC approved"},
+    )
+    assert approve.status_code == 200
+
+    captured: dict = {}
+
+    def _stub_run_hitl_pipeline(job_id_arg: str, state_arg: dict, start_at_arg: str) -> None:
+        captured["job_id"] = job_id_arg
+        captured["state"] = dict(state_arg)
+        captured["start_at"] = start_at_arg
+
+    monkeypatch.setattr(api_app_module, "_run_hitl_pipeline", _stub_run_hitl_pipeline)
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "mel"
+
+    assert captured["job_id"] == job_id
+    assert captured["start_at"] == "mel"
+    resumed_state = captured["state"]
+    assert resumed_state["hitl_pending"] is False
+    assert "hitl_checkpoint_id" not in resumed_state
+    assert "hitl_checkpoint_stage" not in resumed_state
+    assert "hitl_resume_from" not in resumed_state
+
+    job = api_app_module._get_job(job_id)
+    assert job is not None
+    assert job["status"] == "accepted"
+    assert job["state"]["hitl_pending"] is False
+    assert job.get("checkpoint_id") is None
+    assert job.get("checkpoint_stage") is None
+
+
 def test_generate_rejects_old_contract_shape():
     response = client.post(
         "/generate",

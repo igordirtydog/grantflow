@@ -1959,8 +1959,7 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
         if existing_checkpoint_id:
             hitl_manager.cancel(existing_checkpoint_id, "Canceled before HITL checkpoint was published")
         return
-    for key in RUNTIME_PIPELINE_STATE_KEYS:
-        state.pop(key, None)
+    _clear_hitl_runtime_state(state, clear_pending=False)
     state["hitl_pending"] = True
     normalize_state_contract(state)
     donor_id = state_donor_id(state, default="unknown")
@@ -1992,6 +1991,7 @@ def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
         if _job_is_canceled(job_id):
             return
         normalize_state_contract(initial_state)
+        _clear_hitl_runtime_state(initial_state, clear_pending=True)
         initial_state["hitl_enabled"] = False
         initial_state["_start_at"] = "start"
         _set_job(job_id, {"status": "running", "state": initial_state, "hitl_enabled": False})
@@ -2038,6 +2038,7 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
         if _job_is_canceled(job_id):
             return
         normalize_state_contract(state)
+        _clear_hitl_runtime_state(state, clear_pending=True)
         state["hitl_enabled"] = True
         state["_start_at"] = start_at
         _set_job(
@@ -2124,6 +2125,13 @@ def _resume_target_from_checkpoint(checkpoint: Dict[str, Any], default_resume_fr
         return default_resume_from  # type: ignore[return-value]
 
     raise ValueError("Checkpoint is not ready for resume")
+
+
+def _clear_hitl_runtime_state(state: dict, *, clear_pending: bool) -> None:
+    for key in RUNTIME_PIPELINE_STATE_KEYS:
+        state.pop(key, None)
+    if clear_pending:
+        state["hitl_pending"] = False
 
 
 def _health_diagnostics() -> dict[str, Any]:
@@ -2636,11 +2644,16 @@ async def resume_job(job_id: str, background_tasks: BackgroundTasks, request: Re
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+    _clear_hitl_runtime_state(state, clear_pending=True)
+    normalize_state_contract(state)
+
     _update_job(
         job_id,
         status="accepted",
         state=state,
         resume_from=start_at,
+        checkpoint_id=None,
+        checkpoint_stage=None,
         checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
     )
     _record_job_event(
