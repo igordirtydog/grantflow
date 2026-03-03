@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+from grantflow.exporters.donor_contracts import evaluate_export_contract
 from grantflow.exporters.template_profile import build_export_template_profile, normalize_export_template_key
 
 
@@ -146,6 +147,35 @@ def _add_template_meta_sheet(wb: Workbook, profile: Dict[str, Any]) -> None:
             "Missing Sections",
             ", ".join(str(x) for x in (profile.get("missing_sections") or [])),
         ),
+    ]
+    for row_idx, (field_name, value) in enumerate(rows, start=2):
+        ws.append([field_name, value])
+        ws.cell(row=row_idx, column=1).border = border
+        ws.cell(row=row_idx, column=2).border = border
+    _autosize_columns(ws)
+
+
+def _add_export_contract_sheet(wb: Workbook, contract: Dict[str, Any]) -> None:
+    ws = wb.create_sheet("Export Contract")
+    headers = ["Field", "Value"]
+    border = _apply_table_header(ws, headers)
+    rows = [
+        ("Status", contract.get("status", "")),
+        ("Warnings", ", ".join(str(x) for x in (contract.get("warnings") or [])) or "-"),
+        (
+            "Missing Required ToC Sections",
+            ", ".join(str(x) for x in (contract.get("missing_required_sections") or [])) or "-",
+        ),
+        (
+            "Missing Required Workbook Sheets",
+            ", ".join(str(x) for x in (contract.get("missing_required_sheets") or [])) or "-",
+        ),
+        ("Expected Primary Sheet", contract.get("expected_primary_sheet", "") or "-"),
+        (
+            "Expected Primary Sheet Headers",
+            ", ".join(str(x) for x in (contract.get("expected_primary_sheet_headers") or [])) or "-",
+        ),
+        ("Required Workbook Sheets", ", ".join(str(x) for x in (contract.get("required_sheets") or [])) or "-"),
     ]
     for row_idx, (field_name, value) in enumerate(rows, start=2):
         ws.append([field_name, value])
@@ -564,6 +594,8 @@ def build_xlsx_from_logframe(
 
     _autosize_columns(ws)
     _add_template_meta_sheet(wb, profile)
+    contract = evaluate_export_contract(donor_id=donor_id, toc_payload=_toc_root(toc_payload), workbook_sheetnames=wb.sheetnames)
+    _add_export_contract_sheet(wb, contract)
     _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
     _add_critic_findings_sheet(wb, critic_findings or [])
     _add_review_comments_sheet(wb, review_comments or [])

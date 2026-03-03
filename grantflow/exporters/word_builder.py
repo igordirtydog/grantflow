@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
+from grantflow.exporters.donor_contracts import evaluate_export_contract
 from grantflow.exporters.template_profile import build_export_template_profile, normalize_export_template_key
 
 
@@ -443,6 +444,26 @@ def _add_template_profile_section(doc: Document, profile: Dict[str, Any]) -> Non
             doc.add_paragraph(f"Missing sections: {', '.join(str(x) for x in missing)}")
 
 
+def _add_export_contract_section(doc: Document, contract: Dict[str, Any]) -> None:
+    doc.add_heading("Export Contract Check", level=1)
+    status = str(contract.get("status") or "warning").upper()
+    doc.add_paragraph(f"Status: {status}")
+
+    missing_sections = contract.get("missing_required_sections")
+    if isinstance(missing_sections, list) and missing_sections:
+        doc.add_paragraph(f"Missing required ToC sections: {', '.join(str(x) for x in missing_sections)}")
+    else:
+        doc.add_paragraph("Missing required ToC sections: none")
+
+    expected_docx_headings = contract.get("expected_docx_headings")
+    if isinstance(expected_docx_headings, list) and expected_docx_headings:
+        doc.add_paragraph(f"Expected donor headings: {', '.join(str(x) for x in expected_docx_headings)}")
+
+    warnings = contract.get("warnings")
+    if isinstance(warnings, list) and warnings:
+        doc.add_paragraph(f"Warnings: {', '.join(str(x) for x in warnings)}")
+
+
 def build_docx_from_toc(
     toc_draft: Dict[str, Any],
     donor_id: str,
@@ -461,7 +482,9 @@ def build_docx_from_toc(
 
     toc_content = _toc_root(toc_draft)
     profile = build_export_template_profile(donor_id=donor_id, toc_payload=toc_content)
+    contract = evaluate_export_contract(donor_id=donor_id, toc_payload=toc_content)
     _add_template_profile_section(doc, profile)
+    _add_export_contract_section(doc, contract)
 
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":

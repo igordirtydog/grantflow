@@ -3,6 +3,7 @@ from io import BytesIO
 from docx import Document
 from openpyxl import load_workbook
 
+from grantflow.exporters.donor_contracts import evaluate_export_contract
 from grantflow.exporters.excel_builder import build_xlsx_from_logframe
 from grantflow.exporters.word_builder import build_docx_from_toc
 
@@ -229,6 +230,20 @@ def test_word_export_includes_template_profile_and_missing_sections_summary():
     assert "Missing sections: specific_objectives, expected_outcomes" in text
 
 
+def test_word_export_includes_export_contract_section():
+    eu_toc_incomplete = {
+        "toc": {
+            "overall_objective": {"objective_id": "OO1", "title": "Digital governance", "rationale": "EU fit"},
+        }
+    }
+    doc = Document(BytesIO(build_docx_from_toc(eu_toc_incomplete, "eu")))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "Export Contract Check" in text
+    assert "Status: WARNING" in text
+    assert "Missing required ToC sections: specific_objectives, expected_outcomes" in text
+    assert "Expected donor headings: EU Intervention Logic, Overall Objective, Specific Objectives, Expected Outcomes" in text
+
+
 def test_excel_export_includes_citations_sheet():
     logframe_draft = {
         "indicators": [
@@ -288,6 +303,45 @@ def test_excel_export_includes_template_meta_sheet():
     assert float(row_map["Coverage Rate"]) > 0.32
     assert "specific_objectives" in str(row_map["Missing Sections"])
     assert "expected_outcomes" in str(row_map["Missing Sections"])
+
+
+def test_excel_export_includes_export_contract_sheet():
+    usaid_toc = {
+        "toc": {
+            "project_goal": "Improve civic services",
+            "development_objectives": [
+                {
+                    "do_id": "DO1",
+                    "description": "Improved digital delivery",
+                    "intermediate_results": [],
+                }
+            ],
+        }
+    }
+    content = build_xlsx_from_logframe({"indicators": []}, "usaid", toc_draft=usaid_toc)
+    wb = load_workbook(BytesIO(content))
+    assert "Export Contract" in wb.sheetnames
+    rows = list(wb["Export Contract"].iter_rows(values_only=True))
+    row_map = {str(row[0]): row[1] for row in rows[1:] if row and row[0]}
+    assert row_map["Status"] == "pass"
+    assert row_map["Missing Required ToC Sections"] == "-"
+    assert "LogFrame" in str(row_map["Required Workbook Sheets"])
+    assert "USAID_RF" in str(row_map["Required Workbook Sheets"])
+    assert row_map["Expected Primary Sheet"] == "USAID_RF"
+    assert "DO ID" in str(row_map["Expected Primary Sheet Headers"])
+
+
+def test_export_contract_docx_mode_skips_workbook_sheet_requirements():
+    contract = evaluate_export_contract(
+        donor_id="usaid",
+        toc_payload={
+            "project_goal": "Improve civic services",
+            "development_objectives": [{"do_id": "DO1", "description": "Improved digital delivery"}],
+        },
+    )
+    assert contract["workbook_validation_enabled"] is False
+    assert contract["status"] == "pass"
+    assert contract["missing_required_sheets"] == []
 
 
 def test_exporters_accept_critic_finding_id_alias():
