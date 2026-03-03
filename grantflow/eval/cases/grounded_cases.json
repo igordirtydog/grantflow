@@ -1,0 +1,198 @@
+[
+  {
+    "case_id": "usaid_water_kenya_grounded",
+    "donor_id": "usaid",
+    "input_context": {
+      "project": "Water Sanitation",
+      "country": "Kenya"
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 6.0,
+      "min_critic_score": 6.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.25,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.6,
+      "max_rag_low_confidence_citations": 8,
+      "max_fallback_namespace_citations": 3
+    }
+  },
+  {
+    "case_id": "usaid_ai_civil_service_kazakhstan_grounded",
+    "donor_id": "usaid",
+    "input_context": {
+      "project": "Responsible AI Skills for Civil Service Modernization",
+      "country": "Kazakhstan",
+      "timeframe": "2026-2027 (24 months)",
+      "problem": "Civil servants have uneven practical skills in safe and effective AI use for public administration.",
+      "target_population": "Civil servants in policy, service delivery, and digital transformation units.",
+      "goal": "Improve public sector efficiency through responsible AI use in government workflows.",
+      "key_activities": [
+        "Needs assessment and baseline competency mapping",
+        "Cohort training and applied labs",
+        "AI SOP drafting and governance coaching"
+      ]
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 6.0,
+      "min_critic_score": 6.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.25,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.6,
+      "max_rag_low_confidence_citations": 8,
+      "max_fallback_namespace_citations": 3
+    }
+  },
+  {
+    "case_id": "eu_youth_employment_jordan_grounded",
+    "donor_id": "eu",
+    "input_context": {
+      "project": "Youth Employment and SME Skills",
+      "country": "Jordan"
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 5.0,
+      "min_critic_score": 5.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.2,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.7,
+      "max_rag_low_confidence_citations": 10,
+      "max_fallback_namespace_citations": 3
+    }
+  },
+  {
+    "case_id": "worldbank_health_kenya_grounded",
+    "donor_id": "worldbank",
+    "input_context": {
+      "project": "Health Systems Strengthening",
+      "country": "Kenya"
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 6.0,
+      "min_critic_score": 6.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.25,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.6,
+      "max_rag_low_confidence_citations": 8,
+      "max_fallback_namespace_citations": 3
+    }
+  },
+  {
+    "case_id": "worldbank_public_sector_performance_uzbekistan_grounded",
+    "donor_id": "worldbank",
+    "input_context": {
+      "project": "Public Sector Performance and Service Delivery Capacity Strengthening",
+      "country": "Uzbekistan",
+      "problem": "Agencies have uneven capabilities in performance management and evidence-based delivery improvements."
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 6.0,
+      "min_critic_score": 6.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.25,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.6,
+      "max_rag_low_confidence_citations": 8,
+      "max_fallback_namespace_citations": 3
+    }
+  },
+  {
+    "case_id": "state_department_media_georgia_grounded",
+    "donor_id": "state_department",
+    "input_context": {
+      "project": "Independent Media Resilience",
+      "country": "Georgia"
+    },
+    "llm_mode": false,
+    "architect_rag_enabled": true,
+    "expectations": {
+      "toc_schema_valid": true,
+      "require_toc_draft": true,
+      "require_logframe_draft": true,
+      "min_quality_score": 6.0,
+      "min_critic_score": 6.0,
+      "min_citations_total": 4,
+      "min_architect_citations": 2,
+      "min_architect_claim_citations": 2,
+      "min_mel_citations": 1,
+      "min_draft_versions": 2,
+      "max_fatal_flaws": 3,
+      "max_high_severity_fatal_flaws": 1,
+      "max_errors": 0,
+      "min_citation_confidence_avg": 0.15,
+      "min_architect_threshold_hit_rate": 0.25,
+      "min_architect_key_claim_coverage_ratio": 0.5,
+      "max_architect_fallback_claim_ratio": 0.6,
+      "max_rag_low_confidence_citations": 8,
+      "max_fallback_namespace_citations": 3
+    }
+  }
+]

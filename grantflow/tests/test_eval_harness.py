@@ -240,6 +240,24 @@ def test_eval_harness_runtime_overrides_apply_to_cases_without_mutating_original
     assert "architect_rag_enabled" not in source_cases[1]
 
 
+def test_load_eval_cases_supports_explicit_case_files(tmp_path):
+    payload = [
+        {
+            "case_id": "explicit_case",
+            "donor_id": "usaid",
+            "input_context": {"project": "P", "country": "C"},
+            "expectations": {"toc_schema_valid": True},
+        }
+    ]
+    path = tmp_path / "cases.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    rows = load_eval_cases(case_files=[path])
+    assert len(rows) == 1
+    assert rows[0]["case_id"] == "explicit_case"
+    assert rows[0]["_fixture_file"] == "cases.json"
+
+
 def test_filter_eval_cases_supports_donor_and_case_filters():
     source_cases = [
         {"case_id": "usaid_a", "donor_id": "usaid"},
@@ -257,7 +275,7 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     monkeypatch.setattr(
         harness,
         "load_eval_cases",
-        lambda fixtures_dir=None: [
+        lambda fixtures_dir=None, case_files=None: [
             {"case_id": "stub", "donor_id": "usaid", "llm_mode": False, "architect_rag_enabled": False}
         ],
     )
@@ -304,6 +322,7 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     assert payload["runtime_overrides"]["skip_expectations"] is True
     assert payload["runtime_overrides"]["donor_filters"] == ["usaid"]
     assert payload["runtime_overrides"]["case_filters"] == ["stub"]
+    assert payload["runtime_overrides"]["cases_files"] == []
     assert payload["expectations_skipped"] is True
     assert captured["suite_label"] == "llm-eval"
     assert captured["skip_expectations"] is True
@@ -314,6 +333,45 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     text = text_out.read_text(encoding="utf-8")
     assert "Suite: llm-eval" in text
     assert "Expectations: skipped" in text
+
+
+def test_eval_harness_cli_supports_cases_file_argument(tmp_path):
+    json_out = tmp_path / "eval-report.json"
+    text_out = tmp_path / "eval-report.txt"
+    cases_file = tmp_path / "explicit-cases.json"
+    cases_file.write_text(
+        json.dumps(
+            [
+                {
+                    "case_id": "explicit_only",
+                    "donor_id": "usaid",
+                    "input_context": {"project": "Water", "country": "Kenya"},
+                    "llm_mode": False,
+                    "architect_rag_enabled": False,
+                    "expectations": {"toc_schema_valid": True},
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = harness.main(
+        [
+            "--suite-label",
+            "explicit-file-suite",
+            "--cases-file",
+            str(cases_file),
+            "--json-out",
+            str(json_out),
+            "--text-out",
+            str(text_out),
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["case_count"] == 1
+    assert payload["runtime_overrides"]["cases_files"] == [str(cases_file)]
+    assert payload["cases"][0]["case_id"] == "explicit_only"
 
 
 def test_eval_harness_cli_returns_nonzero_when_filters_match_no_cases(tmp_path):

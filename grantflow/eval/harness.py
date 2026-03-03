@@ -97,10 +97,18 @@ def _looks_like_eval_case(item: Any) -> bool:
     return isinstance(item, dict) and ("donor_id" in item or "case_id" in item)
 
 
-def load_eval_cases(fixtures_dir: Path | None = None) -> list[dict[str, Any]]:
-    base_dir = fixtures_dir or FIXTURES_DIR
+def load_eval_cases(
+    fixtures_dir: Path | None = None,
+    *,
+    case_files: list[Path] | None = None,
+) -> list[dict[str, Any]]:
+    if case_files:
+        source_files = [Path(path) for path in case_files]
+    else:
+        base_dir = fixtures_dir or FIXTURES_DIR
+        source_files = sorted(base_dir.glob("*.json"))
     cases: list[dict[str, Any]] = []
-    for path in sorted(base_dir.glob("*.json")):
+    for path in source_files:
         payload = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(payload, list):
             for item in payload:
@@ -1087,6 +1095,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Filter suite to one or more case_ids (repeat flag or use comma-separated values).",
     )
     parser.add_argument(
+        "--cases-file",
+        action="append",
+        default=[],
+        help="Explicit JSON file(s) with eval cases (repeat flag or use comma-separated values).",
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         default=None,
@@ -1127,7 +1141,9 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
-    cases = load_eval_cases()
+    case_file_tokens = _split_csv_args(args.cases_file)
+    case_files = [Path(token) for token in case_file_tokens]
+    cases = load_eval_cases(case_files=case_files or None)
     donor_filters = _split_csv_args(args.donor_id)
     case_filters = _split_csv_args(args.case_id)
     cases = filter_eval_cases(cases, donor_ids=donor_filters, case_ids=case_filters)
@@ -1147,6 +1163,7 @@ def main(argv: list[str] | None = None) -> int:
     suite["runtime_overrides"]["skip_expectations"] = bool(args.skip_expectations)
     suite["runtime_overrides"]["donor_filters"] = donor_filters
     suite["runtime_overrides"]["case_filters"] = case_filters
+    suite["runtime_overrides"]["cases_files"] = case_file_tokens
     text_report = format_eval_suite_report(suite)
     print(text_report)
     if args.json_out is not None:

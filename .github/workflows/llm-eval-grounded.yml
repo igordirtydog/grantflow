@@ -18,6 +18,16 @@ on:
         required: true
         default: true
         type: boolean
+      enforce_expectations:
+        description: "Run strict expectations (false = exploratory metrics-only with --skip-expectations)"
+        required: true
+        default: false
+        type: boolean
+      cases_file:
+        description: "Eval cases JSON file path"
+        required: true
+        default: "grantflow/eval/cases/grounded_cases.json"
+        type: string
 
 jobs:
   llm_eval_grounded:
@@ -53,15 +63,20 @@ jobs:
           INPUT_DONOR_IDS: ${{ github.event.inputs.donor_ids }}
           INPUT_CASE_IDS: ${{ github.event.inputs.case_ids }}
           INPUT_FORCE_ARCH_RAG: ${{ github.event.inputs.force_architect_rag }}
+          INPUT_ENFORCE_EXPECTATIONS: ${{ github.event.inputs.enforce_expectations }}
+          INPUT_CASES_FILE: ${{ github.event.inputs.cases_file }}
         run: |
           mkdir -p llm-eval-grounded-artifacts
           if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${OPENROUTER_API_KEY:-}" ]; then
             echo "OPENAI_API_KEY / OPENROUTER_API_KEY is not configured; skipping grounded LLM eval lane." | tee llm-eval-grounded-artifacts/llm-eval-grounded-report.txt
-            python -c 'import json, pathlib; pathlib.Path("llm-eval-grounded-artifacts/llm-eval-grounded-report.json").write_text(json.dumps({"suite_label":"llm-eval-grounded","skipped":True,"reason":"OPENAI_API_KEY / OPENROUTER_API_KEY is not configured","runtime_overrides":{"force_llm":True,"force_architect_rag":True,"skip_expectations":True}}, indent=2, sort_keys=True), encoding="utf-8")'
+            python -c 'import json, pathlib, os; skip=(os.getenv("INPUT_ENFORCE_EXPECTATIONS","false")!="true"); pathlib.Path("llm-eval-grounded-artifacts/llm-eval-grounded-report.json").write_text(json.dumps({"suite_label":"llm-eval-grounded","skipped":True,"reason":"OPENAI_API_KEY / OPENROUTER_API_KEY is not configured","runtime_overrides":{"force_llm":True,"force_architect_rag":True,"skip_expectations":skip}}, indent=2, sort_keys=True), encoding="utf-8")'
             exit 0
           fi
 
           EXTRA_ARGS=()
+          if [ -n "${INPUT_CASES_FILE:-}" ]; then
+            EXTRA_ARGS+=(--cases-file "$INPUT_CASES_FILE")
+          fi
           if [ -n "${INPUT_DONOR_IDS:-}" ]; then
             EXTRA_ARGS+=(--donor-id "$INPUT_DONOR_IDS")
           fi
@@ -71,11 +86,13 @@ jobs:
           if [ "${INPUT_FORCE_ARCH_RAG:-true}" = "true" ]; then
             EXTRA_ARGS+=(--force-architect-rag)
           fi
+          if [ "${INPUT_ENFORCE_EXPECTATIONS:-false}" != "true" ]; then
+            EXTRA_ARGS+=(--skip-expectations)
+          fi
 
           python -m grantflow.eval.harness \
             --suite-label llm-eval-grounded \
             --force-llm \
-            --skip-expectations \
             "${EXTRA_ARGS[@]}" \
             --text-out llm-eval-grounded-artifacts/llm-eval-grounded-report.txt \
             --json-out llm-eval-grounded-artifacts/llm-eval-grounded-report.json
