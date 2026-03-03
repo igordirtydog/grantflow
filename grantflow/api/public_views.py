@@ -247,7 +247,14 @@ def public_state_snapshot(state: Any) -> Any:
 def public_job_payload(job: Dict[str, Any]) -> Dict[str, Any]:
     public_job: Dict[str, Any] = {}
     for key, value in job.items():
-        if key in {"webhook_url", "webhook_secret", "job_events", "review_comments", "client_metadata"}:
+        if key in {
+            "webhook_url",
+            "webhook_secret",
+            "job_events",
+            "review_comments",
+            "client_metadata",
+            "idempotency_records",
+        }:
             continue
         if key == "state":
             public_job[key] = public_state_snapshot(value)

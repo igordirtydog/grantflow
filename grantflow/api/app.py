@@ -4,6 +4,7 @@ import gzip
 import io
 import json
 import os
+import re
 import tempfile
 import uuid
 import zipfile
@@ -108,6 +109,8 @@ REVIEW_COMMENT_SECTIONS = {"toc", "logframe", "general"}
 CRITIC_FINDING_STATUSES = {"open", "acknowledged", "resolved"}
 CRITIC_FINDING_SLA_HOURS = {"high": 24, "medium": 72, "low": 120}
 REVIEW_COMMENT_DEFAULT_SLA_HOURS = 72
+REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+MAX_IDEMPOTENCY_RECORDS = 300
 STATUS_WEBHOOK_EVENTS = {
     "running": "job.started",
     "pending_hitl": "job.pending_hitl",
@@ -181,6 +184,112 @@ def _finding_actor_from_request(request: Request) -> str:
     return "api_user"
 
 
+def _normalize_request_id(value: Any) -> Optional[str]:
+    token = str(value or "").strip()
+    if not token:
+        return None
+    if not REQUEST_ID_RE.fullmatch(token):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request_id (allowed: letters, numbers, ., _, :, -, length 1..120)",
+        )
+    return token
+
+
+def _resolve_request_id(request: Request, explicit_request_id: Optional[str] = None) -> Optional[str]:
+    return _normalize_request_id(explicit_request_id) or _normalize_request_id(request.headers.get("x-request-id"))
+
+
+def _idempotency_fingerprint(payload: Dict[str, Any]) -> str:
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+
+def _idempotency_record_key(scope: str, request_id: str) -> str:
+    return f"{scope}:{request_id}"
+
+
+def _idempotency_records(job: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    raw = job.get("idempotency_records")
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, value in raw.items():
+        if not isinstance(key, str) or not isinstance(value, dict):
+            continue
+        out[key] = dict(value)
+    return out
+
+
+def _idempotency_replay_response(
+    job: Dict[str, Any],
+    *,
+    scope: str,
+    request_id: Optional[str],
+    fingerprint: str,
+) -> Optional[Dict[str, Any]]:
+    token = _normalize_request_id(request_id)
+    if not token:
+        return None
+    key = _idempotency_record_key(scope, token)
+    record = _idempotency_records(job).get(key)
+    if not isinstance(record, dict):
+        return None
+    record_fingerprint = str(record.get("fingerprint") or "")
+    if record_fingerprint and record_fingerprint != fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "request_id_reused_with_different_payload",
+                "message": "request_id is already used for a different action payload.",
+                "request_id": token,
+                "scope": scope,
+            },
+        )
+    response_payload = record.get("response")
+    if isinstance(response_payload, dict):
+        replay = dict(response_payload)
+    else:
+        replay = {}
+    replay["request_id"] = token
+    replay["idempotent_replay"] = True
+    replay["persisted"] = bool(record.get("persisted", True))
+    return replay
+
+
+def _store_idempotency_response(
+    job_id: str,
+    *,
+    scope: str,
+    request_id: Optional[str],
+    fingerprint: str,
+    response: Dict[str, Any],
+    persisted: bool,
+) -> None:
+    token = _normalize_request_id(request_id)
+    if not token:
+        return
+    job = _get_job(job_id)
+    if not job:
+        return
+    records = _idempotency_records(job)
+    key = _idempotency_record_key(scope, token)
+    stored_response = dict(response)
+    stored_response.pop("idempotent_replay", None)
+    stored_response["request_id"] = token
+    records[key] = {
+        "scope": scope,
+        "request_id": token,
+        "fingerprint": fingerprint,
+        "persisted": bool(persisted),
+        "ts": _utcnow_iso(),
+        "response": stored_response,
+    }
+    while len(records) > MAX_IDEMPOTENCY_RECORDS:
+        oldest_key = next(iter(records))
+        records.pop(oldest_key, None)
+    _update_job(job_id, idempotency_records=records)
+
+
 def _append_job_event_records(
     previous: Optional[Dict[str, Any]],
     next_payload: Dict[str, Any],
@@ -220,6 +329,16 @@ def _record_job_event(job_id: str, event_type: str, **fields: Any) -> None:
         return
     existing = job.get("job_events")
     events = [e for e in existing if isinstance(e, dict)] if isinstance(existing, list) else []
+    request_id = _normalize_request_id(fields.get("request_id"))
+    if request_id:
+        for row in reversed(events):
+            if not isinstance(row, dict):
+                continue
+            if str(row.get("type") or "") != event_type:
+                continue
+            if str(row.get("request_id") or "") != request_id:
+                continue
+            return
     event: Dict[str, Any] = {
         "event_id": str(uuid.uuid4()),
         "ts": _utcnow_iso(),
@@ -862,7 +981,14 @@ def _set_job(job_id: str, payload: Dict[str, Any]) -> None:
     if previous and previous.get("status") == "canceled" and next_payload.get("status") != "canceled":
         return
 
-    for key in ("webhook_url", "webhook_secret", "client_metadata", "generate_preflight", "strict_preflight"):
+    for key in (
+        "webhook_url",
+        "webhook_secret",
+        "client_metadata",
+        "generate_preflight",
+        "strict_preflight",
+        "idempotency_records",
+    ):
         if key not in next_payload and previous and key in previous:
             next_payload[key] = previous.get(key)
 
@@ -1057,6 +1183,7 @@ class JobCommentCreateRequest(BaseModel):
     author: Optional[str] = None
     version_id: Optional[str] = None
     linked_finding_id: Optional[str] = None
+    request_id: Optional[str] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1065,6 +1192,7 @@ class CriticFindingsBulkStatusRequest(BaseModel):
     next_status: str
     apply_to_all: bool = False
     dry_run: bool = False
+    request_id: Optional[str] = None
     if_match_status: Optional[str] = None
     finding_status: Optional[str] = None
     severity: Optional[str] = None
@@ -1520,16 +1648,36 @@ def _set_critic_fatal_flaw_status(
     actor: Optional[str] = None,
     dry_run: bool = False,
     if_match_status: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     if next_status not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported critic finding status")
     expected_status = str(if_match_status or "").strip().lower() or None
     if expected_status and expected_status not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported if_match_status")
+    request_id_token = _normalize_request_id(request_id)
 
     job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    idempotency_fingerprint = _idempotency_fingerprint(
+        {
+            "op": "critic_finding_status",
+            "job_id": str(job_id),
+            "finding_id": str(finding_id),
+            "next_status": str(next_status),
+            "dry_run": bool(dry_run),
+            "if_match_status": expected_status,
+        }
+    )
+    replay = _idempotency_replay_response(
+        job,
+        scope="critic_finding_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+    )
+    if replay is not None:
+        return replay
     state = job.get("state")
     if not isinstance(state, dict):
         raise HTTPException(status_code=404, detail="Critic findings not found")
@@ -1590,6 +1738,7 @@ def _set_critic_fatal_flaw_status(
             section=updated_finding.get("section"),
             severity=updated_finding.get("severity"),
             actor=actor_value,
+            request_id=request_id_token,
         )
 
     response = dict(updated_finding)
@@ -1598,6 +1747,16 @@ def _set_critic_fatal_flaw_status(
     response["changed"] = bool(changed)
     if expected_status:
         response["if_match_status"] = expected_status
+    if request_id_token:
+        response["request_id"] = request_id_token
+    _store_idempotency_response(
+        job_id,
+        scope="critic_finding_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+        response=response,
+        persisted=not bool(dry_run),
+    )
     return response
 
 
@@ -1650,6 +1809,7 @@ def _set_critic_fatal_flaws_status_bulk(
     next_status: str,
     actor: Optional[str] = None,
     dry_run: bool = False,
+    request_id: Optional[str] = None,
     if_match_status: Optional[str] = None,
     apply_to_all: bool = False,
     finding_status: Optional[str] = None,
@@ -1688,10 +1848,35 @@ def _set_critic_fatal_flaws_status_bulk(
     has_selector = bool(requested_finding_ids or finding_status_filter or severity_filter or section_filter)
     if not has_selector and not apply_to_all:
         raise HTTPException(status_code=400, detail="Provide at least one selector or set apply_to_all=true")
+    request_id_token = _normalize_request_id(request_id)
 
     job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    idempotency_fingerprint = _idempotency_fingerprint(
+        {
+            "op": "critic_findings_bulk_status",
+            "job_id": str(job_id),
+            "next_status": str(next_status),
+            "dry_run": bool(dry_run),
+            "request_selectors": {
+                "apply_to_all": bool(apply_to_all),
+                "if_match_status": expected_status,
+                "finding_status": finding_status_filter,
+                "severity": severity_filter,
+                "section": section_filter,
+                "finding_ids": requested_finding_ids,
+            },
+        }
+    )
+    replay = _idempotency_replay_response(
+        job,
+        scope="critic_findings_bulk_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+    )
+    if replay is not None:
+        return replay
     state = job.get("state")
     if not isinstance(state, dict):
         raise HTTPException(status_code=404, detail="Critic findings not found")
@@ -1789,11 +1974,12 @@ def _set_critic_fatal_flaws_status_bulk(
                 severity=updated.get("severity"),
                 actor=actor_value,
                 batch_id=batch_id,
+                request_id=request_id_token,
             )
 
     matched_count = len(matched_items)
     changed_count = len(changed_items)
-    return {
+    response = {
         "job_id": str(job_id),
         "status": str((job or {}).get("status") or ""),
         "requested_status": next_status,
@@ -1814,6 +2000,17 @@ def _set_critic_fatal_flaws_status_bulk(
         },
         "updated_findings": matched_items,
     }
+    if request_id_token:
+        response["request_id"] = request_id_token
+    _store_idempotency_response(
+        job_id,
+        scope="critic_findings_bulk_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+        response=response,
+        persisted=not bool(dry_run),
+    )
+    return response
 
 
 def _validated_filter_token(
@@ -1973,10 +2170,31 @@ def _append_review_comment(
     version_id: Optional[str] = None,
     linked_finding_id: Optional[str] = None,
     linked_finding_severity: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    request_id_token = _normalize_request_id(request_id)
+    idempotency_fingerprint = _idempotency_fingerprint(
+        {
+            "op": "review_comment_add",
+            "job_id": str(job_id),
+            "section": section,
+            "message": message,
+            "author": author,
+            "version_id": version_id,
+            "linked_finding_id": linked_finding_id,
+        }
+    )
+    replay = _idempotency_replay_response(
+        job,
+        scope="review_comment_add",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+    )
+    if replay is not None:
+        return replay
 
     existing = job.get("review_comments")
     comments = [c for c in existing if isinstance(c, dict)] if isinstance(existing, list) else []
@@ -1995,6 +2213,8 @@ def _append_review_comment(
         comment["version_id"] = version_id
     if linked_finding_id:
         comment["linked_finding_id"] = linked_finding_id
+    if request_id_token:
+        comment["request_id"] = request_id_token
     comments.append(comment)
     _update_job(job_id, review_comments=comments[-500:])
     _record_job_event(
@@ -2005,6 +2225,15 @@ def _append_review_comment(
         version_id=version_id,
         author=author,
         linked_finding_id=linked_finding_id,
+        request_id=request_id_token,
+    )
+    _store_idempotency_response(
+        job_id,
+        scope="review_comment_add",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+        response=comment,
+        persisted=True,
     )
     return comment
 
@@ -2014,10 +2243,29 @@ def _set_review_comment_status(
     *,
     comment_id: str,
     next_status: str,
+    actor: Optional[str] = None,
+    request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    request_id_token = _normalize_request_id(request_id)
+    idempotency_fingerprint = _idempotency_fingerprint(
+        {
+            "op": "review_comment_status",
+            "job_id": str(job_id),
+            "comment_id": str(comment_id),
+            "next_status": str(next_status),
+        }
+    )
+    replay = _idempotency_replay_response(
+        job,
+        scope="review_comment_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+    )
+    if replay is not None:
+        return replay
 
     existing = job.get("review_comments")
     comments = [c for c in existing if isinstance(c, dict)] if isinstance(existing, list) else []
@@ -2025,6 +2273,7 @@ def _set_review_comment_status(
     changed = False
     status_transitioned = False
     now_iso = _utcnow_iso()
+    actor_value = str(actor or "").strip() or "api_user"
 
     next_comments: list[Dict[str, Any]] = []
     for item in comments:
@@ -2042,6 +2291,7 @@ def _set_review_comment_status(
         if current_status != next_status:
             current["status"] = next_status
             current["updated_ts"] = now_iso
+            current["updated_by"] = actor_value
             if next_status == "resolved":
                 current["resolved_at"] = current["updated_ts"]
             elif "resolved_at" in current:
@@ -2065,8 +2315,23 @@ def _set_review_comment_status(
             comment_id=comment_id,
             status=next_status,
             section=updated_comment.get("section"),
+            actor=actor_value,
+            request_id=request_id_token,
         )
-    return updated_comment
+    response = dict(updated_comment)
+    if request_id_token:
+        response["request_id"] = request_id_token
+    response["persisted"] = True
+    response["changed"] = bool(status_transitioned)
+    _store_idempotency_response(
+        job_id,
+        scope="review_comment_status",
+        request_id=request_id_token,
+        fingerprint=idempotency_fingerprint,
+        response=response,
+        persisted=True,
+    )
+    return response
 
 
 def _job_is_canceled(job_id: str) -> bool:
@@ -3081,6 +3346,7 @@ def acknowledge_status_critic_finding(
     request: Request,
     dry_run: bool = False,
     if_match_status: Optional[str] = Query(default=None),
+    request_id: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3094,6 +3360,7 @@ def acknowledge_status_critic_finding(
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
         if_match_status=(if_match_status or None),
+        request_id=_resolve_request_id(request, request_id),
     )
 
 
@@ -3108,6 +3375,7 @@ def reopen_status_critic_finding(
     request: Request,
     dry_run: bool = False,
     if_match_status: Optional[str] = Query(default=None),
+    request_id: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3121,6 +3389,7 @@ def reopen_status_critic_finding(
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
         if_match_status=(if_match_status or None),
+        request_id=_resolve_request_id(request, request_id),
     )
 
 
@@ -3135,6 +3404,7 @@ def resolve_status_critic_finding(
     request: Request,
     dry_run: bool = False,
     if_match_status: Optional[str] = Query(default=None),
+    request_id: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3148,6 +3418,7 @@ def resolve_status_critic_finding(
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
         if_match_status=(if_match_status or None),
+        request_id=_resolve_request_id(request, request_id),
     )
 
 
@@ -3168,6 +3439,7 @@ def bulk_status_critic_findings(job_id: str, req: CriticFindingsBulkStatusReques
         next_status=next_status,
         actor=_finding_actor_from_request(request),
         dry_run=bool(req.dry_run),
+        request_id=_resolve_request_id(request, req.request_id),
         if_match_status=(req.if_match_status or None),
         apply_to_all=bool(req.apply_to_all),
         finding_status=(req.finding_status or None),
@@ -3412,6 +3684,7 @@ def add_status_comment(job_id: str, req: JobCommentCreateRequest, request: Reque
         version_id=version_id,
         linked_finding_id=linked_finding_id,
         linked_finding_severity=linked_finding_severity,
+        request_id=_resolve_request_id(request, req.request_id),
     )
 
 
@@ -3420,13 +3693,24 @@ def add_status_comment(job_id: str, req: JobCommentCreateRequest, request: Reque
     response_model=ReviewCommentPublicResponse,
     response_model_exclude_none=True,
 )
-def resolve_status_comment(job_id: str, comment_id: str, request: Request):
+def resolve_status_comment(
+    job_id: str,
+    comment_id: str,
+    request: Request,
+    request_id: Optional[str] = Query(default=None),
+):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_job_tenant_write_access(request, job)
-    return _set_review_comment_status(job_id, comment_id=comment_id, next_status="resolved")
+    return _set_review_comment_status(
+        job_id,
+        comment_id=comment_id,
+        next_status="resolved",
+        actor=_finding_actor_from_request(request),
+        request_id=_resolve_request_id(request, request_id),
+    )
 
 
 @app.post(
@@ -3434,13 +3718,24 @@ def resolve_status_comment(job_id: str, comment_id: str, request: Request):
     response_model=ReviewCommentPublicResponse,
     response_model_exclude_none=True,
 )
-def reopen_status_comment(job_id: str, comment_id: str, request: Request):
+def reopen_status_comment(
+    job_id: str,
+    comment_id: str,
+    request: Request,
+    request_id: Optional[str] = Query(default=None),
+):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_job_tenant_write_access(request, job)
-    return _set_review_comment_status(job_id, comment_id=comment_id, next_status="open")
+    return _set_review_comment_status(
+        job_id,
+        comment_id=comment_id,
+        next_status="open",
+        actor=_finding_actor_from_request(request),
+        request_id=_resolve_request_id(request, request_id),
+    )
 
 
 @app.post("/hitl/approve")

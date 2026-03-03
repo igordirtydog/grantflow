@@ -1639,6 +1639,67 @@ def test_status_critic_single_status_if_match_returns_conflict_without_changes()
     assert commit_body.get("if_match_status") == "acknowledged"
 
 
+def test_status_critic_single_status_request_id_is_idempotent():
+    job_id = "critic-findings-single-request-id-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "single-rid-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    first = client.post(
+        f"/status/{job_id}/critic/findings/single-rid-f1/ack",
+        params={"request_id": "rid-single-1"},
+        headers={"X-Actor": "qa_reviewer"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["status"] == "acknowledged"
+    assert first_body.get("request_id") == "rid-single-1"
+    assert first_body.get("idempotent_replay") is not True
+
+    replay = client.post(
+        f"/status/{job_id}/critic/findings/single-rid-f1/ack",
+        params={"request_id": "rid-single-1"},
+        headers={"X-Actor": "qa_reviewer"},
+    )
+    assert replay.status_code == 200
+    replay_body = replay.json()
+    assert replay_body["status"] == "acknowledged"
+    assert replay_body["request_id"] == "rid-single-1"
+    assert replay_body["idempotent_replay"] is True
+
+    mismatch = client.post(
+        f"/status/{job_id}/critic/findings/single-rid-f1/resolve",
+        params={"request_id": "rid-single-1"},
+        headers={"X-Actor": "qa_reviewer"},
+    )
+    assert mismatch.status_code == 409
+    mismatch_detail = mismatch.json().get("detail") or {}
+    assert mismatch_detail.get("reason") == "request_id_reused_with_different_payload"
+
+    job = api_app_module.JOB_STORE.get(job_id) or {}
+    events = job.get("job_events") if isinstance(job.get("job_events"), list) else []
+    finding_events = [e for e in events if isinstance(e, dict) and e.get("type") == "critic_finding_status_changed"]
+    assert len(finding_events) == 1
+
+
 def test_status_critic_supports_legacy_state_critic_fatal_flaws_alias():
     job_id = "critic-findings-legacy-alias-1"
     api_app_module.JOB_STORE.set(
@@ -1923,6 +1984,72 @@ def test_status_critic_bulk_status_if_match_returns_conflict_without_changes():
     assert success_body["filters"]["if_match_status"] == "acknowledged"
     assert success_body["updated_findings"][0]["finding_id"] == "bulk-if-f2"
     assert success_body["updated_findings"][0]["status"] == "resolved"
+
+
+def test_status_critic_bulk_status_request_id_is_idempotent():
+    job_id = "critic-findings-bulk-request-id-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "bulk-rid-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        },
+                        {
+                            "finding_id": "bulk-rid-f2",
+                            "code": "LOGFRAME_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "open",
+                            "message": "Missing baseline.",
+                            "source": "rules",
+                        },
+                    ]
+                }
+            },
+        },
+    )
+
+    first = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        json={"next_status": "resolved", "apply_to_all": True, "request_id": "rid-bulk-1"},
+        headers={"X-Actor": "bulk_reviewer"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["changed_count"] == 2
+    assert first_body["request_id"] == "rid-bulk-1"
+    assert first_body.get("idempotent_replay") is not True
+
+    replay = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        json={"next_status": "resolved", "apply_to_all": True, "request_id": "rid-bulk-1"},
+        headers={"X-Actor": "bulk_reviewer"},
+    )
+    assert replay.status_code == 200
+    replay_body = replay.json()
+    assert replay_body["request_id"] == "rid-bulk-1"
+    assert replay_body["idempotent_replay"] is True
+    assert replay_body["changed_count"] == 2
+
+    mismatch = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        json={"next_status": "acknowledged", "apply_to_all": True, "request_id": "rid-bulk-1"},
+        headers={"X-Actor": "bulk_reviewer"},
+    )
+    assert mismatch.status_code == 409
+    mismatch_detail = mismatch.json().get("detail") or {}
+    assert mismatch_detail.get("reason") == "request_id_reused_with_different_payload"
+
 
 def test_status_critic_findings_list_and_detail_support_filters():
     job_id = "critic-findings-list-1"
@@ -2403,6 +2530,126 @@ def test_status_comments_endpoints_create_list_and_filter():
     status_resp = client.get(f"/status/{job_id}")
     assert status_resp.status_code == 200
     assert "review_comments" not in status_resp.json()
+
+
+def test_status_comments_create_request_id_is_idempotent():
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Education", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+    _wait_for_terminal_status(job_id)
+
+    first = client.post(
+        f"/status/{job_id}/comments",
+        json={
+            "section": "toc",
+            "message": "Clarify outcome assumptions.",
+            "author": "reviewer-idem",
+            "request_id": "rid-comment-create-1",
+        },
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["request_id"] == "rid-comment-create-1"
+    assert first_body.get("idempotent_replay") is not True
+
+    replay = client.post(
+        f"/status/{job_id}/comments",
+        json={
+            "section": "toc",
+            "message": "Clarify outcome assumptions.",
+            "author": "reviewer-idem",
+            "request_id": "rid-comment-create-1",
+        },
+    )
+    assert replay.status_code == 200
+    replay_body = replay.json()
+    assert replay_body["request_id"] == "rid-comment-create-1"
+    assert replay_body["idempotent_replay"] is True
+    assert replay_body["comment_id"] == first_body["comment_id"]
+
+    mismatch = client.post(
+        f"/status/{job_id}/comments",
+        json={
+            "section": "toc",
+            "message": "Different payload for same request id.",
+            "author": "reviewer-idem",
+            "request_id": "rid-comment-create-1",
+        },
+    )
+    assert mismatch.status_code == 409
+    mismatch_detail = mismatch.json().get("detail") or {}
+    assert mismatch_detail.get("reason") == "request_id_reused_with_different_payload"
+
+    job = api_app_module.JOB_STORE.get(job_id) or {}
+    events = job.get("job_events") if isinstance(job.get("job_events"), list) else []
+    comment_events = [e for e in events if isinstance(e, dict) and e.get("type") == "review_comment_added"]
+    assert len(comment_events) == 1
+    assert comment_events[0].get("request_id") == "rid-comment-create-1"
+
+
+def test_status_comments_status_request_id_is_idempotent():
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Governance", "country": "Jordan"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+    _wait_for_terminal_status(job_id)
+
+    create_resp = client.post(
+        f"/status/{job_id}/comments",
+        json={"section": "general", "message": "Needs tighter risks section."},
+    )
+    assert create_resp.status_code == 200
+    comment_id = create_resp.json()["comment_id"]
+
+    first = client.post(
+        f"/status/{job_id}/comments/{comment_id}/resolve",
+        params={"request_id": "rid-comment-status-1"},
+    )
+    assert first.status_code == 200
+    first_body = first.json()
+    assert first_body["status"] == "resolved"
+    assert first_body["request_id"] == "rid-comment-status-1"
+    assert first_body.get("idempotent_replay") is not True
+
+    replay = client.post(
+        f"/status/{job_id}/comments/{comment_id}/resolve",
+        params={"request_id": "rid-comment-status-1"},
+    )
+    assert replay.status_code == 200
+    replay_body = replay.json()
+    assert replay_body["status"] == "resolved"
+    assert replay_body["request_id"] == "rid-comment-status-1"
+    assert replay_body["idempotent_replay"] is True
+
+    mismatch = client.post(
+        f"/status/{job_id}/comments/{comment_id}/reopen",
+        params={"request_id": "rid-comment-status-1"},
+    )
+    assert mismatch.status_code == 409
+    mismatch_detail = mismatch.json().get("detail") or {}
+    assert mismatch_detail.get("reason") == "request_id_reused_with_different_payload"
+
+    job = api_app_module.JOB_STORE.get(job_id) or {}
+    events = job.get("job_events") if isinstance(job.get("job_events"), list) else []
+    status_events = [e for e in events if isinstance(e, dict) and e.get("type") == "review_comment_status_changed"]
+    matching = [e for e in status_events if e.get("comment_id") == comment_id]
+    assert len(matching) == 1
+    assert matching[0].get("request_id") == "rid-comment-status-1"
 
 
 def test_status_comments_endpoint_rejects_invalid_section_or_version():
