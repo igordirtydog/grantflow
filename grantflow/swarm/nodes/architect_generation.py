@@ -400,12 +400,24 @@ def build_architect_claim_citations(
 
     for idx, (statement_path, statement) in enumerate(bounded_claims):
         hit: Dict[str, Any]
-        confidence: float
-        hit, confidence = pick_best_architect_evidence_hit(
+        raw_claim_confidence: float
+        hit, raw_claim_confidence = pick_best_architect_evidence_hit(
             statement,
             hits,
             donor_id=donor_id,
             statement_path=statement_path,
+        )
+        retrieval_confidence = float(hit.get("retrieval_confidence") or 0.0) if hit else 0.0
+        rerank_score = float(hit.get("rerank_score") or 0.0) if hit else 0.0
+        confidence = round(
+            max(
+                raw_claim_confidence,
+                min(
+                    1.0,
+                    (raw_claim_confidence * 0.7) + (retrieval_confidence * 0.2) + (rerank_score * 0.1),
+                ),
+            ),
+            4,
         )
         traceability_status = _hit_traceability_status(hit) if hit else "missing"
         confidence_threshold = architect_claim_confidence_threshold(donor_id=donor_id, statement_path=statement_path)
@@ -433,6 +445,7 @@ def build_architect_claim_citations(
                 "statement": statement[:240],
                 "excerpt": str(hit.get("excerpt") or "")[:240] if hit else None,
                 "citation_confidence": round(confidence if hit else 0.1, 4),
+                "raw_claim_confidence": round(raw_claim_confidence if hit else 0.1, 4),
                 "evidence_score": round(confidence if hit else 0.1, 4),
                 "evidence_rank": hit.get("rank") if hit else None,
                 "retrieval_rank": hit.get("retrieval_rank") if hit else None,

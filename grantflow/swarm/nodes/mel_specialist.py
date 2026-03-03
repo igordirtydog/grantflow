@@ -23,6 +23,14 @@ from grantflow.swarm.versioning import append_draft_version
 
 MEL_CITATION_HIGH_CONFIDENCE_THRESHOLD = 0.35
 MEL_MAX_EVIDENCE_PROMPT_HITS = 3
+MEL_CITATION_DONOR_THRESHOLD_OVERRIDES: dict[str, float] = {
+    "usaid": 0.33,
+    "worldbank": 0.32,
+    "eu": 0.32,
+    "giz": 0.3,
+    "state_department": 0.3,
+    "us_state_department": 0.3,
+}
 
 
 class MELIndicatorOutput(BaseModel):
@@ -421,11 +429,19 @@ def _build_mel_citations(
     indicators: list[Dict[str, Any]],
     evidence_hits: Iterable[Dict[str, Any]],
     namespace: str,
+    donor_id: str,
 ) -> list[Dict[str, Any]]:
     hits = [h for h in evidence_hits if isinstance(h, dict)]
-    threshold = _bounded_float(
+    base_threshold = _bounded_float(
         getattr(config.rag, "mel_citation_high_confidence_threshold", MEL_CITATION_HIGH_CONFIDENCE_THRESHOLD),
         default=MEL_CITATION_HIGH_CONFIDENCE_THRESHOLD,
+        low=0.0,
+        high=1.0,
+    )
+    donor_key = str(donor_id or "").strip().lower()
+    threshold = _bounded_float(
+        MEL_CITATION_DONOR_THRESHOLD_OVERRIDES.get(donor_key, base_threshold),
+        default=base_threshold,
         low=0.0,
         high=1.0,
     )
@@ -509,6 +525,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
     namespace = strategy.get_rag_collection()
+    donor_id = str(state.get("donor_id") or state.get("donor") or getattr(strategy, "donor_id", "donor"))
     query_text = _build_query_text(state)
     top_k = _bounded_int(
         getattr(config.rag, "mel_top_k", getattr(config.rag, "default_top_k", 5)),
@@ -668,6 +685,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         indicators=indicators,
         evidence_hits=retrieval_hits,
         namespace=namespace,
+        donor_id=donor_id,
     )
     mel_generation_meta: Dict[str, Any] = {
         "engine": generation_engine,

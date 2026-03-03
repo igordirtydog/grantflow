@@ -108,6 +108,8 @@ def score_architect_evidence_hit(
 
     rank = int(hit.get("rank") or 999)
     rank_bonus = max(0.0, 1.0 - (rank - 1) * 0.15)
+    retrieval_confidence = float(hit.get("retrieval_confidence") or 0.0)
+    rerank_score = float(hit.get("rerank_score") or 0.0)
     page_bonus = 0.05 if hit.get("page") is not None else 0.0
     source_bonus = 0.05 if hit.get("source") else 0.0
     donor_key = str(donor_id or "").strip().lower()
@@ -122,9 +124,11 @@ def score_architect_evidence_hit(
         generic_penalty = min(0.1, generic_overlap * 0.02)
 
     score = (
-        (0.65 * excerpt_overlap)
-        + (0.15 * label_overlap)
-        + (0.15 * rank_bonus)
+        (0.55 * excerpt_overlap)
+        + (0.12 * label_overlap)
+        + (0.10 * rank_bonus)
+        + (0.15 * retrieval_confidence)
+        + (0.08 * rerank_score)
         + page_bonus
         + source_bonus
         + priority_bonus
