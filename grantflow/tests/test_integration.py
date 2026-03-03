@@ -3663,6 +3663,8 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["citations"]["citation_confidence_avg"] is not None
     assert body["citations"]["citation_type_counts_total"]["rag_claim_support"] >= 1
     assert body["citations"]["citation_type_counts_total"]["fallback_namespace"] >= 1
+
+
     assert body["citations"]["architect_citation_type_counts_total"]["rag_claim_support"] >= 1
     assert body["citations"]["mel_citation_type_counts_total"]["fallback_namespace"] >= 1
     assert body["citations"]["low_confidence_citation_count"] >= 1
@@ -3776,6 +3778,39 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert finding_severity_filtered_body["filters"]["finding_severity"] == "high"
     assert finding_severity_filtered_body["job_count"] >= 1
     assert finding_severity_filtered_body["finding_severity_counts"]["high"] >= 1
+
+
+def test_portfolio_filters_accept_legacy_state_donor_alias():
+    api_app_module.JOB_STORE.set(
+        "portfolio-legacy-donor-job",
+        {
+            "status": "done",
+            "hitl_enabled": False,
+            "state": {
+                "donor": "LEGACY_TEST_DONOR",
+                "quality_score": 7.0,
+                "critic_score": 7.0,
+                "needs_revision": False,
+            },
+            "job_events": [
+                {"event_id": "legacy1", "ts": "2026-02-25T10:00:00+00:00", "type": "status_changed", "to_status": "done"}
+            ],
+        },
+    )
+
+    metrics = client.get("/portfolio/metrics", params={"donor_id": "legacy_test_donor"})
+    assert metrics.status_code == 200
+    metrics_body = metrics.json()
+    assert metrics_body["filters"]["donor_id"] == "legacy_test_donor"
+    assert metrics_body["job_count"] >= 1
+    assert int(metrics_body["donor_counts"].get("legacy_test_donor") or 0) >= 1
+
+    quality = client.get("/portfolio/quality", params={"donor_id": "legacy_test_donor"})
+    assert quality.status_code == 200
+    quality_body = quality.json()
+    assert quality_body["filters"]["donor_id"] == "legacy_test_donor"
+    assert quality_body["job_count"] >= 1
+    assert int(quality_body["donor_counts"].get("legacy_test_donor") or 0) >= 1
 
 
 def test_portfolio_quality_export_endpoint_returns_csv():

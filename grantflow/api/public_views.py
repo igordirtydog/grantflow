@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, cast
 from grantflow.api.csv_utils import csv_text_from_mapping
 from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.findings import bind_findings_to_latest_versions, finding_primary_id, normalize_findings
+from grantflow.swarm.state_contract import normalized_state_copy, state_donor_id
 
 PORTFOLIO_QUALITY_SIGNAL_WEIGHTS: dict[str, int] = {
     "high_severity_findings_total": 5,
@@ -41,6 +42,20 @@ REVIEW_WORKFLOW_STATE_FILTER_VALUES = {"pending", "overdue"}
 REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS = 48
 GROUNDING_FALLBACK_HIGH_THRESHOLD = 0.8
 GROUNDING_FALLBACK_MEDIUM_THRESHOLD = 0.5
+
+
+def _job_state_dict(job: Dict[str, Any]) -> Dict[str, Any]:
+    state = job.get("state") if isinstance(job.get("state"), dict) else {}
+    return dict(normalized_state_copy(state))
+
+
+def _job_donor_id(job: Dict[str, Any], *, default: str = "") -> str:
+    donor_id = state_donor_id(_job_state_dict(job), default="")
+    if donor_id:
+        return donor_id
+    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
+    token = str(metadata.get("donor_id") or metadata.get("donor") or "").strip().lower()
+    return token or default
 
 
 def _job_warning_level(job: Dict[str, Any]) -> str:
@@ -1203,18 +1218,9 @@ def _public_job_quality_readiness_payload(
     if not expected_doc_families:
         return None
 
-    state = job.get("state")
-    state_dict: Dict[str, Any] = state if isinstance(state, dict) else {}
-    donor_id = (
-        str(
-            rag_readiness.get("donor_id")
-            or client_metadata.get("donor_id")
-            or state_dict.get("donor_id")
-            or state_dict.get("donor")
-            or ""
-        ).strip()
-        or None
-    )
+    state_dict = _job_state_dict(job)
+    readiness_donor = str(rag_readiness.get("donor_id") or client_metadata.get("donor_id") or "").strip().lower()
+    donor_id = readiness_donor or _job_donor_id(job) or None
 
     inventory_payload = public_ingest_inventory_payload(ingest_inventory_rows or [], donor_id=donor_id)
     doc_family_counts_raw = inventory_payload.get("doc_family_counts")
@@ -1592,8 +1598,7 @@ def public_portfolio_metrics_payload(
         if not isinstance(job, dict):
             continue
         job_status = str(job.get("status") or "")
-        state = job.get("state") if isinstance(job.get("state"), dict) else {}
-        job_donor = str((state or {}).get("donor_id") or (state or {}).get("donor") or "")
+        job_donor = _job_donor_id(job)
         job_hitl = bool(job.get("hitl_enabled"))
 
         if donor_id and job_donor != donor_id:
@@ -1619,8 +1624,7 @@ def public_portfolio_metrics_payload(
     for job_id, job in filtered:
         job_status = str(job.get("status") or "")
         status_counts[job_status] = status_counts.get(job_status, 0) + 1
-        state = job.get("state") if isinstance(job.get("state"), dict) else {}
-        job_donor = str((state or {}).get("donor_id") or (state or {}).get("donor") or "unknown")
+        job_donor = _job_donor_id(job, default="unknown")
         donor_counts[job_donor] = donor_counts.get(job_donor, 0) + 1
         job_warning_level = _job_warning_level(job)
         warning_level_counts[job_warning_level] = warning_level_counts.get(job_warning_level, 0) + 1
@@ -1696,8 +1700,7 @@ def public_portfolio_quality_payload(
         if not isinstance(job, dict):
             continue
         job_status = str(job.get("status") or "")
-        state = job.get("state") if isinstance(job.get("state"), dict) else {}
-        job_donor = str((state or {}).get("donor_id") or (state or {}).get("donor") or "")
+        job_donor = _job_donor_id(job)
         job_hitl = bool(job.get("hitl_enabled"))
 
         if donor_id and job_donor != donor_id:
@@ -1732,8 +1735,7 @@ def public_portfolio_quality_payload(
     for job_id, job in filtered:
         job_status = str(job.get("status") or "")
         status_counts[job_status] = status_counts.get(job_status, 0) + 1
-        state = job.get("state") if isinstance(job.get("state"), dict) else {}
-        job_donor = str((state or {}).get("donor_id") or (state or {}).get("donor") or "unknown")
+        job_donor = _job_donor_id(job, default="unknown")
         donor_counts[job_donor] = donor_counts.get(job_donor, 0) + 1
         job_warning_level = _job_warning_level(job)
         warning_level_counts[job_warning_level] = warning_level_counts.get(job_warning_level, 0) + 1

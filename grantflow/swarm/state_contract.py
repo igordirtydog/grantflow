@@ -110,6 +110,11 @@ def state_iteration(state: Mapping[str, Any], default: int = 0) -> int:
     return _as_int(state.get("iteration_count"), default=_as_int(state.get("iteration"), default=default))
 
 
+def normalized_state_copy(state: Any) -> GrantFlowState:
+    raw = dict(state) if isinstance(state, Mapping) else {}
+    return normalize_state_contract(raw)
+
+
 def normalize_state_contract(state: MutableMapping[str, Any]) -> GrantFlowState:
     donor_id = state_donor_id(state)
     if donor_id:

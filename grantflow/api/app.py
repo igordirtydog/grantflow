@@ -84,7 +84,7 @@ from grantflow.swarm.graph import grantflow_graph
 from grantflow.swarm.hitl import HITLStatus, hitl_manager
 from grantflow.swarm.retrieval_query import donor_query_preset_terms
 from grantflow.swarm.citations import citation_traceability_status
-from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id
+from grantflow.swarm.state_contract import normalize_state_contract, normalized_state_copy, state_donor_id
 
 app = FastAPI(
     title="GrantFlow API",
@@ -926,6 +926,21 @@ def _job_tenant_id(job: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _job_state_dict(job: Dict[str, Any]) -> Dict[str, Any]:
+    state = job.get("state") if isinstance(job.get("state"), dict) else {}
+    return dict(normalized_state_copy(state))
+
+
+def _job_donor_id(job: Dict[str, Any], *, default: str = "") -> str:
+    state_dict = _job_state_dict(job)
+    donor_id = state_donor_id(state_dict, default="")
+    if donor_id:
+        return donor_id
+    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
+    token = str(metadata.get("donor_id") or metadata.get("donor") or "").strip().lower()
+    return token or default
+
+
 def _checkpoint_tenant_id(checkpoint: Dict[str, Any]) -> Optional[str]:
     if not isinstance(checkpoint, dict):
         return None
@@ -1066,7 +1081,9 @@ def _resolve_export_inputs(
     state_payload = payload_root.get("state") if isinstance(payload_root.get("state"), dict) else payload_root
     payload = state_payload if isinstance(state_payload, dict) else {}
 
-    donor_id = req.donor_id or payload.get("donor") or payload.get("donor_id") or "grantflow"
+    payload_state = dict(normalized_state_copy(payload))
+    req_donor = str(req.donor_id or "").strip().lower()
+    donor_id = req_donor or state_donor_id(payload_state, default="grantflow")
     toc = req.toc_draft or payload.get("toc_draft") or payload.get("toc") or {}
     logframe = req.logframe_draft or payload.get("logframe_draft") or payload.get("mel") or {}
     citations = payload.get("citations") or []
@@ -1089,7 +1106,7 @@ def _resolve_export_inputs(
         review_comments = []
     citations = [c for c in citations if isinstance(c, dict)]
     critic_findings = normalize_findings(critic_findings, default_source="rules")
-    critic_findings = bind_findings_to_latest_versions(critic_findings, state=payload)
+    critic_findings = bind_findings_to_latest_versions(critic_findings, state=payload_state)
     review_comments = [c for c in review_comments if isinstance(c, dict)]
     return toc, logframe, str(donor_id), citations, critic_findings, review_comments
 
@@ -2703,15 +2720,8 @@ def get_status_export_payload(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_job_tenant_read_access(request, job)
     job = _normalize_critic_fatal_flaws_for_job(job_id) or job
-    state = job.get("state")
-    state_dict = state if isinstance(state, dict) else {}
     job_tenant_id = _job_tenant_id(job)
-    donor = str(
-        state_dict.get("donor_id")
-        or state_dict.get("donor")
-        or ((job.get("client_metadata") or {}) if isinstance(job.get("client_metadata"), dict) else {}).get("donor_id")
-        or ""
-    ).strip()
+    donor = _job_donor_id(job)
     inventory_rows = _ingest_inventory(donor_id=donor or None, tenant_id=job_tenant_id)
     return public_job_export_payload(job_id, job, ingest_inventory_rows=inventory_rows)
 
@@ -2796,15 +2806,8 @@ def get_status_quality(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail="Job not found")
     _ensure_job_tenant_read_access(request, job)
     job = _normalize_critic_fatal_flaws_for_job(job_id) or job
-    state = job.get("state")
-    state_dict = state if isinstance(state, dict) else {}
     job_tenant_id = _job_tenant_id(job)
-    donor = str(
-        state_dict.get("donor_id")
-        or state_dict.get("donor")
-        or ((job.get("client_metadata") or {}) if isinstance(job.get("client_metadata"), dict) else {}).get("donor_id")
-        or ""
-    ).strip()
+    donor = _job_donor_id(job)
     inventory_rows = _ingest_inventory(donor_id=donor or None, tenant_id=job_tenant_id)
     return public_job_quality_payload(job_id, job, ingest_inventory_rows=inventory_rows)
 

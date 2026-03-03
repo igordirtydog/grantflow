@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from grantflow.swarm.state_contract import state_donor_id
+from grantflow.swarm.state_contract import state_donor_id, state_input_context
 
 _DONOR_QUERY_PRESETS: dict[str, list[str]] = {
     "usaid": [
@@ -124,7 +124,7 @@ def build_stage_query_text(
     toc_payload: Any = None,
 ) -> str:
     donor_id = state_donor_id(state, default="donor")
-    input_context = state.get("input_context")
+    input_context = state_input_context(state)
     context_hints = context_query_hints(input_context)
     donor_terms = donor_query_preset_terms(donor_id)
     toc_hints = toc_query_hints(toc_payload)

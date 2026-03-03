@@ -3,6 +3,7 @@ from __future__ import annotations
 from grantflow.swarm.nodes.discovery import validate_input_richness
 from grantflow.swarm.state_contract import (
     normalize_state_contract,
+    normalized_state_copy,
     set_state_donor_strategy,
     state_donor_id,
     state_donor_strategy,
@@ -100,3 +101,17 @@ def test_state_rag_namespace_prefers_canonical_field_and_normalizes_alias():
     out = normalize_state_contract(alias_only)
     assert out["rag_namespace"] == "tenant_b/eu_intpa"
     assert out["retrieval_namespace"] == "tenant_b/eu_intpa"
+
+
+def test_normalized_state_copy_keeps_original_mapping_unchanged():
+    source = {
+        "donor": "USAID",
+        "input": {"project": "Water"},
+        "llm_mode": "true",
+    }
+    out = normalized_state_copy(source)
+    assert out["donor_id"] == "usaid"
+    assert out["input_context"]["project"] == "Water"
+    assert out["llm_mode"] is True
+    assert "donor_id" not in source
+    assert "input_context" not in source

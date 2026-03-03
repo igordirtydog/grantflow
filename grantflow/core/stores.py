@@ -82,7 +82,7 @@ def restore_state_from_storage(state: Any) -> Any:
         return state
 
     restored = copy.deepcopy(state)
-    donor_id = restored.get("donor") or restored.get("donor_id")
+    donor_id = restored.get("donor_id") or restored.get("donor")
     if donor_id and "donor_strategy" not in restored and "strategy" not in restored:
         try:
             strategy = DonorFactory.get_strategy(str(donor_id))
