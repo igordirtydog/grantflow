@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import unicodedata
 from typing import Any, Dict, Optional
 
 import chromadb
@@ -10,6 +11,8 @@ import chromadb
 
 class VectorStore:
     """Thin stable wrapper over Chroma collections with namespace isolation."""
+
+    MAX_NAMESPACE_LENGTH = 80
 
     def __init__(self) -> None:
         self.prefix = os.getenv("CHROMA_COLLECTION_PREFIX", "grantflow")
@@ -42,10 +45,25 @@ class VectorStore:
         raw = str(namespace or "default").strip().lower()
         if not raw:
             return "default"
+
+        # Keep normalization stable across unicode inputs by folding to ASCII where possible.
+        # If folding drops all symbols, we still return a deterministic hashed namespace token.
+        folded = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+        if folded.strip():
+            raw = folded
+
         raw = raw.replace("/", "_").replace("\\", "_").replace(":", "_").replace(" ", "_")
         # Chroma collection names are safer with a constrained token set.
         normalized = re.sub(r"[^a-z0-9_.-]+", "_", raw)
         normalized = re.sub(r"_+", "_", normalized).strip("._-")
+        if not normalized:
+            digest = hashlib.sha1(raw.encode("utf-8", errors="ignore")).hexdigest()[:12]
+            normalized = f"ns_{digest}"
+        if len(normalized) > VectorStore.MAX_NAMESPACE_LENGTH:
+            digest = hashlib.sha1(normalized.encode("utf-8", errors="ignore")).hexdigest()[:10]
+            head_len = max(8, VectorStore.MAX_NAMESPACE_LENGTH - len(digest) - 1)
+            head = normalized[:head_len].rstrip("._-") or "ns"
+            normalized = f"{head}_{digest}"
         return normalized or "default"
 
     def _collection_name(self, namespace: str) -> str:

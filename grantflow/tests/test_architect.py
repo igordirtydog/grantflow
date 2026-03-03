@@ -153,10 +153,12 @@ def test_retrieve_architect_evidence_normalizes_traceability_and_deduplicates_hi
     assert hit["doc_id"]
     assert hit["chunk_id"] == "ch_1"
     assert hit["traceability_status"] == "complete"
+    assert hit["traceability_complete"] is True
     assert hit["namespace_normalized"] == "usaid_ads201"
     assert summary["traceability_counts"]["complete"] == 1
     assert summary["namespace_normalized"] == "usaid_ads201"
     assert summary.get("collection", "").startswith("grantflow_")
+    assert summary["hits"][0]["traceability_complete"] is True
 
 
 def test_architect_claim_citation_policy_marks_low_confidence_hits():

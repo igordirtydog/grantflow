@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Tuple
 
 from grantflow.core.config import config
 from grantflow.memory_bank.vector_store import vector_store
+from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.citation_source import citation_label_from_metadata, citation_source_from_metadata
 from grantflow.swarm.retrieval_query import build_stage_query_text
 from grantflow.swarm.state_contract import state_donor_id, state_input_context
@@ -154,14 +155,6 @@ def pick_best_architect_evidence_hit(
             best_hit = hit
             best_score = score
     return best_hit, best_score
-
-
-def _hit_traceability_status(*, doc_id: str, chunk_id: str, source: str, page: Any) -> str:
-    if doc_id and source:
-        return "complete"
-    if doc_id or chunk_id or source or page is not None:
-        return "partial"
-    return "missing"
 
 
 def _bounded_int(value: Any, *, default: int, low: int, high: int) -> int:
@@ -337,6 +330,9 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
                     "namespace_normalized": namespace_normalized,
                     "collection": collection,
                 }
+                traceability_status = citation_traceability_status(candidate)
+                candidate["traceability_status"] = traceability_status
+                candidate["traceability_complete"] = traceability_status == "complete"
                 query_tokens = _tokenize(query_variant)
                 hit_tokens = _tokenize(candidate.get("excerpt")) | _tokenize(
                     candidate.get("label") or candidate.get("source")
@@ -395,13 +391,9 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
         traceability_counts = {"complete": 0, "partial": 0, "missing": 0}
         for idx, hit in enumerate(hits):
             hit["rank"] = idx + 1
-            traceability_status = _hit_traceability_status(
-                doc_id=str(hit.get("doc_id") or ""),
-                chunk_id=str(hit.get("chunk_id") or ""),
-                source=str(hit.get("source") or ""),
-                page=hit.get("page"),
-            )
+            traceability_status = citation_traceability_status(hit)
             hit["traceability_status"] = traceability_status
+            hit["traceability_complete"] = traceability_status == "complete"
             traceability_counts[traceability_status] = int(traceability_counts.get(traceability_status, 0)) + 1
 
         summary["hits_count"] = len(hits)
@@ -426,6 +418,7 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
                     "retrieval_distance": h.get("retrieval_distance"),
                     "rerank_score": h.get("rerank_score"),
                     "traceability_status": h.get("traceability_status"),
+                    "traceability_complete": h.get("traceability_complete"),
                     "namespace": h.get("namespace"),
                     "namespace_normalized": h.get("namespace_normalized"),
                     "collection": h.get("collection"),

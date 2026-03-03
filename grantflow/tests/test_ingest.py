@@ -62,11 +62,14 @@ def test_ingest_pdf_prefers_uploaded_filename_as_source(monkeypatch):
     assert result["source"] == "usaid_ads201_policy.pdf"
     assert result["source_path"] == "/tmp/grantflow_ingest_1234.pdf"
     assert result["namespace_normalized"] == "usaid_ads201"
+    assert str(result["collection"]).startswith("grantflow_")
     assert calls["namespace"] == "usaid_ads201"
     assert calls["metadatas"]
     assert calls["metadatas"][0]["source"] == "usaid_ads201_policy.pdf"
     assert calls["metadatas"][0]["source_path"] == "/tmp/grantflow_ingest_1234.pdf"
     assert calls["metadatas"][0]["doc_family"] == "donor_policy"
+    assert calls["metadatas"][0]["collection"] == result["collection"]
+    assert calls["metadatas"][0]["doc_id"] == calls["ids"][0]
     assert calls["metadatas"][0]["namespace_normalized"] == "usaid_ads201"
     assert calls["ids"][0].startswith("usaid_ads201_")
 

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from grantflow.core.config import config
 from grantflow.memory_bank.vector_store import vector_store
+from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
     openai_compatible_llm_available,
@@ -340,17 +341,6 @@ def _extract_claim_strings(value: Any, path: str = "toc") -> list[tuple[str, str
     return claims
 
 
-def _hit_traceability_status(hit: Dict[str, Any]) -> str:
-    doc_id = str(hit.get("doc_id") or hit.get("chunk_id") or "").strip()
-    source = str(hit.get("source") or "").strip()
-    page = hit.get("page")
-    if doc_id and source:
-        return "complete"
-    if doc_id or source or page is not None:
-        return "partial"
-    return "missing"
-
-
 def build_architect_claim_citations(
     *,
     toc_payload: Dict[str, Any],
@@ -423,7 +413,7 @@ def build_architect_claim_citations(
             ),
             4,
         )
-        traceability_status = _hit_traceability_status(hit) if hit else "missing"
+        traceability_status = citation_traceability_status(hit) if hit else "missing"
         confidence_threshold = architect_claim_confidence_threshold(donor_id=donor_id, statement_path=statement_path)
         if hit and traceability_status == "complete" and confidence >= confidence_threshold:
             citation_type = "rag_claim_support"

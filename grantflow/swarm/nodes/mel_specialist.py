@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from grantflow.core.config import config
 from grantflow.memory_bank.vector_store import vector_store
 from grantflow.swarm.citation_source import citation_label_from_metadata, citation_source_from_metadata
-from grantflow.swarm.citations import append_citations
+from grantflow.swarm.citations import append_citations, citation_traceability_status
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
     openai_compatible_llm_available,
@@ -224,6 +224,9 @@ def _collect_retrieval_hits(
                 "namespace_normalized": namespace_normalized,
                 "collection": collection,
             }
+            traceability_status = citation_traceability_status(hit)
+            hit["traceability_status"] = traceability_status
+            hit["traceability_complete"] = traceability_status == "complete"
 
             signature = (hit.get("doc_id"), hit.get("chunk_id"), hit.get("source"), hit.get("page"))
             current = best_by_signature.get(signature)
@@ -303,17 +306,6 @@ def _pick_best_mel_evidence_hit(statement: str, hits: Iterable[Dict[str, Any]]) 
             best_score = score
             best_hit = hit
     return best_hit, round(min(1.0, best_score), 4)
-
-
-def _hit_traceability_status(hit: Dict[str, Any]) -> str:
-    doc_id = str(hit.get("doc_id") or hit.get("chunk_id") or "").strip()
-    source = str(hit.get("source") or "").strip()
-    page = hit.get("page")
-    if doc_id and source:
-        return "complete"
-    if doc_id or source or page is not None:
-        return "partial"
-    return "missing"
 
 
 def _indicator_from_hit(hit: Dict[str, Any], *, idx: int, namespace: str) -> Dict[str, Any]:
@@ -506,7 +498,7 @@ def _build_mel_citations(
                 hit, confidence = _pick_best_mel_evidence_hit(statement, hits)
         else:
             hit, confidence = {}, 0.1
-        traceability_status = _hit_traceability_status(hit) if hit else "missing"
+        traceability_status = citation_traceability_status(hit) if hit else "missing"
         if hit and traceability_status == "complete" and confidence >= threshold:
             citation_type = "rag_result"
         elif hit:
@@ -644,12 +636,20 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
                     "retrieval_confidence": hit.get("retrieval_confidence"),
                     "retrieval_distance": hit.get("retrieval_distance"),
                     "rerank_score": hit.get("rerank_score"),
+                    "traceability_status": hit.get("traceability_status"),
+                    "traceability_complete": hit.get("traceability_complete"),
                     "namespace": hit.get("namespace"),
                     "namespace_normalized": hit.get("namespace_normalized"),
                     "collection": hit.get("collection"),
                 }
                 for hit in retrieval_hits
             ]
+            traceability_statuses = [citation_traceability_status(hit) for hit in retrieval_hits]
+            rag_trace["traceability_counts"] = {
+                "complete": sum(1 for status in traceability_statuses if status == "complete"),
+                "partial": sum(1 for status in traceability_statuses if status == "partial"),
+                "missing": sum(1 for status in traceability_statuses if status == "missing"),
+            }
             rag_trace["avg_retrieval_confidence"] = round(
                 sum(float(hit.get("retrieval_confidence") or 0.0) for hit in retrieval_hits) / len(retrieval_hits),
                 4,

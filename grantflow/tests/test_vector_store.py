@@ -43,3 +43,19 @@ def test_namespace_trace_returns_requested_normalized_and_collection():
     assert trace["namespace"] == "Tenant A/USAID ADS 201 :: Phase#1"
     assert trace["namespace_normalized"] == "tenant_a_usaid_ads_201_phase_1"
     assert trace["collection"] == "grantflow_tenant_a_usaid_ads_201_phase_1"
+
+
+def test_normalize_namespace_non_ascii_is_stable_and_not_default():
+    normalized = VectorStore.normalize_namespace("ТестовыйНеймспейс")
+    assert normalized.startswith("ns_")
+    assert len(normalized) == 15
+    assert normalized != "default"
+    assert normalized == VectorStore.normalize_namespace("ТестовыйНеймспейс")
+
+
+def test_normalize_namespace_truncates_very_long_tokens_deterministically():
+    raw = "tenant-" + ("usaid-ads-201-" * 20)
+    normalized = VectorStore.normalize_namespace(raw)
+    assert len(normalized) <= VectorStore.MAX_NAMESPACE_LENGTH
+    assert normalized == VectorStore.normalize_namespace(raw)
+    assert normalized.rsplit("_", 1)[-1]

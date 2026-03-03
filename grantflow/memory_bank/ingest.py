@@ -80,12 +80,15 @@ def ingest_pdf_to_namespace(
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Загружает PDF в указанную коллекцию (namespace) донора."""
-    namespace_normalized = vector_store.normalize_namespace(namespace)
+    namespace_trace = vector_store.namespace_trace(namespace)
+    namespace_normalized = namespace_trace["namespace_normalized"]
+    collection = namespace_trace["collection"]
     pages = load_pdf_pages(pdf_path)
     chunk_records = chunk_pages(pages)
     metadata_payload = dict(metadata or {})
-    metadata_payload.setdefault("namespace", namespace)
+    metadata_payload.setdefault("namespace", namespace_trace["namespace"])
     metadata_payload["namespace_normalized"] = namespace_normalized
+    metadata_payload["collection"] = collection
     source_ref = str(metadata_payload.get("uploaded_filename") or metadata_payload.get("source") or "").strip()
     if not source_ref:
         source_ref = Path(pdf_path).name
@@ -117,6 +120,7 @@ def ingest_pdf_to_namespace(
                 **{
                     "source": source_ref,
                     "chunk": chunk_idx,
+                    "doc_id": doc_id,
                     "chunk_id": doc_id,
                     **({k: v for k, v in record.items() if k != "text"}),
                 },
@@ -129,6 +133,7 @@ def ingest_pdf_to_namespace(
     return {
         "namespace": namespace,
         "namespace_normalized": namespace_normalized,
+        "collection": collection,
         "source": source_ref,
         "source_path": pdf_path,
         "chunks_ingested": len(chunks),
