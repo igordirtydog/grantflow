@@ -450,3 +450,53 @@ def test_architect_llm_mode_without_api_key_uses_emergency_fallback(monkeypatch)
     assert generation_meta.get("architect_mode") == "llm"
     assert str(generation_meta.get("engine") or "").startswith("fallback:")
     assert "missing" in str(generation_meta.get("llm_fallback_reason") or "").lower()
+
+
+def test_architect_llm_prompt_receives_full_input_context_and_schema_contract(monkeypatch):
+    strategy = DonorFactory.get_strategy("usaid")
+    monkeypatch.setattr(architect_generation_module, "openai_compatible_llm_available", lambda: True)
+
+    schema_cls = strategy.get_toc_schema()
+    valid_payload, _ = _fallback_structured_toc(
+        schema_cls,
+        donor_id="usaid",
+        project="Digital Governance",
+        country="Kazakhstan",
+        revision_hint="",
+        evidence_hits=[],
+    )
+    captured: dict[str, object] = {}
+
+    def fake_llm_structured_toc(*args, **kwargs):
+        captured["input_context"] = kwargs.get("input_context")
+        captured["schema_contract_hint"] = kwargs.get("schema_contract_hint")
+        return valid_payload, "llm:mock", None
+
+    monkeypatch.setattr(architect_generation_module, "_llm_structured_toc", fake_llm_structured_toc)
+
+    state = {
+        "donor_id": "usaid",
+        "donor_strategy": strategy,
+        "input_context": {
+            "project": "Digital Governance",
+            "country": "Kazakhstan",
+            "sector": "Public Administration",
+            "budget_usd": 2500000,
+        },
+        "llm_mode": True,
+        "critic_notes": {},
+    }
+    _toc, validation, generation_meta, _claim_citations = generate_toc_under_contract(
+        state=state,
+        strategy=strategy,
+        evidence_hits=[],
+    )
+    assert validation["valid"] is True
+    assert generation_meta["llm_used"] is True
+    assert generation_meta["schema_contract_hint_present"] is True
+    assert generation_meta["input_context_key_count"] == 4
+    assert isinstance(captured.get("input_context"), dict)
+    assert captured["input_context"] == state["input_context"]
+    schema_hint = str(captured.get("schema_contract_hint") or "")
+    assert schema_hint
+    assert "project_goal" in schema_hint

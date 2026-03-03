@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import types
 from typing import Any, Dict, Iterable, Optional, Tuple, Type, Union, get_args, get_origin
 
@@ -69,6 +70,77 @@ def _short_evidence_hint(evidence_hits: Iterable[Dict[str, Any]]) -> str:
         if excerpt:
             return excerpt[:120]
     return ""
+
+
+def _safe_json(value: Any, *, max_chars: int = 1600) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        text = str(value)
+    text = " ".join(str(text).split())
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}..."
+
+
+def _type_label(annotation: Any) -> str:
+    annotation = _unwrap_optional(annotation)
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        inner = _type_label(args[0]) if args else "Any"
+        return f"list[{inner}]"
+    if origin is dict:
+        return "object"
+    if _is_basemodel_subclass(annotation):
+        return str(getattr(annotation, "__name__", "object"))
+    if isinstance(annotation, type):
+        return annotation.__name__
+    return str(annotation)
+
+
+def _field_description(field: Any) -> str:
+    description = getattr(field, "description", None)
+    if isinstance(description, str) and description.strip():
+        return description.strip()
+    field_info = getattr(field, "field_info", None)
+    if field_info is not None:
+        desc = getattr(field_info, "description", None)
+        if isinstance(desc, str) and desc.strip():
+            return desc.strip()
+    return ""
+
+
+def _field_required(field: Any) -> bool:
+    is_required_fn = getattr(field, "is_required", None)
+    if callable(is_required_fn):
+        try:
+            return bool(is_required_fn())
+        except Exception:
+            pass
+    required = getattr(field, "required", None)
+    if isinstance(required, bool):
+        return required
+    return False
+
+
+def _schema_contract_hint(schema_cls: Type[BaseModel], *, max_fields: int = 24) -> str:
+    fields = getattr(schema_cls, "model_fields", None)
+    if not isinstance(fields, dict):  # pydantic v1 fallback
+        fields = getattr(schema_cls, "__fields__", {})  # type: ignore[assignment]
+    if not isinstance(fields, dict) or not fields:
+        return ""
+
+    lines: list[str] = []
+    for field_name, field in list(fields.items())[:max_fields]:
+        annotation = getattr(field, "annotation", None) or getattr(field, "outer_type_", None) or str
+        required = "required" if _field_required(field) else "optional"
+        description = _field_description(field)
+        line = f"- {field_name}: {_type_label(annotation)} ({required})"
+        if description:
+            line += f" - {description}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _text_for_field(
@@ -254,8 +326,10 @@ def _llm_structured_toc(
     donor_id: str,
     project: str,
     country: str,
+    input_context: Dict[str, Any],
     revision_hint: str,
     evidence_hits: Iterable[Dict[str, Any]],
+    schema_contract_hint: str = "",
     validation_error_hint: Optional[str] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
     llm_kwargs = chat_openai_init_kwargs(model=config.llm.reasoning_model, temperature=0.1)
@@ -280,6 +354,11 @@ def _llm_structured_toc(
             f"Project: {project}\n"
             f"Country: {country}\n"
         )
+        if input_context:
+            human_prompt += f"Input context JSON: {_safe_json(input_context)}\n"
+        if schema_contract_hint:
+            human_prompt += "\nSchema contract (follow field names and types):\n"
+            human_prompt += f"{schema_contract_hint}\n"
         if revision_hint:
             human_prompt += f"Revision instructions from critic: {revision_hint}\n"
         sanitized_validation_error_hint = sanitize_validation_error_hint(validation_error_hint)
@@ -296,6 +375,7 @@ def _llm_structured_toc(
             )
         human_prompt += "\nDrafting constraints:\n"
         human_prompt += f"- {architect_donor_prompt_constraints(donor_id)}\n"
+        human_prompt += "- Keep output concrete; avoid placeholders like TBD/placeholder.\n"
         human_prompt += "\nReturn the structured object only."
 
         llm = ChatOpenAI(**llm_kwargs)
@@ -618,6 +698,7 @@ def generate_toc_under_contract(
     project = str(input_context.get("project") or "TBD project")
     country = str(input_context.get("country") or "TBD")
     revision_hint = state_revision_hint(state)
+    schema_contract_hint = _schema_contract_hint(schema_cls)
     llm_mode = state_llm_mode(state, default=False)
     llm_available = openai_compatible_llm_available()
     llm_error: Optional[str] = None
@@ -638,8 +719,10 @@ def generate_toc_under_contract(
             donor_id=donor_id,
             project=project,
             country=country,
+            input_context=input_context,
             revision_hint=revision_hint,
             evidence_hits=evidence_hits,
+            schema_contract_hint=schema_contract_hint,
             validation_error_hint=None,
         )
         if raw_payload:
@@ -655,8 +738,10 @@ def generate_toc_under_contract(
                     donor_id=donor_id,
                     project=project,
                     country=country,
+                    input_context=input_context,
                     revision_hint=revision_hint,
                     evidence_hits=evidence_hits,
+                    schema_contract_hint=schema_contract_hint,
                     validation_error_hint=llm_validation_error,
                 )
                 if raw_payload:
@@ -725,6 +810,8 @@ def generate_toc_under_contract(
         "fallback_class": fallback_class,
         "architect_mode": "llm" if llm_mode else "deterministic",
         "schema_name": validation["schema_name"],
+        "schema_contract_hint_present": bool(schema_contract_hint),
+        "input_context_key_count": len(input_context),
         "claim_coverage": claim_citation_stats,
         "citation_policy": {
             "default_high_confidence_threshold": ARCHITECT_CITATION_HIGH_CONFIDENCE_THRESHOLD,
