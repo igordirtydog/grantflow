@@ -215,6 +215,20 @@ def test_word_export_uses_donor_specific_sections_for_giz_and_state_department()
     assert "Risk Mitigation" in state_text
 
 
+def test_word_export_includes_template_profile_and_missing_sections_summary():
+    eu_toc_incomplete = {
+        "toc": {
+            "overall_objective": {"objective_id": "OO1", "title": "Digital governance", "rationale": "EU fit"},
+        }
+    }
+    doc = Document(BytesIO(build_docx_from_toc(eu_toc_incomplete, "eu")))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "Template Profile" in text
+    assert "EU Intervention Logic (eu)" in text
+    assert "Coverage rate: 33%" in text
+    assert "Missing sections: specific_objectives, expected_outcomes" in text
+
+
 def test_excel_export_includes_citations_sheet():
     logframe_draft = {
         "indicators": [
@@ -254,6 +268,26 @@ def test_excel_export_includes_citations_sheet():
     comments_rows = list(wb["Review Comments"].iter_rows(values_only=True))
     assert comments_rows[0][:4] == ("Status", "Section", "Author", "Message")
     assert any(row[6] == "2026-02-25T10:00:00Z" for row in comments_rows[1:])
+
+
+def test_excel_export_includes_template_meta_sheet():
+    eu_toc_incomplete = {
+        "toc": {
+            "overall_objective": {"objective_id": "OO1", "title": "Digital governance", "rationale": "EU fit"},
+        }
+    }
+    content = build_xlsx_from_logframe({"indicators": []}, "eu", toc_draft=eu_toc_incomplete)
+    wb = load_workbook(BytesIO(content))
+    assert "Template Meta" in wb.sheetnames
+
+    rows = list(wb["Template Meta"].iter_rows(values_only=True))
+    row_map = {str(row[0]): row[1] for row in rows[1:] if row and row[0]}
+    assert row_map["Template Key"] == "eu"
+    assert row_map["Template Display"] == "EU Intervention Logic"
+    assert float(row_map["Coverage Rate"]) < 0.34
+    assert float(row_map["Coverage Rate"]) > 0.32
+    assert "specific_objectives" in str(row_map["Missing Sections"])
+    assert "expected_outcomes" in str(row_map["Missing Sections"])
 
 
 def test_exporters_accept_critic_finding_id_alias():

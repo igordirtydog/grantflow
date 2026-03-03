@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
+from grantflow.exporters.template_profile import build_export_template_profile, normalize_export_template_key
+
 
 def _autosize_columns(ws) -> None:
     for col in ws.columns:
@@ -21,10 +23,6 @@ def _autosize_columns(ws) -> None:
                 pass
         adjusted_width = min(max_length + 2, 60)
         ws.column_dimensions[column].width = adjusted_width
-
-
-def _normalize_donor_id(donor_id: str) -> str:
-    return str(donor_id or "").strip().lower()
 
 
 def _toc_root(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -124,6 +122,35 @@ def _add_review_comments_sheet(wb: Workbook, review_comments: list[Dict[str, Any
                 c.get("comment_id", ""),
             ]
         )
+    _autosize_columns(ws)
+
+
+def _add_template_meta_sheet(wb: Workbook, profile: Dict[str, Any]) -> None:
+    ws = wb.create_sheet("Template Meta")
+    headers = ["Field", "Value"]
+    border = _apply_table_header(ws, headers)
+    rows = [
+        ("Donor ID", profile.get("donor_id", "")),
+        ("Template Key", profile.get("template_key", "")),
+        ("Template Display", profile.get("template_display_name", "")),
+        ("Coverage Rate", profile.get("coverage_rate", 0.0)),
+        (
+            "Required Sections",
+            ", ".join(str(x) for x in (profile.get("required_sections") or [])),
+        ),
+        (
+            "Present Sections",
+            ", ".join(str(x) for x in (profile.get("present_sections") or [])),
+        ),
+        (
+            "Missing Sections",
+            ", ".join(str(x) for x in (profile.get("missing_sections") or [])),
+        ),
+    ]
+    for row_idx, (field_name, value) in enumerate(rows, start=2):
+        ws.append([field_name, value])
+        ws.cell(row=row_idx, column=1).border = border
+        ws.cell(row=row_idx, column=2).border = border
     _autosize_columns(ws)
 
 
@@ -519,10 +546,11 @@ def build_xlsx_from_logframe(
         ws.cell(row=row, column=5, value=ind.get("baseline", "TBD")).border = thin_border
         ws.cell(row=row, column=6, value=ind.get("target", "TBD")).border = thin_border
 
-    donor_key = _normalize_donor_id(donor_id)
     toc_payload = toc_draft if isinstance(toc_draft, dict) else {}
     if not toc_payload:
         toc_payload = logframe_draft if isinstance(logframe_draft, dict) else {}
+    profile = build_export_template_profile(donor_id=donor_id, toc_payload=_toc_root(toc_payload))
+    donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
         _add_usaid_results_sheet(wb, toc_payload)
     elif donor_key == "eu":
@@ -535,6 +563,7 @@ def build_xlsx_from_logframe(
         _add_state_department_results_sheet(wb, toc_payload)
 
     _autosize_columns(ws)
+    _add_template_meta_sheet(wb, profile)
     _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
     _add_critic_findings_sheet(wb, critic_findings or [])
     _add_review_comments_sheet(wb, review_comments or [])
