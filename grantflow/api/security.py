@@ -26,6 +26,8 @@ PROTECTED_OPERATIONS = {
     ("get", "/status/{job_id}/metrics"),
     ("get", "/status/{job_id}/quality"),
     ("get", "/status/{job_id}/critic"),
+    ("get", "/status/{job_id}/critic/findings"),
+    ("get", "/status/{job_id}/critic/findings/{finding_id}"),
     ("post", "/status/{job_id}/critic/findings/{finding_id}/ack"),
     ("post", "/status/{job_id}/critic/findings/{finding_id}/open"),
     ("post", "/status/{job_id}/critic/findings/{finding_id}/resolve"),

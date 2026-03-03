@@ -358,6 +358,41 @@ class CriticFatalFlawPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class CriticFindingsListFiltersPublicResponse(BaseModel):
+    status: Optional[str] = None
+    severity: Optional[str] = None
+    section: Optional[str] = None
+    version_id: Optional[str] = None
+    workflow_state: Optional[str] = None
+    include_resolved: bool = True
+    overdue_after_hours: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CriticFindingsListSummaryPublicResponse(BaseModel):
+    finding_count: int
+    open_finding_count: int
+    acknowledged_finding_count: int
+    resolved_finding_count: int
+    pending_finding_count: int
+    overdue_finding_count: int
+    finding_status_counts: Dict[str, int]
+    finding_severity_counts: Dict[str, int]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CriticFindingsListPublicResponse(BaseModel):
+    job_id: str
+    status: str
+    filters: CriticFindingsListFiltersPublicResponse
+    summary: CriticFindingsListSummaryPublicResponse
+    findings: list[CriticFatalFlawPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobCriticPublicResponse(BaseModel):
     job_id: str
     status: str

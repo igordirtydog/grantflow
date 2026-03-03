@@ -42,6 +42,7 @@ from grantflow.api.public_views import (
 )
 from grantflow.api.schemas import (
     CriticFindingsBulkStatusPublicResponse,
+    CriticFindingsListPublicResponse,
     CriticFatalFlawPublicResponse,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
@@ -1756,6 +1757,106 @@ def _set_critic_fatal_flaws_status_bulk(
     }
 
 
+def _validated_filter_token(
+    value: Optional[str],
+    *,
+    allowed: set[str],
+    detail: str,
+) -> Optional[str]:
+    token = str(value or "").strip().lower()
+    if not token:
+        return None
+    if token not in allowed:
+        raise HTTPException(status_code=400, detail=detail)
+    return token
+
+
+def _critic_findings_list_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    finding_status: Optional[str] = None,
+    severity: Optional[str] = None,
+    section: Optional[str] = None,
+    version_id: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    include_resolved: bool = True,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+) -> Dict[str, Any]:
+    workflow_payload = public_job_review_workflow_payload(
+        job_id,
+        job,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    findings_raw = workflow_payload.get("findings")
+    findings = [dict(item) for item in findings_raw if isinstance(item, dict)] if isinstance(findings_raw, list) else []
+
+    filtered: list[Dict[str, Any]] = []
+    for row in findings:
+        row_status = str(row.get("status") or "open").strip().lower()
+        row_severity = str(row.get("severity") or "").strip().lower()
+        row_section = str(row.get("section") or "").strip().lower()
+        row_version_id = str(row.get("version_id") or "").strip() or None
+        row_workflow_state = str(row.get("workflow_state") or "").strip().lower()
+
+        if not include_resolved and row_status == "resolved":
+            continue
+        if finding_status is not None and row_status != finding_status:
+            continue
+        if severity is not None and row_severity != severity:
+            continue
+        if section is not None and row_section != section:
+            continue
+        if version_id is not None and row_version_id != version_id:
+            continue
+        if workflow_state is not None and row_workflow_state != workflow_state:
+            continue
+        filtered.append(row)
+
+    finding_status_counts = {"open": 0, "acknowledged": 0, "resolved": 0}
+    finding_severity_counts = {"high": 0, "medium": 0, "low": 0}
+    pending_finding_count = 0
+    overdue_finding_count = 0
+    for row in filtered:
+        row_status = str(row.get("status") or "open").strip().lower()
+        row_severity = str(row.get("severity") or "").strip().lower()
+        row_workflow_state = str(row.get("workflow_state") or "").strip().lower()
+        if row_status in finding_status_counts:
+            finding_status_counts[row_status] += 1
+        if row_severity in finding_severity_counts:
+            finding_severity_counts[row_severity] += 1
+        if row_workflow_state == "pending":
+            pending_finding_count += 1
+        elif row_workflow_state == "overdue":
+            overdue_finding_count += 1
+
+    return {
+        "job_id": str(job_id),
+        "status": str(job.get("status") or ""),
+        "filters": {
+            "status": finding_status,
+            "severity": severity,
+            "section": section,
+            "version_id": version_id,
+            "workflow_state": workflow_state,
+            "include_resolved": bool(include_resolved),
+            "overdue_after_hours": int(overdue_after_hours),
+        },
+        "summary": {
+            "finding_count": len(filtered),
+            "open_finding_count": int(finding_status_counts.get("open", 0)),
+            "acknowledged_finding_count": int(finding_status_counts.get("acknowledged", 0)),
+            "resolved_finding_count": int(finding_status_counts.get("resolved", 0)),
+            "pending_finding_count": pending_finding_count,
+            "overdue_finding_count": overdue_finding_count,
+            "finding_status_counts": finding_status_counts,
+            "finding_severity_counts": finding_severity_counts,
+        },
+        "findings": filtered,
+    }
+
+
 def _linked_finding_severity(job: Dict[str, Any], linked_finding_id: Optional[str]) -> Optional[str]:
     token = str(linked_finding_id or "").strip()
     if not token:
@@ -2814,6 +2915,100 @@ def get_status_critic(job_id: str, request: Request):
     _ensure_job_tenant_read_access(request, job)
     job = _normalize_critic_fatal_flaws_for_job(job_id) or job
     return public_job_critic_payload(job_id, job)
+
+
+@app.get(
+    "/status/{job_id}/critic/findings",
+    response_model=CriticFindingsListPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_status_critic_findings(
+    job_id: str,
+    request: Request,
+    status: Optional[str] = Query(default=None),
+    severity: Optional[str] = Query(default=None),
+    section: Optional[str] = Query(default=None),
+    version_id: Optional[str] = Query(default=None),
+    workflow_state: Optional[str] = Query(default=None),
+    include_resolved: bool = True,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+):
+    require_api_key_if_configured(request, for_read=True)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+
+    finding_status = _validated_filter_token(
+        status,
+        allowed=CRITIC_FINDING_STATUSES,
+        detail="Unsupported finding status filter",
+    )
+    finding_severity = _validated_filter_token(
+        severity,
+        allowed={"high", "medium", "low"},
+        detail="Unsupported finding severity filter",
+    )
+    finding_section = _validated_filter_token(
+        section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding section filter",
+    )
+    finding_workflow_state = _validated_filter_token(
+        workflow_state,
+        allowed=set(REVIEW_WORKFLOW_STATE_FILTER_VALUES) | {"resolved"},
+        detail="Unsupported workflow_state filter",
+    )
+    if overdue_after_hours <= 0:
+        raise HTTPException(status_code=400, detail="overdue_after_hours must be > 0")
+
+    return _critic_findings_list_payload(
+        job_id,
+        job,
+        finding_status=finding_status,
+        severity=finding_severity,
+        section=finding_section,
+        version_id=(str(version_id or "").strip() or None),
+        workflow_state=finding_workflow_state,
+        include_resolved=bool(include_resolved),
+        overdue_after_hours=int(overdue_after_hours),
+    )
+
+
+@app.get(
+    "/status/{job_id}/critic/findings/{finding_id}",
+    response_model=CriticFatalFlawPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_status_critic_finding(
+    job_id: str,
+    finding_id: str,
+    request: Request,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+):
+    require_api_key_if_configured(request, for_read=True)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+
+    if overdue_after_hours <= 0:
+        raise HTTPException(status_code=400, detail="overdue_after_hours must be > 0")
+
+    payload = _critic_findings_list_payload(
+        job_id,
+        job,
+        overdue_after_hours=int(overdue_after_hours),
+    )
+    findings = payload.get("findings")
+    for item in findings if isinstance(findings, list) else []:
+        if not isinstance(item, dict):
+            continue
+        if finding_primary_id(item) == finding_id:
+            return item
+    raise HTTPException(status_code=404, detail="Critic finding not found")
 
 
 @app.post(

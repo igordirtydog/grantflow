@@ -1673,6 +1673,100 @@ def test_status_critic_bulk_status_updates_support_filters_and_apply_all():
     assert all(str(item.get("status") or "") == "resolved" for item in critic_flaws)
 
 
+def test_status_critic_findings_list_and_detail_support_filters():
+    job_id = "critic-findings-list-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "quality_score": 6.0,
+                "critic_score": 6.0,
+                "needs_revision": True,
+                "critic_notes": {
+                    "engine": "rules",
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "f-open",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "version_id": "toc_v2",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        },
+                        {
+                            "finding_id": "f-ack",
+                            "code": "LOGFRAME_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "version_id": "logframe_v1",
+                            "acknowledged_at": "2026-02-27T09:30:00+00:00",
+                            "message": "Missing baseline.",
+                            "source": "rules",
+                        },
+                        {
+                            "finding_id": "f-resolved",
+                            "code": "GENERAL_REVIEW_NOTE",
+                            "severity": "low",
+                            "section": "general",
+                            "status": "resolved",
+                            "version_id": None,
+                            "resolved_at": "2026-02-27T10:40:00+00:00",
+                            "message": "General review note.",
+                            "source": "rules",
+                        },
+                    ],
+                    "rule_checks": [],
+                },
+            },
+        },
+    )
+
+    list_resp = client.get(f"/status/{job_id}/critic/findings")
+    assert list_resp.status_code == 200
+    list_body = list_resp.json()
+    assert list_body["job_id"] == job_id
+    assert list_body["summary"]["finding_count"] == 3
+    assert len(list_body["findings"]) == 3
+
+    open_resp = client.get(f"/status/{job_id}/critic/findings", params={"status": "open"})
+    assert open_resp.status_code == 200
+    open_body = open_resp.json()
+    assert open_body["filters"]["status"] == "open"
+    assert open_body["summary"]["finding_count"] == 1
+    assert open_body["findings"][0]["finding_id"] == "f-open"
+
+    unresolved_resp = client.get(f"/status/{job_id}/critic/findings", params={"include_resolved": "false"})
+    assert unresolved_resp.status_code == 200
+    unresolved_body = unresolved_resp.json()
+    assert unresolved_body["filters"]["include_resolved"] is False
+    assert unresolved_body["summary"]["finding_count"] == 2
+    assert all(str(item.get("status") or "") != "resolved" for item in unresolved_body["findings"])
+
+    resolved_workflow_resp = client.get(
+        f"/status/{job_id}/critic/findings",
+        params={"workflow_state": "resolved"},
+    )
+    assert resolved_workflow_resp.status_code == 200
+    resolved_workflow_body = resolved_workflow_resp.json()
+    assert resolved_workflow_body["summary"]["finding_count"] == 1
+    assert resolved_workflow_body["findings"][0]["finding_id"] == "f-resolved"
+    assert resolved_workflow_body["findings"][0]["workflow_state"] == "resolved"
+
+    detail_resp = client.get(f"/status/{job_id}/critic/findings/f-ack")
+    assert detail_resp.status_code == 200
+    detail_body = detail_resp.json()
+    assert detail_body["finding_id"] == "f-ack"
+    assert detail_body["status"] == "acknowledged"
+
+    invalid_status_resp = client.get(f"/status/{job_id}/critic/findings", params={"status": "invalid"})
+    assert invalid_status_resp.status_code == 400
+    assert "Unsupported finding status filter" in str(invalid_status_resp.json().get("detail") or "")
+
+
 def test_status_export_payload_endpoint_returns_review_ready_payload():
     job_id = "export-payload-1"
     api_app_module.INGEST_AUDIT_STORE.clear()
@@ -4408,6 +4502,12 @@ def test_openapi_declares_api_key_security_scheme():
     status_critic_security = (((spec.get("paths") or {}).get("/status/{job_id}/critic") or {}).get("get") or {}).get(
         "security"
     )
+    status_critic_findings_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/critic/findings") or {}).get("get") or {}
+    ).get("security")
+    status_critic_finding_detail_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/critic/findings/{finding_id}") or {}).get("get") or {}
+    ).get("security")
     status_critic_finding_ack_security = (
         (((spec.get("paths") or {}).get("/status/{job_id}/critic/findings/{finding_id}/ack") or {}).get("post") or {})
     ).get("security")
@@ -4523,6 +4623,31 @@ def test_openapi_declares_api_key_security_scheme():
     )
     status_critic_response_schema = (
         ((((spec.get("paths") or {}).get("/status/{job_id}/critic") or {}).get("get") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    status_critic_findings_response_schema = (
+        (
+            (((spec.get("paths") or {}).get("/status/{job_id}/critic/findings") or {}).get("get") or {}).get(
+                "responses"
+            )
+            or {}
+        )
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    status_critic_finding_detail_response_schema = (
+        (
+            (
+                ((spec.get("paths") or {}).get("/status/{job_id}/critic/findings/{finding_id}") or {}).get("get")
+                or {}
+            ).get("responses")
+            or {}
+        )
         .get("200", {})
         .get("content", {})
         .get("application/json", {})
@@ -4710,6 +4835,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_metrics_security == [{"ApiKeyAuth": []}]
     assert status_quality_security == [{"ApiKeyAuth": []}]
     assert status_critic_security == [{"ApiKeyAuth": []}]
+    assert status_critic_findings_security == [{"ApiKeyAuth": []}]
+    assert status_critic_finding_detail_security == [{"ApiKeyAuth": []}]
     assert status_critic_finding_ack_security == [{"ApiKeyAuth": []}]
     assert status_critic_finding_open_security == [{"ApiKeyAuth": []}]
     assert status_critic_finding_resolve_security == [{"ApiKeyAuth": []}]
@@ -4736,6 +4863,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_metrics_response_schema == {"$ref": "#/components/schemas/JobMetricsPublicResponse"}
     assert status_quality_response_schema == {"$ref": "#/components/schemas/JobQualitySummaryPublicResponse"}
     assert status_critic_response_schema == {"$ref": "#/components/schemas/JobCriticPublicResponse"}
+    assert status_critic_findings_response_schema == {"$ref": "#/components/schemas/CriticFindingsListPublicResponse"}
+    assert status_critic_finding_detail_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
     assert status_critic_finding_ack_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
     assert status_critic_finding_open_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
     assert status_critic_finding_resolve_response_schema == {
@@ -4777,6 +4906,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert "JobMetricsPublicResponse" in schemas
     assert "JobQualitySummaryPublicResponse" in schemas
     assert "JobCriticPublicResponse" in schemas
+    assert "CriticFindingsListPublicResponse" in schemas
+    assert "CriticFindingsListFiltersPublicResponse" in schemas
+    assert "CriticFindingsListSummaryPublicResponse" in schemas
     assert "JobReviewWorkflowPublicResponse" in schemas
     assert "JobReviewWorkflowSLAPublicResponse" in schemas
     assert "JobReviewWorkflowSLAProfilePublicResponse" in schemas
