@@ -20,12 +20,13 @@ jobs:
           sudo apt-get install -y shellcheck
 
       - name: Lint shell scripts
-        run: shellcheck deploy.sh backup.sh
+        run: shellcheck deploy.sh backup.sh scripts/docker_compose_smoke.sh
 
       - name: Bash syntax check
         run: |
           bash -n deploy.sh
           bash -n backup.sh
+          bash -n scripts/docker_compose_smoke.sh
 
   release-governance:
     runs-on: ubuntu-latest
@@ -177,6 +178,15 @@ jobs:
           name: grounded-smoke-artifacts
           path: grounded-smoke-artifacts/
           if-no-files-found: error
+
+  docker-compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run docker-compose smoke (/generate llm_mode=false)
+        run: |
+          scripts/docker_compose_smoke.sh
 
   test:
     runs-on: ubuntu-latest

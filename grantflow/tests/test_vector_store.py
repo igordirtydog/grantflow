@@ -1,5 +1,6 @@
 # grantflow/tests/test_vector_store.py
 
+import grantflow.memory_bank.vector_store as vector_store_module
 from grantflow.memory_bank.vector_store import VectorStore, vector_store
 
 
@@ -59,3 +60,27 @@ def test_normalize_namespace_truncates_very_long_tokens_deterministically():
     assert len(normalized) <= VectorStore.MAX_NAMESPACE_LENGTH
     assert normalized == VectorStore.normalize_namespace(raw)
     assert normalized.rsplit("_", 1)[-1]
+
+
+def test_vector_store_falls_back_to_memory_when_chroma_init_fails(monkeypatch):
+    monkeypatch.setenv("CHROMA_HOST", "127.0.0.1")
+
+    def _raise_http_client(*args, **kwargs):  # noqa: ARG001
+        raise RuntimeError("simulated chroma init failure")
+
+    monkeypatch.setattr(vector_store_module.chromadb, "HttpClient", _raise_http_client)
+
+    store = VectorStore()
+    assert store.client is None
+    assert "simulated chroma init failure" in str(store._client_init_error or "")
+
+    store.upsert(namespace="fallback_ns", ids=["doc_1"], documents=["fallback text"], metadatas=[{"source": "stub"}])
+    result = store.query("fallback_ns", "fallback", top_k=1)
+    assert isinstance(result, list)
+    assert result
+    assert result[0] == "fallback text"
+
+    stats = store.get_stats("fallback_ns")
+    assert stats["backend"] == "memory"
+    assert stats["document_count"] == 1
+    assert "client_init_error" in stats
