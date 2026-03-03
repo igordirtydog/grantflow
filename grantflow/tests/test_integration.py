@@ -1586,6 +1586,59 @@ def test_status_critic_single_status_dry_run_previews_without_persisting():
     assert flaw_after_commit["status"] == "acknowledged"
 
 
+def test_status_critic_single_status_if_match_returns_conflict_without_changes():
+    job_id = "critic-findings-single-if-match-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "single-if-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "acknowledged",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    conflict_resp = client.post(
+        f"/status/{job_id}/critic/findings/single-if-f1/resolve",
+        params={"if_match_status": "open"},
+        headers={"X-Actor": "qa_reviewer"},
+    )
+    assert conflict_resp.status_code == 409
+    conflict_body = conflict_resp.json()
+    detail = conflict_body.get("detail") if isinstance(conflict_body, dict) else {}
+    assert detail.get("reason") == "finding_status_conflict"
+    assert detail.get("if_match_status") == "open"
+    assert detail.get("current_status") == "acknowledged"
+
+    critic_after_conflict = client.get(f"/status/{job_id}/critic")
+    assert critic_after_conflict.status_code == 200
+    flaw_after_conflict = critic_after_conflict.json()["fatal_flaws"][0]
+    assert flaw_after_conflict["status"] == "acknowledged"
+
+    commit_resp = client.post(
+        f"/status/{job_id}/critic/findings/single-if-f1/resolve",
+        params={"if_match_status": "acknowledged"},
+        headers={"X-Actor": "qa_reviewer"},
+    )
+    assert commit_resp.status_code == 200
+    commit_body = commit_resp.json()
+    assert commit_body["status"] == "resolved"
+    assert commit_body["persisted"] is True
+    assert commit_body.get("if_match_status") == "acknowledged"
+
+
 def test_status_critic_supports_legacy_state_critic_fatal_flaws_alias():
     job_id = "critic-findings-legacy-alias-1"
     api_app_module.JOB_STORE.set(
@@ -1806,6 +1859,70 @@ def test_status_critic_bulk_status_dry_run_previews_without_persisting():
     assert len(critic_after_commit) == 2
     assert all(str(item.get("status") or "") == "resolved" for item in critic_after_commit)
 
+
+def test_status_critic_bulk_status_if_match_returns_conflict_without_changes():
+    job_id = "critic-findings-bulk-if-match-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "bulk-if-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        },
+                        {
+                            "finding_id": "bulk-if-f2",
+                            "code": "LOGFRAME_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "message": "Missing baseline.",
+                            "source": "rules",
+                        },
+                    ]
+                }
+            },
+        },
+    )
+
+    conflict_resp = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        json={"next_status": "resolved", "apply_to_all": True, "if_match_status": "open"},
+        headers={"X-Actor": "bulk_reviewer"},
+    )
+    assert conflict_resp.status_code == 409
+    conflict_body = conflict_resp.json()
+    detail = conflict_body.get("detail") if isinstance(conflict_body, dict) else {}
+    assert detail.get("reason") == "finding_status_conflict"
+    assert detail.get("if_match_status") == "open"
+    assert int(detail.get("conflict_count") or 0) >= 1
+
+    critic_after_conflict_resp = client.get(f"/status/{job_id}/critic")
+    assert critic_after_conflict_resp.status_code == 200
+    critic_after_conflict = critic_after_conflict_resp.json()["fatal_flaws"]
+    by_id = {item["finding_id"]: item for item in critic_after_conflict}
+    assert by_id["bulk-if-f1"]["status"] == "open"
+    assert by_id["bulk-if-f2"]["status"] == "acknowledged"
+
+    success_resp = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        json={"next_status": "resolved", "finding_ids": ["bulk-if-f2"], "if_match_status": "acknowledged"},
+        headers={"X-Actor": "bulk_reviewer"},
+    )
+    assert success_resp.status_code == 200
+    success_body = success_resp.json()
+    assert success_body["changed_count"] == 1
+    assert success_body["filters"]["if_match_status"] == "acknowledged"
+    assert success_body["updated_findings"][0]["finding_id"] == "bulk-if-f2"
+    assert success_body["updated_findings"][0]["status"] == "resolved"
 
 def test_status_critic_findings_list_and_detail_support_filters():
     job_id = "critic-findings-list-1"

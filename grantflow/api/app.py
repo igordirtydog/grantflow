@@ -1065,6 +1065,7 @@ class CriticFindingsBulkStatusRequest(BaseModel):
     next_status: str
     apply_to_all: bool = False
     dry_run: bool = False
+    if_match_status: Optional[str] = None
     finding_status: Optional[str] = None
     severity: Optional[str] = None
     section: Optional[str] = None
@@ -1518,9 +1519,13 @@ def _set_critic_fatal_flaw_status(
     next_status: str,
     actor: Optional[str] = None,
     dry_run: bool = False,
+    if_match_status: Optional[str] = None,
 ) -> Dict[str, Any]:
     if next_status not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported critic finding status")
+    expected_status = str(if_match_status or "").strip().lower() or None
+    if expected_status and expected_status not in CRITIC_FINDING_STATUSES:
+        raise HTTPException(status_code=400, detail="Unsupported if_match_status")
 
     job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
     if not job:
@@ -1547,6 +1552,18 @@ def _set_critic_fatal_flaw_status(
         if current_finding_id != finding_id:
             next_flaws.append(current)
             continue
+        current_status = str(current.get("status") or "open").strip().lower() or "open"
+        if expected_status and current_status != expected_status:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "finding_status_conflict",
+                    "message": "Finding status changed since last read; refresh and retry.",
+                    "finding_id": current_finding_id,
+                    "if_match_status": expected_status,
+                    "current_status": current_status,
+                },
+            )
         current, finding_changed = _apply_critic_finding_status_transition(
             current,
             next_status=next_status,
@@ -1579,6 +1596,8 @@ def _set_critic_fatal_flaw_status(
     response["dry_run"] = bool(dry_run)
     response["persisted"] = not bool(dry_run)
     response["changed"] = bool(changed)
+    if expected_status:
+        response["if_match_status"] = expected_status
     return response
 
 
@@ -1631,6 +1650,7 @@ def _set_critic_fatal_flaws_status_bulk(
     next_status: str,
     actor: Optional[str] = None,
     dry_run: bool = False,
+    if_match_status: Optional[str] = None,
     apply_to_all: bool = False,
     finding_status: Optional[str] = None,
     severity: Optional[str] = None,
@@ -1643,6 +1663,11 @@ def _set_critic_fatal_flaws_status_bulk(
     finding_status_filter = str(finding_status or "").strip().lower() or None
     if finding_status_filter and finding_status_filter not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported finding_status filter")
+    expected_status = str(if_match_status or "").strip().lower() or None
+    if expected_status and expected_status not in CRITIC_FINDING_STATUSES:
+        raise HTTPException(status_code=400, detail="Unsupported if_match_status")
+    if expected_status and finding_status_filter and expected_status != finding_status_filter:
+        raise HTTPException(status_code=400, detail="if_match_status must match finding_status filter when both provided")
     severity_filter = str(severity or "").strip().lower() or None
     if severity_filter and severity_filter not in {"high", "medium", "low"}:
         raise HTTPException(status_code=400, detail="Unsupported severity filter")
@@ -1688,6 +1713,7 @@ def _set_critic_fatal_flaws_status_bulk(
     changed = False
     changed_items: list[Dict[str, Any]] = []
     matched_items: list[Dict[str, Any]] = []
+    conflict_items: list[Dict[str, Any]] = []
     next_flaws: list[Dict[str, Any]] = []
 
     for item in flaws:
@@ -1714,6 +1740,16 @@ def _set_critic_fatal_flaws_status_bulk(
         if not match:
             next_flaws.append(current)
             continue
+        if expected_status and current_status != expected_status:
+            conflict_items.append(
+                {
+                    "finding_id": current_finding_id,
+                    "current_status": current_status,
+                    "expected_status": expected_status,
+                }
+            )
+            next_flaws.append(current)
+            continue
 
         updated, finding_changed = _apply_critic_finding_status_transition(
             current,
@@ -1726,6 +1762,18 @@ def _set_critic_fatal_flaws_status_bulk(
         if finding_changed:
             changed = True
             changed_items.append(updated)
+
+    if conflict_items:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "finding_status_conflict",
+                "message": "One or more findings changed status since last read; refresh and retry.",
+                "if_match_status": expected_status,
+                "conflict_count": len(conflict_items),
+                "conflicts": conflict_items,
+            },
+        )
 
     if changed and not dry_run:
         next_state = dict(state)
@@ -1758,6 +1806,7 @@ def _set_critic_fatal_flaws_status_bulk(
         "not_found_finding_ids": not_found_finding_ids,
         "filters": {
             "apply_to_all": bool(apply_to_all),
+            "if_match_status": expected_status,
             "finding_status": finding_status_filter,
             "severity": severity_filter,
             "section": section_filter,
@@ -3031,6 +3080,7 @@ def acknowledge_status_critic_finding(
     finding_id: str,
     request: Request,
     dry_run: bool = False,
+    if_match_status: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3043,6 +3093,7 @@ def acknowledge_status_critic_finding(
         next_status="acknowledged",
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
+        if_match_status=(if_match_status or None),
     )
 
 
@@ -3056,6 +3107,7 @@ def reopen_status_critic_finding(
     finding_id: str,
     request: Request,
     dry_run: bool = False,
+    if_match_status: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3068,6 +3120,7 @@ def reopen_status_critic_finding(
         next_status="open",
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
+        if_match_status=(if_match_status or None),
     )
 
 
@@ -3081,6 +3134,7 @@ def resolve_status_critic_finding(
     finding_id: str,
     request: Request,
     dry_run: bool = False,
+    if_match_status: Optional[str] = Query(default=None),
 ):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
@@ -3093,6 +3147,7 @@ def resolve_status_critic_finding(
         next_status="resolved",
         actor=_finding_actor_from_request(request),
         dry_run=bool(dry_run),
+        if_match_status=(if_match_status or None),
     )
 
 
@@ -3113,6 +3168,7 @@ def bulk_status_critic_findings(job_id: str, req: CriticFindingsBulkStatusReques
         next_status=next_status,
         actor=_finding_actor_from_request(request),
         dry_run=bool(req.dry_run),
+        if_match_status=(req.if_match_status or None),
         apply_to_all=bool(req.apply_to_all),
         finding_status=(req.finding_status or None),
         severity=(req.severity or None),

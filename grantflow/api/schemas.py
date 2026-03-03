@@ -295,6 +295,7 @@ class JobReviewWorkflowSLARecomputePublicResponse(BaseModel):
 
 class CriticFindingsBulkStatusFiltersPublicResponse(BaseModel):
     apply_to_all: bool = False
+    if_match_status: Optional[str] = None
     finding_status: Optional[str] = None
     severity: Optional[str] = None
     section: Optional[str] = None
