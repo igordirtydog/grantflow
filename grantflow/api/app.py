@@ -298,7 +298,8 @@ def _preflight_expected_doc_families(
     client_metadata: Optional[Dict[str, Any]],
 ) -> list[str]:
     metadata = client_metadata if isinstance(client_metadata, dict) else {}
-    rag_readiness = metadata.get("rag_readiness") if isinstance(metadata.get("rag_readiness"), dict) else {}
+    raw_rag_readiness = metadata.get("rag_readiness")
+    rag_readiness: Dict[str, Any] = raw_rag_readiness if isinstance(raw_rag_readiness, dict) else {}
     expected = rag_readiness.get("expected_doc_families")
     if isinstance(expected, list):
         deduped = _dedupe_doc_families(expected)
@@ -2187,19 +2188,21 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
         strategy=strategy,
         client_metadata=client_metadata,
     )
-    grounding_policy = preflight.get("grounding_policy") if isinstance(preflight.get("grounding_policy"), dict) else {}
+    preflight_payload: Dict[str, Any] = preflight if isinstance(preflight, dict) else {}
+    raw_grounding_policy = preflight_payload.get("grounding_policy")
+    grounding_policy: Dict[str, Any] = raw_grounding_policy if isinstance(raw_grounding_policy, dict) else {}
     if bool(grounding_policy.get("blocking")):
         raise HTTPException(
             status_code=409,
             detail={
                 "reason": "preflight_grounding_policy_block",
                 "message": "Generation blocked by strict grounding policy before pipeline start.",
-                "preflight": preflight,
+                "preflight": preflight_payload,
             },
         )
-    preflight_risk_high = str(preflight.get("risk_level") or "").lower() == "high"
-    grounding_risk_high = str(preflight.get("grounding_risk_level") or "").lower() == "high"
-    if req.strict_preflight and str(preflight.get("risk_level") or "").lower() == "high":
+    preflight_risk_high = str(preflight_payload.get("risk_level") or "").lower() == "high"
+    grounding_risk_high = str(preflight_payload.get("grounding_risk_level") or "").lower() == "high"
+    if req.strict_preflight and str(preflight_payload.get("risk_level") or "").lower() == "high":
         strict_reasons = []
         if preflight_risk_high:
             strict_reasons.append("readiness_risk_high")
@@ -2211,7 +2214,7 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
                 "reason": "preflight_high_risk_block",
                 "message": "Generation blocked by strict_preflight because donor readiness risk is high.",
                 "strict_reasons": strict_reasons,
-                "preflight": preflight,
+                "preflight": preflight_payload,
             },
         )
     if req.strict_preflight and grounding_risk_high:
@@ -2221,7 +2224,7 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
                 "reason": "preflight_high_risk_block",
                 "message": "Generation blocked by strict_preflight because predicted grounding risk is high.",
                 "strict_reasons": ["grounding_risk_high"],
-                "preflight": preflight,
+                "preflight": preflight_payload,
             },
         )
     job_id = str(uuid.uuid4())
@@ -2253,18 +2256,18 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
             "webhook_url": webhook_url,
             "webhook_secret": webhook_secret,
             "client_metadata": client_metadata,
-            "generate_preflight": preflight,
+            "generate_preflight": preflight_payload,
             "strict_preflight": req.strict_preflight,
         },
     )
     _record_job_event(
         job_id,
         "generate_preflight_evaluated",
-        risk_level=str(preflight.get("risk_level") or "none"),
-        grounding_risk_level=str(preflight.get("grounding_risk_level") or "none"),
-        warning_count=int(preflight.get("warning_count") or 0),
-        retrieval_namespace=preflight.get("retrieval_namespace"),
-        namespace_empty=bool(preflight.get("namespace_empty")),
+        risk_level=str(preflight_payload.get("risk_level") or "none"),
+        grounding_risk_level=str(preflight_payload.get("grounding_risk_level") or "none"),
+        warning_count=int(preflight_payload.get("warning_count") or 0),
+        retrieval_namespace=preflight_payload.get("retrieval_namespace"),
+        namespace_empty=bool(preflight_payload.get("namespace_empty")),
         grounding_policy_mode=str(grounding_policy.get("mode") or ""),
         grounding_policy_blocking=bool(grounding_policy.get("blocking")),
     )
@@ -2272,7 +2275,7 @@ async def generate(req: GenerateRequest, background_tasks: BackgroundTasks, requ
         background_tasks.add_task(_run_hitl_pipeline, job_id, initial_state, "start")
     else:
         background_tasks.add_task(_run_pipeline_to_completion, job_id, initial_state)
-    return {"status": "accepted", "job_id": job_id, "preflight": preflight}
+    return {"status": "accepted", "job_id": job_id, "preflight": preflight_payload}
 
 
 @app.post("/cancel/{job_id}")
