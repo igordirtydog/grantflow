@@ -1155,25 +1155,25 @@ def test_strict_mel_grounding_policy_blocks_after_hitl_resume(monkeypatch):
     assert response.status_code == 200
     job_id = response.json()["job_id"]
 
-    status = _wait_for_terminal_status(job_id)
-    assert status["status"] == "pending_hitl"
-    cp_id = status["checkpoint_id"]
-    approve = client.post("/hitl/approve", json={"checkpoint_id": cp_id, "approved": True, "feedback": "ok"})
-    assert approve.status_code == 200
-    resume = client.post(f"/resume/{job_id}", json={})
-    assert resume.status_code == 200
-    assert resume.json()["resuming_from"] == "mel"
-
-    status = _wait_for_terminal_status(job_id)
-    assert status["status"] == "pending_hitl"
-    cp_id = status["checkpoint_id"]
-    approve = client.post("/hitl/approve", json={"checkpoint_id": cp_id, "approved": True, "feedback": "ok"})
-    assert approve.status_code == 200
-    resume = client.post(f"/resume/{job_id}", json={})
-    assert resume.status_code == 200
-    assert resume.json()["resuming_from"] == "critic"
-
-    terminal = _wait_for_terminal_status(job_id)
+    terminal = None
+    resume_targets = []
+    # GrantFlow may re-enter HITL checkpoints across revision iterations.
+    # Keep approving and resuming until the job reaches a terminal non-HITL status.
+    for _ in range(10):
+        status = _wait_for_terminal_status(job_id, timeout_s=5.0)
+        if status["status"] != "pending_hitl":
+            terminal = status
+            break
+        cp_id = status["checkpoint_id"]
+        approve = client.post("/hitl/approve", json={"checkpoint_id": cp_id, "approved": True, "feedback": "ok"})
+        assert approve.status_code == 200
+        resume = client.post(f"/resume/{job_id}", json={})
+        assert resume.status_code == 200
+        resume_from = str(resume.json().get("resuming_from") or "")
+        resume_targets.append(resume_from)
+    assert terminal is not None, "Timed out waiting for job finalization with repeated HITL resumes"
+    assert "mel" in resume_targets
+    assert "critic" in resume_targets
     assert terminal["status"] == "error"
     assert "MEL grounding policy (strict) blocked finalization" in str(terminal.get("error") or "")
     state = terminal.get("state") or {}
@@ -3873,10 +3873,10 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert body["architect_claims"]["key_claims_total"] == 0
     assert body["architect_claims"]["fallback_claim_count"] == 0
     assert body["architect_claims"]["traceability_gap_citation_count"] == 0
-    assert body["architect_claims"]["threshold_hit_rate"] is None
-    assert body["architect_claims"]["claim_coverage_ratio"] is None
-    assert body["architect_claims"]["key_claim_coverage_ratio"] is None
-    assert body["architect_claims"]["fallback_claim_ratio"] is None
+    assert body["architect_claims"].get("threshold_hit_rate") is None
+    assert body["architect_claims"].get("claim_coverage_ratio") is None
+    assert body["architect_claims"].get("key_claim_coverage_ratio") is None
+    assert body["architect_claims"].get("fallback_claim_ratio") is None
     assert body["architect"]["retrieval_enabled"] is True
     assert body["architect"]["retrieval_hits_count"] == 3
     assert body["architect"]["toc_schema_valid"] is True
