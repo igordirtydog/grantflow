@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple, Type, Union, get_args, get_origin
 
 from pydantic import BaseModel, Field
 
@@ -68,6 +68,93 @@ def _model_dump(model: BaseModel) -> Dict[str, Any]:
     if callable(dumper):
         return dumper()
     return model.dict()  # type: ignore[attr-defined]
+
+
+def _safe_json(value: Any, *, max_chars: int = 1600) -> str:
+    try:
+        text = json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        text = str(value)
+    text = " ".join(str(text).split())
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}..."
+
+
+def _is_basemodel_subclass(tp: Any) -> bool:
+    return isinstance(tp, type) and issubclass(tp, BaseModel)
+
+
+def _unwrap_optional(annotation: Any) -> Any:
+    origin = get_origin(annotation)
+    if origin is None:
+        return annotation
+    if origin is not Union:
+        return annotation
+    args = [a for a in get_args(annotation) if a is not type(None)]
+    if len(args) == 1:
+        return args[0]
+    return annotation
+
+
+def _type_label(annotation: Any) -> str:
+    annotation = _unwrap_optional(annotation)
+    origin = get_origin(annotation)
+    if origin is list:
+        args = get_args(annotation)
+        inner = _type_label(args[0]) if args else "Any"
+        return f"list[{inner}]"
+    if origin is dict:
+        return "object"
+    if _is_basemodel_subclass(annotation):
+        return str(getattr(annotation, "__name__", "object"))
+    if isinstance(annotation, type):
+        return annotation.__name__
+    return str(annotation)
+
+
+def _field_description(field: Any) -> str:
+    description = getattr(field, "description", None)
+    if isinstance(description, str) and description.strip():
+        return description.strip()
+    field_info = getattr(field, "field_info", None)
+    if field_info is not None:
+        desc = getattr(field_info, "description", None)
+        if isinstance(desc, str) and desc.strip():
+            return desc.strip()
+    return ""
+
+
+def _field_required(field: Any) -> bool:
+    is_required_fn = getattr(field, "is_required", None)
+    if callable(is_required_fn):
+        try:
+            return bool(is_required_fn())
+        except Exception:
+            pass
+    required = getattr(field, "required", None)
+    if isinstance(required, bool):
+        return required
+    return False
+
+
+def _schema_contract_hint(schema_cls: Type[BaseModel], *, max_fields: int = 24) -> str:
+    fields = getattr(schema_cls, "model_fields", None)
+    if not isinstance(fields, dict):  # pydantic v1 fallback
+        fields = getattr(schema_cls, "__fields__", {})  # type: ignore[assignment]
+    if not isinstance(fields, dict) or not fields:
+        return ""
+
+    lines: list[str] = []
+    for field_name, field in list(fields.items())[:max_fields]:
+        annotation = getattr(field, "annotation", None) or getattr(field, "outer_type_", None) or str
+        required = "required" if _field_required(field) else "optional"
+        description = _field_description(field)
+        line = f"- {field_name}: {_type_label(annotation)} ({required})"
+        if description:
+            line += f" - {description}"
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def _build_query_text(state: Dict[str, Any]) -> str:
@@ -379,9 +466,12 @@ def _llm_structured_mel(
     donor_id: str,
     project: str,
     country: str,
+    input_context: Dict[str, Any],
     toc_payload: Dict[str, Any],
     revision_hint: str,
     evidence_hits: Iterable[Dict[str, Any]],
+    schema_contract_hint: str = "",
+    retrieval_trace_hint: Optional[str] = None,
     validation_error_hint: Optional[str] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
     llm_kwargs = chat_openai_init_kwargs(model=config.llm.reasoning_model, temperature=0.1)
@@ -408,8 +498,14 @@ def _llm_structured_mel(
             f"Donor: {donor_id}\n"
             f"Project: {project}\n"
             f"Country: {country}\n"
+            f"Input context JSON: {_safe_json(input_context)}\n"
             f"ToC summary: {toc_summary}\n"
         )
+        if schema_contract_hint:
+            human_prompt += "\nSchema contract (follow field names and types):\n"
+            human_prompt += f"{schema_contract_hint}\n"
+        if retrieval_trace_hint:
+            human_prompt += f"Retrieval trace summary: {retrieval_trace_hint}\n"
         if revision_hint:
             human_prompt += f"Revision guidance: {revision_hint[:400]}\n"
         if validation_error_hint:
@@ -424,6 +520,7 @@ def _llm_structured_mel(
             "- Return at least 1 and up to 6 indicators.\n"
             "- Do not invent source docs; use provided evidence labels in citation fields when possible.\n"
             "- Keep indicator ids stable and concise.\n"
+            "- Avoid placeholders like TBD/placeholder in baseline/target when context suggests concrete values.\n"
             "- Return structured object only.\n"
         )
 
@@ -579,6 +676,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     query_variants = _query_variants(state, query_text, max_variants=query_variants_limit)
     input_context = state_input_context(state)
+    schema_contract_hint = _schema_contract_hint(MELDraftOutput)
     project = str(input_context.get("project") or "TBD project")
     country = str(input_context.get("country") or "TBD")
     toc = state.get("toc_draft", {}) or {}
@@ -655,6 +753,29 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         state.setdefault("errors", []).append(f"MEL RAG query failed: {exc}")
         rag_trace["error"] = str(exc)
 
+    retrieval_trace_hint: Optional[str] = None
+    if retrieval_hits:
+        retrieval_trace_hint = _safe_json(
+            {
+                "used_results": int(rag_trace.get("used_results") or 0),
+                "query_variants_count": int(rag_trace.get("query_variants_count") or len(query_variants)),
+                "avg_retrieval_confidence": rag_trace.get("avg_retrieval_confidence"),
+                "traceability_counts": rag_trace.get("traceability_counts") or {},
+                "hits": [
+                    {
+                        "label": hit.get("label"),
+                        "source": hit.get("source"),
+                        "page": hit.get("page"),
+                        "retrieval_confidence": hit.get("retrieval_confidence"),
+                        "rerank_score": hit.get("rerank_score"),
+                        "traceability_status": hit.get("traceability_status"),
+                    }
+                    for hit in retrieval_hits[:MEL_MAX_EVIDENCE_PROMPT_HITS]
+                ],
+            },
+            max_chars=1200,
+        )
+
     indicators: list[Dict[str, Any]] = []
     if llm_mode and llm_available:
         llm_attempted = True
@@ -664,9 +785,12 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
             donor_id=donor_id,
             project=project,
             country=country,
+            input_context=input_context,
             toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
             revision_hint=revision_hint,
             evidence_hits=retrieval_hits,
+            schema_contract_hint=schema_contract_hint,
+            retrieval_trace_hint=retrieval_trace_hint,
             validation_error_hint=None,
         )
         if raw_payload is not None:
@@ -681,9 +805,12 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
                     donor_id=donor_id,
                     project=project,
                     country=country,
+                    input_context=input_context,
                     toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
                     revision_hint=revision_hint,
                     evidence_hits=retrieval_hits,
+                    schema_contract_hint=schema_contract_hint,
+                    retrieval_trace_hint=retrieval_trace_hint,
                     validation_error_hint=str(exc),
                 )
                 if raw_payload_retry is not None:
@@ -734,6 +861,10 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         "retrieval_used": bool(retrieval_hits),
         "fallback_used": fallback_used,
         "fallback_class": fallback_class,
+        "schema_contract_hint_present": bool(schema_contract_hint),
+        "input_context_key_count": len(input_context),
+        "retrieval_prompt_hit_count": min(len(retrieval_hits), MEL_MAX_EVIDENCE_PROMPT_HITS),
+        "retrieval_trace_hint_present": bool(retrieval_trace_hint),
         "max_prompt_evidence_hits": MEL_MAX_EVIDENCE_PROMPT_HITS,
     }
     if llm_error:

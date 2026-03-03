@@ -135,5 +135,72 @@ def test_mel_llm_mode_uses_structured_output_when_available(monkeypatch):
     assert generation.get("llm_used") is True
     assert generation.get("fallback_used") is False
     assert generation.get("engine") == "llm:stub-mel-model"
+    assert generation.get("schema_contract_hint_present") is True
+    assert generation.get("input_context_key_count") == 2
+    assert generation.get("retrieval_prompt_hit_count") == 1
+    assert generation.get("retrieval_trace_hint_present") is True
     assert len(citations) == 2
     assert all(c.get("citation_type") in {"rag_result", "rag_low_confidence", "fallback_namespace"} for c in citations)
+
+
+def test_mel_llm_prompt_receives_full_input_context_and_schema_contract(monkeypatch):
+    monkeypatch.setattr(mel_module, "openai_compatible_llm_available", lambda: True)
+
+    def fake_query(*, namespace, query_texts, n_results):  # noqa: ARG001
+        return {
+            "documents": [["Donor indicator guidance excerpt with baseline and target hints"]],
+            "metadatas": [[{"doc_id": "usaid_ads201_p5_c1", "chunk_id": "usaid_ads201_p5_c1", "page": 5}]],
+            "ids": [["usaid_ads201_p5_c1"]],
+            "distances": [[0.08]],
+        }
+
+    monkeypatch.setattr(mel_module.vector_store, "query", fake_query)
+    captured: dict[str, object] = {}
+
+    def fake_llm_structured_mel(**kwargs):
+        captured["input_context"] = kwargs.get("input_context")
+        captured["schema_contract_hint"] = kwargs.get("schema_contract_hint")
+        captured["retrieval_trace_hint"] = kwargs.get("retrieval_trace_hint")
+        return (
+            {
+                "indicators": [
+                    {
+                        "indicator_id": "IND_501",
+                        "name": "Civil servants certified on AI policy",
+                        "justification": "Tracks capability uptake.",
+                        "citation": "usaid_ads201_p5_c1",
+                        "baseline": "0",
+                        "target": "400",
+                        "evidence_excerpt": "Donor indicator guidance excerpt with baseline and target hints",
+                    }
+                ]
+            },
+            "llm:stub-mel-model",
+            None,
+        )
+
+    monkeypatch.setattr(mel_module, "_llm_structured_mel", fake_llm_structured_mel)
+
+    state = _base_state(llm_mode=True)
+    state["input_context"] = {
+        "project": "AI Civil Service Training",
+        "country": "Kazakhstan",
+        "sector": "Public Administration",
+        "duration_months": 24,
+    }
+    state["input"] = dict(state["input_context"])
+    out = mel_module.mel_assign_indicators(state)
+    generation = out.get("mel_generation_meta") or {}
+
+    assert generation.get("llm_used") is True
+    assert generation.get("schema_contract_hint_present") is True
+    assert generation.get("input_context_key_count") == 4
+    assert generation.get("retrieval_prompt_hit_count") == 1
+    assert generation.get("retrieval_trace_hint_present") is True
+    assert captured.get("input_context") == state["input_context"]
+    schema_hint = str(captured.get("schema_contract_hint") or "")
+    assert schema_hint
+    assert "indicators" in schema_hint
+    retrieval_hint = str(captured.get("retrieval_trace_hint") or "")
+    assert retrieval_hint
+    assert "used_results" in retrieval_hint
