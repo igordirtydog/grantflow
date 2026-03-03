@@ -61,8 +61,31 @@ def test_ingest_pdf_prefers_uploaded_filename_as_source(monkeypatch):
 
     assert result["source"] == "usaid_ads201_policy.pdf"
     assert result["source_path"] == "/tmp/grantflow_ingest_1234.pdf"
+    assert result["namespace_normalized"] == "usaid_ads201"
     assert calls["namespace"] == "usaid_ads201"
     assert calls["metadatas"]
     assert calls["metadatas"][0]["source"] == "usaid_ads201_policy.pdf"
     assert calls["metadatas"][0]["source_path"] == "/tmp/grantflow_ingest_1234.pdf"
     assert calls["metadatas"][0]["doc_family"] == "donor_policy"
+    assert calls["metadatas"][0]["namespace_normalized"] == "usaid_ads201"
+    assert calls["ids"][0].startswith("usaid_ads201_")
+
+
+def test_ingest_pdf_normalizes_namespace_for_chunk_ids(monkeypatch):
+    monkeypatch.setattr(ingest_module, "load_pdf_pages", lambda _: ["example page"])
+    captured = {}
+
+    def fake_upsert(namespace, ids, documents, metadatas=None):  # noqa: ARG001
+        captured["ids"] = ids
+
+    monkeypatch.setattr(ingest_module.vector_store, "upsert", fake_upsert)
+    monkeypatch.setattr(ingest_module.vector_store, "get_stats", lambda namespace: {"namespace": namespace, "count": 1})
+
+    result = ingest_module.ingest_pdf_to_namespace(
+        "/tmp/grantflow_ingest_1234.pdf",
+        "Tenant A / USAID ADS 201",
+    )
+    assert result["namespace"] == "Tenant A / USAID ADS 201"
+    assert result["namespace_normalized"] == "tenant_a_usaid_ads_201"
+    assert captured["ids"]
+    assert captured["ids"][0].startswith("tenant_a_usaid_ads_201_")

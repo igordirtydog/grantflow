@@ -20,6 +20,7 @@ def test_vector_store_stats():
     """Проверяет статистику коллекции."""
     stats = vector_store.get_stats("test_namespace")
     assert "namespace" in stats
+    assert "namespace_normalized" in stats
     assert "document_count" in stats
     assert stats["document_count"] >= 2
 
@@ -33,3 +34,12 @@ def test_collection_name_normalizes_namespace_tokens():
 
 def test_normalize_namespace_falls_back_to_default():
     assert VectorStore.normalize_namespace("   ") == "default"
+
+
+def test_namespace_trace_returns_requested_normalized_and_collection():
+    store = VectorStore()
+    store.prefix = "grantflow"
+    trace = store.namespace_trace(" Tenant A/USAID ADS 201 :: Phase#1 ")
+    assert trace["namespace"] == "Tenant A/USAID ADS 201 :: Phase#1"
+    assert trace["namespace_normalized"] == "tenant_a_usaid_ads_201_phase_1"
+    assert trace["collection"] == "grantflow_tenant_a_usaid_ads_201_phase_1"

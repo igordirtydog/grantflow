@@ -1481,6 +1481,7 @@ def test_status_includes_citations_traceability(monkeypatch):
     citation = mel_citations[0]
     assert citation["citation_type"] == "rag_result"
     assert citation["namespace"] == "usaid_ads201"
+    assert citation["namespace_normalized"] == "usaid_ads201"
     assert citation["source"] == "usaid_guide.pdf"
     assert citation["page"] == 12
     assert citation["chunk"] == 3
@@ -1489,6 +1490,7 @@ def test_status_includes_citations_traceability(monkeypatch):
     assert citation["used_for"] == "EG.3.2-1"
     assert citation["retrieval_rank"] == 1
     assert citation["retrieval_confidence"] > 0.0
+    assert citation["retrieval_distance"] == 0.18
     assert "excerpt" in citation and citation["excerpt"]
 
     architect_citations = [c for c in citations if c.get("stage") == "architect"]
@@ -1499,6 +1501,7 @@ def test_status_includes_citations_traceability(monkeypatch):
         for c in architect_citations
     )
     assert any(c.get("doc_id") == "usaid_ads201_p12_c0" for c in architect_citations)
+    assert all(c.get("namespace_normalized") == "usaid_ads201" for c in architect_citations)
     assert any(c.get("retrieval_rank") == 1 for c in architect_citations)
     for c in citations:
         source = str(c.get("source") or "")
@@ -1521,6 +1524,8 @@ def test_status_includes_citations_traceability(monkeypatch):
             assert 0.0 <= float(c["citation_confidence"]) <= 1.0
         if c.get("retrieval_confidence") is not None:
             assert 0.0 <= float(c["retrieval_confidence"]) <= 1.0
+        if c.get("retrieval_distance") is not None:
+            assert float(c["retrieval_distance"]) >= 0.0
 
 
 def test_status_includes_draft_versions_traceability():
@@ -1542,12 +1547,14 @@ def test_status_includes_draft_versions_traceability():
     assert state.get("toc_validation", {}).get("valid") is True
     assert state.get("toc_validation", {}).get("schema_name")
     assert state.get("architect_retrieval", {}).get("namespace")
+    assert state.get("architect_retrieval", {}).get("namespace_normalized")
     assert "hits_count" in (state.get("architect_retrieval") or {})
     retrieval_hits = (state.get("architect_retrieval") or {}).get("hits")
     if isinstance(retrieval_hits, list) and retrieval_hits:
         assert "doc_id" in retrieval_hits[0]
         assert "retrieval_rank" in retrieval_hits[0]
         assert "retrieval_confidence" in retrieval_hits[0]
+        assert "retrieval_distance" in retrieval_hits[0]
     assert state.get("toc_generation_meta", {}).get("engine")
     assert isinstance(state.get("toc_draft", {}).get("validation"), dict)
     assert isinstance(state.get("toc_draft", {}).get("architect_retrieval"), dict)
@@ -4455,6 +4462,7 @@ def test_ingest_endpoint_uploads_to_donor_namespace(monkeypatch):
     assert body["status"] == "ingested"
     assert body["donor_id"] == "usaid"
     assert body["namespace"] == "usaid_ads201"
+    assert body["namespace_normalized"] == "usaid_ads201"
     assert body["filename"] == "sample.pdf"
     assert body["result"]["chunks_ingested"] == 3
 

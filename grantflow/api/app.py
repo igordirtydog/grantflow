@@ -3023,10 +3023,12 @@ async def ingest_pdf(
         raise HTTPException(status_code=400, detail="Uploaded file is empty")
 
     namespace = strategy.get_rag_collection()
+    namespace_normalized = vector_store.normalize_namespace(namespace)
     upload_metadata: Dict[str, Any] = {
         "uploaded_filename": filename,
         "uploaded_content_type": content_type or "application/pdf",
         "donor_id": donor,
+        "namespace_normalized": namespace_normalized,
     }
     if metadata:
         upload_metadata.update(metadata)
@@ -3062,6 +3064,7 @@ async def ingest_pdf(
         "status": "ingested",
         "donor_id": donor,
         "namespace": namespace,
+        "namespace_normalized": namespace_normalized,
         "filename": filename,
         "result": result_payload,
     }

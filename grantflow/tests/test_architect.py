@@ -46,6 +46,7 @@ def test_architect_generates_contract_validated_toc_with_optional_retrieval_disa
     retrieval = out.get("architect_retrieval") or {}
     assert retrieval.get("enabled") is False
     assert retrieval.get("namespace") == strategy.get_rag_collection()
+    assert retrieval.get("namespace_normalized") == strategy.get_rag_collection()
     assert retrieval.get("hits_count") == 0
 
     generation_meta = out.get("toc_generation_meta") or {}
@@ -152,7 +153,10 @@ def test_retrieve_architect_evidence_normalizes_traceability_and_deduplicates_hi
     assert hit["doc_id"]
     assert hit["chunk_id"] == "ch_1"
     assert hit["traceability_status"] == "complete"
+    assert hit["namespace_normalized"] == "usaid_ads201"
     assert summary["traceability_counts"]["complete"] == 1
+    assert summary["namespace_normalized"] == "usaid_ads201"
+    assert summary.get("collection", "").startswith("grantflow_")
 
 
 def test_architect_claim_citation_policy_marks_low_confidence_hits():

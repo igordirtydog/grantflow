@@ -149,6 +149,8 @@ def _collect_retrieval_hits(
     result: Dict[str, Any],
     *,
     namespace: str,
+    namespace_normalized: str,
+    collection: str,
     query_text: str,
     query_variants: list[str],
     top_k: int,
@@ -170,10 +172,23 @@ def _collect_retrieval_hits(
         for idx, doc in enumerate(docs):
             meta = metas[idx] if idx < len(metas) and isinstance(metas[idx], dict) else {}
             retrieval_rank = idx + 1
-            doc_id = meta.get("doc_id") or meta.get("chunk_id") or (ids[idx] if idx < len(ids) else None)
+            raw_doc_id = meta.get("doc_id") or meta.get("chunk_id") or (ids[idx] if idx < len(ids) else None)
+            raw_chunk_id = meta.get("chunk_id") or raw_doc_id
+            doc_id = str(raw_doc_id or "").strip()
+            chunk_id = str(raw_chunk_id or "").strip()
+            if not doc_id and chunk_id:
+                doc_id = chunk_id
+            if not chunk_id and doc_id:
+                chunk_id = doc_id
+            if not doc_id:
+                doc_id = f"{namespace_normalized}#q{q_idx + 1}-hit-{retrieval_rank}"
+            if not chunk_id:
+                chunk_id = doc_id
             source = citation_source_from_metadata(meta)
             excerpt = str(doc or "")[:240]
-            retrieval_conf = _retrieval_confidence(distances[idx] if idx < len(distances) else None, idx)
+            raw_distance = distances[idx] if idx < len(distances) else None
+            retrieval_distance = round(float(raw_distance), 6) if isinstance(raw_distance, (int, float)) else None
+            retrieval_conf = _retrieval_confidence(raw_distance, idx)
             hit_tokens = _token_set(excerpt) | _token_set(str(source or ""))
             query_overlap = len(query_tokens & hit_tokens) / max(1, len(query_tokens))
             base_overlap = len(base_tokens & hit_tokens) / max(1, len(base_tokens))
@@ -189,6 +204,7 @@ def _collect_retrieval_hits(
                 "query_variant_index": q_idx + 1,
                 "query_variant": query_variant,
                 "doc_id": doc_id,
+                "chunk_id": chunk_id,
                 "indicator_id": meta.get("indicator_id"),
                 "name": meta.get("name"),
                 "baseline": meta.get("baseline"),
@@ -198,11 +214,14 @@ def _collect_retrieval_hits(
                 "page_start": meta.get("page_start"),
                 "page_end": meta.get("page_end"),
                 "chunk": meta.get("chunk"),
-                "chunk_id": meta.get("chunk_id") or doc_id,
                 "label": citation_label_from_metadata(meta, namespace=namespace, rank=retrieval_rank),
                 "excerpt": excerpt,
                 "retrieval_confidence": retrieval_conf,
+                "retrieval_distance": retrieval_distance,
                 "rerank_score": round(min(1.0, rerank_score), 4),
+                "namespace": namespace,
+                "namespace_normalized": namespace_normalized,
+                "collection": collection,
             }
 
             signature = (hit.get("doc_id"), hit.get("chunk_id"), hit.get("source"), hit.get("page"))
@@ -435,6 +454,7 @@ def _build_mel_citations(
     indicators: list[Dict[str, Any]],
     evidence_hits: Iterable[Dict[str, Any]],
     namespace: str,
+    namespace_normalized: str,
     donor_id: str,
 ) -> list[Dict[str, Any]]:
     hits = [h for h in evidence_hits if isinstance(h, dict)]
@@ -498,6 +518,7 @@ def _build_mel_citations(
                 "stage": "mel",
                 "citation_type": citation_type,
                 "namespace": namespace,
+                "namespace_normalized": namespace_normalized,
                 "doc_id": hit.get("doc_id"),
                 "source": hit.get("source"),
                 "page": hit.get("page"),
@@ -514,6 +535,7 @@ def _build_mel_citations(
                 "evidence_rank": hit.get("rank"),
                 "retrieval_rank": hit.get("retrieval_rank") or hit.get("rank"),
                 "retrieval_confidence": hit.get("retrieval_confidence") if hit else 0.1,
+                "retrieval_distance": hit.get("retrieval_distance") if hit else None,
                 "confidence_threshold": threshold,
                 "traceability_status": traceability_status,
                 "traceability_complete": traceability_status == "complete",
@@ -531,6 +553,9 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
     namespace = strategy.get_rag_collection()
+    namespace_trace = vector_store.namespace_trace(namespace)
+    namespace_normalized = namespace_trace["namespace_normalized"]
+    collection = namespace_trace["collection"]
     donor_id = state_donor_id(state, default=str(getattr(strategy, "donor_id", "donor")))
     query_text = _build_query_text(state)
     top_k = _bounded_int(
@@ -573,6 +598,8 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     retrieval_hits: list[Dict[str, Any]] = []
     rag_trace: Dict[str, Any] = {
         "namespace": namespace,
+        "namespace_normalized": namespace_normalized,
+        "collection": collection,
         "query": query_text,
         "query_variants": query_variants,
         "query_variants_count": len(query_variants),
@@ -595,6 +622,8 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         retrieval_hits, retrieval_diag = _collect_retrieval_hits(
             result if isinstance(result, dict) else {},
             namespace=namespace,
+            namespace_normalized=namespace_normalized,
+            collection=collection,
             query_text=query_text,
             query_variants=query_variants,
             top_k=top_k,
@@ -612,7 +641,11 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
                     "page": hit.get("page"),
                     "chunk_id": hit.get("chunk_id"),
                     "retrieval_confidence": hit.get("retrieval_confidence"),
+                    "retrieval_distance": hit.get("retrieval_distance"),
                     "rerank_score": hit.get("rerank_score"),
+                    "namespace": hit.get("namespace"),
+                    "namespace_normalized": hit.get("namespace_normalized"),
+                    "collection": hit.get("collection"),
                 }
                 for hit in retrieval_hits
             ]
@@ -691,6 +724,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         indicators=indicators,
         evidence_hits=retrieval_hits,
         namespace=namespace,
+        namespace_normalized=namespace_normalized,
         donor_id=donor_id,
     )
     mel_generation_meta: Dict[str, Any] = {

@@ -253,10 +253,15 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
     )
     query_text = build_architect_query_text(state)
     query_variants = _query_variants(state, query_text, max_variants=query_variants_limit)
+    namespace_trace = vector_store.namespace_trace(namespace)
+    namespace_normalized = namespace_trace["namespace_normalized"]
+    collection = namespace_trace["collection"]
 
     summary: Dict[str, Any] = {
         "enabled": enabled,
         "namespace": namespace,
+        "namespace_normalized": namespace_normalized,
+        "collection": collection,
         "query": query_text,
         "query_variants": query_variants,
         "query_variants_count": len(query_variants),
@@ -299,13 +304,14 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
                 if not chunk_id and doc_id:
                     chunk_id = doc_id
                 if not doc_id:
-                    doc_id = f"{namespace}#q{q_idx + 1}-hit-{retrieval_rank}"
+                    doc_id = f"{namespace_normalized}#q{q_idx + 1}-hit-{retrieval_rank}"
                 if not chunk_id:
                     chunk_id = doc_id
 
                 source = str(source or "").strip() or None
                 page = meta.get("page")
                 raw_distance = distances[idx] if idx < len(distances) else None
+                retrieval_distance = round(float(raw_distance), 6) if isinstance(raw_distance, (int, float)) else None
                 if isinstance(raw_distance, (int, float)):
                     retrieval_confidence = round(max(0.0, min(1.0, 1.0 / (1.0 + float(raw_distance)))), 4)
                 else:
@@ -326,7 +332,10 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
                     "label": citation_label_from_metadata(meta, namespace=namespace, rank=retrieval_rank),
                     "excerpt": str(doc)[:320],
                     "retrieval_confidence": retrieval_confidence,
+                    "retrieval_distance": retrieval_distance,
                     "namespace": namespace,
+                    "namespace_normalized": namespace_normalized,
+                    "collection": collection,
                 }
                 query_tokens = _tokenize(query_variant)
                 hit_tokens = _tokenize(candidate.get("excerpt")) | _tokenize(
@@ -414,9 +423,12 @@ def retrieve_architect_evidence(state: Dict[str, Any], namespace: str) -> Tuple[
                     "page": h.get("page"),
                     "chunk_id": h.get("chunk_id"),
                     "retrieval_confidence": h.get("retrieval_confidence"),
+                    "retrieval_distance": h.get("retrieval_distance"),
                     "rerank_score": h.get("rerank_score"),
                     "traceability_status": h.get("traceability_status"),
                     "namespace": h.get("namespace"),
+                    "namespace_normalized": h.get("namespace_normalized"),
+                    "collection": h.get("collection"),
                 }
                 for h in hits[:5]
             ]

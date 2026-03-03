@@ -45,7 +45,9 @@ def test_mel_deterministic_mode_generates_logframe_and_citations(monkeypatch):
     assert generation.get("llm_used") is False
     assert str(generation.get("engine") or "").startswith("deterministic:")
     assert out["logframe_draft"]["rag_trace"]["used_results"] == 1
+    assert out["logframe_draft"]["rag_trace"]["namespace_normalized"] == "usaid_ads201"
     assert citations[0]["citation_type"] in {"rag_result", "rag_low_confidence"}
+    assert citations[0]["namespace_normalized"] == "usaid_ads201"
     assert citations[0]["used_for"]
     assert out.get("draft_versions")
 

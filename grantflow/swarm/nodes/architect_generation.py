@@ -6,6 +6,7 @@ from typing import Any, Dict, Iterable, Optional, Tuple, Type, Union, get_args, 
 from pydantic import BaseModel
 
 from grantflow.core.config import config
+from grantflow.memory_bank.vector_store import vector_store
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
     openai_compatible_llm_available,
@@ -358,6 +359,7 @@ def build_architect_claim_citations(
     evidence_hits: Iterable[Dict[str, Any]],
 ) -> list[Dict[str, Any]]:
     hits = [h for h in evidence_hits if isinstance(h, dict)]
+    namespace_normalized = vector_store.normalize_namespace(namespace)
     claims = _extract_claim_strings(toc_payload, "toc")
     citations: list[Dict[str, Any]] = []
 
@@ -367,6 +369,7 @@ def build_architect_claim_citations(
                 "stage": "architect",
                 "citation_type": "strategy_namespace",
                 "namespace": namespace,
+                "namespace_normalized": namespace_normalized,
                 "label": f"Based on {namespace}",
                 "used_for": "toc_draft",
                 "statement_path": "toc",
@@ -382,6 +385,7 @@ def build_architect_claim_citations(
                 "stage": "architect",
                 "citation_type": "fallback_namespace",
                 "namespace": namespace,
+                "namespace_normalized": namespace_normalized,
                 "label": f"{namespace} (no retrieved evidence)",
                 "used_for": "toc_claims",
                 "statement_path": "toc",
@@ -432,6 +436,7 @@ def build_architect_claim_citations(
                 "stage": "architect",
                 "citation_type": citation_type,
                 "namespace": namespace,
+                "namespace_normalized": namespace_normalized,
                 "doc_id": hit.get("doc_id"),
                 "source": hit.get("source"),
                 "page": hit.get("page"),
@@ -450,6 +455,7 @@ def build_architect_claim_citations(
                 "evidence_rank": hit.get("rank") if hit else None,
                 "retrieval_rank": hit.get("retrieval_rank") if hit else None,
                 "retrieval_confidence": hit.get("retrieval_confidence") if hit else 0.1,
+                "retrieval_distance": hit.get("retrieval_distance") if hit else None,
                 "confidence_threshold": confidence_threshold,
                 "traceability_status": traceability_status,
                 "traceability_complete": traceability_status == "complete",

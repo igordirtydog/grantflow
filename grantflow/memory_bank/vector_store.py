@@ -52,6 +52,15 @@ class VectorStore:
         ns = self.normalize_namespace(namespace)
         return f"{self.prefix}_{ns}"
 
+    def namespace_trace(self, namespace: str) -> Dict[str, str]:
+        requested = str(namespace or "").strip() or "default"
+        normalized = self.normalize_namespace(requested)
+        return {
+            "namespace": requested,
+            "namespace_normalized": normalized,
+            "collection": self._collection_name(requested),
+        }
+
     def _embed_texts(self, texts: list[str], dims: int = 16) -> list[list[float]]:
         """Deterministic lightweight embeddings for local/offline MVP smoke tests."""
         embeddings: list[list[float]] = []
@@ -161,11 +170,13 @@ class VectorStore:
         return result
 
     def get_stats(self, namespace: str) -> dict:
+        trace = self.namespace_trace(namespace)
         if self.client is None:
             ns = self._ensure_memory_namespace(namespace)
             count = len(ns["rows"])
             return {
-                "namespace": namespace,
+                "namespace": trace["namespace"],
+                "namespace_normalized": trace["namespace_normalized"],
                 "collection": ns["name"],
                 "count": count,
                 "document_count": count,
@@ -176,7 +187,8 @@ class VectorStore:
         col = self.get_collection(namespace)
         count = col.count()
         return {
-            "namespace": namespace,
+            "namespace": trace["namespace"],
+            "namespace_normalized": trace["namespace_normalized"],
             "collection": col.name,
             "count": count,
             "document_count": count,
