@@ -65,6 +65,7 @@ jobs:
           echo "Target commitish: ${TARGET_COMMITISH}"
 
       - name: Ensure tag does not already exist
+        if: ${{ github.event.inputs.dry_run != 'true' }}
         env:
           TAG_NAME: ${{ steps.resolve.outputs.tag_name }}
         run: |
