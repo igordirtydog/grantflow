@@ -30,6 +30,12 @@ class FindingEntity(TypedDict, total=False):
     acknowledged_by: Optional[str]
     resolved_at: Optional[str]
     resolved_by: Optional[str]
+    due_at: Optional[str]
+    sla_hours: Optional[int]
+    workflow_state: Optional[str]
+    is_overdue: Optional[bool]
+    age_hours: Optional[float]
+    time_to_due_hours: Optional[float]
 
 
 def finding_primary_id(item: Dict[str, Any]) -> str:
@@ -187,7 +193,23 @@ def normalize_findings(
         prior = previous_by_key.get(finding_identity_key(normalized))
         if prior:
             raw = item if isinstance(item, dict) else {}
-            for key in ("id", "finding_id", "status", "acknowledged_at", "resolved_at"):
+            for key in (
+                "id",
+                "finding_id",
+                "status",
+                "updated_at",
+                "updated_by",
+                "acknowledged_at",
+                "acknowledged_by",
+                "resolved_at",
+                "resolved_by",
+                "due_at",
+                "sla_hours",
+                "workflow_state",
+                "is_overdue",
+                "age_hours",
+                "time_to_due_hours",
+            ):
                 raw_has_value = isinstance(raw, dict) and raw.get(key) not in (None, "")
                 if not raw_has_value and prior.get(key) is not None:
                     normalized[key] = prior.get(key)

@@ -10,6 +10,7 @@ from typing import Any
 from grantflow.core.config import config
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.swarm.citations import citation_traceability_status
+from grantflow.swarm.findings import state_critic_findings
 from grantflow.swarm.graph import grantflow_graph
 from grantflow.swarm.state_contract import build_graph_state
 
@@ -209,7 +210,7 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     draft_versions = state.get("draft_versions") if isinstance(state.get("draft_versions"), list) else []
     errors = state.get("errors") if isinstance(state.get("errors"), list) else []
     critic_notes = state.get("critic_notes") if isinstance(state.get("critic_notes"), dict) else {}
-    fatal_flaws = critic_notes.get("fatal_flaws") if isinstance(critic_notes.get("fatal_flaws"), list) else []
+    fatal_flaws = state_critic_findings(state, default_source="rules")
     toc_validation = state.get("toc_validation") if isinstance(state.get("toc_validation"), dict) else {}
     toc_generation_meta = (
         state.get("toc_generation_meta") if isinstance(state.get("toc_generation_meta"), dict) else {}

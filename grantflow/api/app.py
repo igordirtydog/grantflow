@@ -1709,11 +1709,8 @@ def _resolve_export_inputs(
     toc = req.toc_draft or payload.get("toc_draft") or payload.get("toc") or {}
     logframe = req.logframe_draft or payload.get("logframe_draft") or payload.get("mel") or {}
     citations = payload.get("citations") or []
-    critic_notes_raw = payload.get("critic_notes")
-    critic_notes: dict[str, Any] = critic_notes_raw if isinstance(critic_notes_raw, dict) else {}
-    critic_findings = (
-        req.critic_findings or critic_notes.get("fatal_flaws") or payload_root.get("critic_findings") or []
-    )
+    state_critic_findings_payload = state_critic_findings(payload_state, default_source="rules")
+    critic_findings = req.critic_findings or state_critic_findings_payload or payload_root.get("critic_findings") or []
     review_comments = req.review_comments or payload_root.get("review_comments") or payload.get("review_comments") or []
 
     if not isinstance(toc, dict):

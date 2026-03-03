@@ -172,10 +172,14 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
             "logframe_draft": {"indicators": []},
             "critic_notes": {
                 "fatal_flaws": [
-                    {"source": "llm", "label": "CAUSAL_LINK_DETAIL"},
-                    {"source": "llm", "label": "CAUSAL_LINK_DETAIL"},
-                    {"source": "llm", "label": "BASELINE_TARGET_MISSING"},
-                    {"source": "rules", "label": "IGNORE_ME"},
+                    {"source": "llm", "label": "CAUSAL_LINK_DETAIL", "message": "Add causal chain detail."},
+                    {"source": "llm", "label": "CAUSAL_LINK_DETAIL", "message": "Clarify assumptions in chain."},
+                    {
+                        "source": "llm",
+                        "label": "BASELINE_TARGET_MISSING",
+                        "message": "Baseline and target missing for indicator.",
+                    },
+                    {"source": "rules", "label": "IGNORE_ME", "message": "Rule-based structural mismatch."},
                 ],
                 "llm_advisory_diagnostics": {
                     "advisory_applies": True,
@@ -221,6 +225,23 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
     assert metrics["llm_advisory_applied_label_counts"]["CAUSAL_LINK_DETAIL"] == 2
     assert metrics["llm_advisory_applied_label_counts"]["BASELINE_TARGET_MISSING"] == 1
     assert metrics["llm_advisory_rejected_label_counts"] == {}
+
+
+def test_compute_state_metrics_normalizes_legacy_alias_string_findings():
+    metrics = compute_state_metrics(
+        {
+            "toc_validation": {"valid": True},
+            "toc_draft": {"toc": {}},
+            "logframe_draft": {"indicators": []},
+            "critic_fatal_flaws": [
+                "Missing baseline for indicator set.",
+            ],
+            "citations": [],
+        }
+    )
+    assert metrics["fatal_flaw_count"] == 1
+    assert metrics["high_severity_fatal_flaw_count"] == 0
+    assert metrics["llm_finding_label_counts"] == {}
 
 
 def test_eval_harness_runtime_overrides_apply_to_cases_without_mutating_original():

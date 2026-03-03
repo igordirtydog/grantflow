@@ -73,6 +73,45 @@ def test_normalize_findings_preserves_previous_status_when_recomputing():
     assert rows[0]["acknowledged_at"] == "2026-02-27T00:00:00Z"
 
 
+def test_normalize_findings_preserves_previous_workflow_metadata_when_recomputing():
+    previous = [
+        {
+            "id": "f-2",
+            "finding_id": "f-2",
+            "code": "LOGFRAME_BASELINE_MISSING",
+            "section": "logframe",
+            "severity": "high",
+            "status": "open",
+            "message": "Baseline missing for core indicator.",
+            "source": "rules",
+            "due_at": "2026-03-05T10:00:00Z",
+            "sla_hours": 24,
+            "workflow_state": "pending",
+            "is_overdue": False,
+            "age_hours": 3.5,
+            "time_to_due_hours": 20.5,
+        }
+    ]
+    current = [
+        {
+            "code": "LOGFRAME_BASELINE_MISSING",
+            "section": "logframe",
+            "severity": "high",
+            "message": "Baseline missing for core indicator.",
+            "source": "rules",
+        }
+    ]
+    rows = normalize_findings(current, previous_items=previous, default_source="rules")
+    assert rows[0]["id"] == "f-2"
+    assert rows[0]["finding_id"] == "f-2"
+    assert rows[0]["due_at"] == "2026-03-05T10:00:00Z"
+    assert rows[0]["sla_hours"] == 24
+    assert rows[0]["workflow_state"] == "pending"
+    assert rows[0]["is_overdue"] is False
+    assert rows[0]["age_hours"] == 3.5
+    assert rows[0]["time_to_due_hours"] == 20.5
+
+
 def test_normalize_findings_supports_id_only_payload():
     rows = normalize_findings(
         [
