@@ -1,0 +1,8 @@
+GrantFlow evaluation suite
+Suite: llm-smoke-economy-wb
+Cases: 1 | Passed: 1 | Failed: 0
+Expectations: skipped (exploratory metrics-only mode)
+- PASS worldbank_public_sector_performance_uzbekistan (worldbank): q=9.25 critic=9.25 toc_valid=True flaws=0 citations=14 key_claim_cov=100%
+
+Donor quality breakdown (suite-level)
+- worldbank: cases=1 pass=1/1 avg_q=9.25 needs_revision=0 (0%) high_flaws=0 low_conf_citations=0 fallback_ns_citations=0 traceability_gap_citations=0

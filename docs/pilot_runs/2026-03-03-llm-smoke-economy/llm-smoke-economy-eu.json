@@ -1,0 +1,62 @@
+{
+  "all_passed": true,
+  "case_count": 1,
+  "cases": [
+    {
+      "case_id": "eu_digital_governance_services_moldova",
+      "checks": [],
+      "donor_id": "eu",
+      "expectations_skipped": true,
+      "failed_checks": [],
+      "fixture_file": "baseline_cases.json",
+      "metrics": {
+        "architect_citation_count": 10,
+        "architect_claim_citation_count": 10,
+        "architect_fallback_claim_ratio": 0.0,
+        "architect_key_claim_coverage_ratio": 1.0,
+        "architect_threshold_hit_rate": 1.0,
+        "citation_confidence_avg": 0.4362,
+        "citations_total": 13,
+        "critic_score": 9.25,
+        "draft_version_count": 2,
+        "error_count": 0,
+        "fallback_namespace_citation_count": 0,
+        "fatal_flaw_count": 0,
+        "has_logframe_draft": true,
+        "has_toc_draft": true,
+        "high_confidence_citation_count": 0,
+        "high_severity_fatal_flaw_count": 0,
+        "llm_advisory_applied_label_counts": {},
+        "llm_advisory_rejected_label_counts": {},
+        "llm_finding_label_counts": {},
+        "low_confidence_citation_count": 0,
+        "mel_citation_count": 3,
+        "needs_revision": false,
+        "quality_score": 9.25,
+        "rag_low_confidence_citation_count": 0,
+        "toc_schema_name": "EU_TOC",
+        "toc_schema_valid": true,
+        "traceability_complete_citation_count": 13,
+        "traceability_gap_citation_count": 0,
+        "traceability_gap_citation_rate": 0.0,
+        "traceability_missing_citation_count": 0,
+        "traceability_partial_citation_count": 0
+      },
+      "passed": true
+    }
+  ],
+  "expectations_skipped": true,
+  "failed_count": 0,
+  "passed_count": 1,
+  "runtime_overrides": {
+    "case_filters": [
+      "eu_digital_governance_services_moldova"
+    ],
+    "cases_files": [],
+    "donor_filters": [],
+    "force_architect_rag": true,
+    "force_llm": true,
+    "skip_expectations": true
+  },
+  "suite_label": "llm-smoke-economy-eu"
+}
