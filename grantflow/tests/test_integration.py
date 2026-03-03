@@ -1673,6 +1673,81 @@ def test_status_critic_bulk_status_updates_support_filters_and_apply_all():
     assert all(str(item.get("status") or "") == "resolved" for item in critic_flaws)
 
 
+def test_status_critic_bulk_status_dry_run_previews_without_persisting():
+    job_id = "critic-findings-bulk-dry-run-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "quality_score": 6.0,
+                "critic_score": 6.0,
+                "needs_revision": True,
+                "critic_notes": {
+                    "engine": "rules",
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "dry-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        },
+                        {
+                            "finding_id": "dry-f2",
+                            "code": "LOGFRAME_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "open",
+                            "message": "Missing baseline.",
+                            "source": "rules",
+                        },
+                    ],
+                    "rule_checks": [],
+                },
+            },
+        },
+    )
+
+    dry_run_resp = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        headers={"X-Actor": "bulk_previewer"},
+        json={"next_status": "resolved", "apply_to_all": True, "dry_run": True},
+    )
+    assert dry_run_resp.status_code == 200
+    dry_run_body = dry_run_resp.json()
+    assert dry_run_body["dry_run"] is True
+    assert dry_run_body["persisted"] is False
+    assert dry_run_body["matched_count"] == 2
+    assert dry_run_body["changed_count"] == 2
+    assert all(str(item.get("status") or "") == "resolved" for item in dry_run_body["updated_findings"])
+
+    critic_after_preview_resp = client.get(f"/status/{job_id}/critic")
+    assert critic_after_preview_resp.status_code == 200
+    critic_after_preview = critic_after_preview_resp.json()["fatal_flaws"]
+    assert len(critic_after_preview) == 2
+    assert all(str(item.get("status") or "") == "open" for item in critic_after_preview)
+
+    commit_resp = client.post(
+        f"/status/{job_id}/critic/findings/bulk-status",
+        headers={"X-Actor": "bulk_reviewer"},
+        json={"next_status": "resolved", "apply_to_all": True},
+    )
+    assert commit_resp.status_code == 200
+    commit_body = commit_resp.json()
+    assert commit_body["dry_run"] is False
+    assert commit_body["persisted"] is True
+    assert commit_body["changed_count"] == 2
+
+    critic_after_commit_resp = client.get(f"/status/{job_id}/critic")
+    assert critic_after_commit_resp.status_code == 200
+    critic_after_commit = critic_after_commit_resp.json()["fatal_flaws"]
+    assert len(critic_after_commit) == 2
+    assert all(str(item.get("status") or "") == "resolved" for item in critic_after_commit)
+
+
 def test_status_critic_findings_list_and_detail_support_filters():
     job_id = "critic-findings-list-1"
     api_app_module.JOB_STORE.set(

@@ -1063,6 +1063,7 @@ class JobCommentCreateRequest(BaseModel):
 class CriticFindingsBulkStatusRequest(BaseModel):
     next_status: str
     apply_to_all: bool = False
+    dry_run: bool = False
     finding_status: Optional[str] = None
     severity: Optional[str] = None
     section: Optional[str] = None
@@ -1623,6 +1624,7 @@ def _set_critic_fatal_flaws_status_bulk(
     *,
     next_status: str,
     actor: Optional[str] = None,
+    dry_run: bool = False,
     apply_to_all: bool = False,
     finding_status: Optional[str] = None,
     severity: Optional[str] = None,
@@ -1719,7 +1721,7 @@ def _set_critic_fatal_flaws_status_bulk(
             changed = True
             changed_items.append(updated)
 
-    if changed:
+    if changed and not dry_run:
         next_state = dict(state)
         write_state_critic_findings(next_state, next_flaws, previous_items=next_flaws, default_source="rules")
         _update_job(job_id, state=next_state)
@@ -1742,6 +1744,8 @@ def _set_critic_fatal_flaws_status_bulk(
         "status": str((job or {}).get("status") or ""),
         "requested_status": next_status,
         "actor": actor_value,
+        "dry_run": bool(dry_run),
+        "persisted": not bool(dry_run),
         "matched_count": matched_count,
         "changed_count": changed_count,
         "unchanged_count": max(0, matched_count - changed_count),
@@ -3084,6 +3088,7 @@ def bulk_status_critic_findings(job_id: str, req: CriticFindingsBulkStatusReques
         job_id,
         next_status=next_status,
         actor=_finding_actor_from_request(request),
+        dry_run=bool(req.dry_run),
         apply_to_all=bool(req.apply_to_all),
         finding_status=(req.finding_status or None),
         severity=(req.severity or None),

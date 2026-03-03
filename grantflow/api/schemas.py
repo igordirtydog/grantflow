@@ -308,6 +308,8 @@ class CriticFindingsBulkStatusPublicResponse(BaseModel):
     status: str
     requested_status: str
     actor: str
+    dry_run: bool = False
+    persisted: bool = True
     matched_count: int
     changed_count: int
     unchanged_count: int
