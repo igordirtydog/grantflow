@@ -143,10 +143,18 @@ def test_demo_console_page_loads():
     assert "qualityMelSummaryList" in body
     assert "qualityCitationTypeCountsList" in body
     assert "qualityArchitectCitationTypeCountsList" in body
+    assert "Grounding KPI" in body
+    assert "groundingKpiCards" in body
+    assert "groundingKpiMetaLine" in body
+    assert "groundingKpiCountsList" in body
+    assert "groundingKpiPolicyReasonsList" in body
     assert "Claim-support" in body
     assert "Architect fallback" in body
     assert "MEL claim-support" in body
     assert "MEL fallback" in body
+    assert "Fallback rate" in body
+    assert "Traceability complete" in body
+    assert "Traceability gap" in body
     assert "qualityJson" in body
     assert "exportPayloadBtn" in body
     assert "copyExportPayloadBtn" in body

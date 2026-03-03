@@ -447,6 +447,38 @@ def render_demo_ui_html() -> str:
         </div>
 
         <div class="card">
+          <h2>Grounding KPI</h2>
+          <div class="body">
+            <div class="sub">Grounding posture from citations, traceability, and preflight policy.</div>
+            <div class="kpis" id="groundingKpiCards" style="margin-top:10px;">
+              <div class="kpi"><div class="label">Grounding risk</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Preflight grounding</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Policy mode</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Policy blocking</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Citation count</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Fallback rate</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Traceability complete</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Traceability gap</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Architect claim-support</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Architect threshold hit</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">MEL claim-support</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">MEL fallback</div><div class="value mono">-</div></div>
+            </div>
+            <div id="groundingKpiMetaLine" class="footer-note mono">citation_count=- · fallback=- · traceability_gap=-</div>
+            <div class="row" style="margin-top:10px;">
+              <div>
+                <label>Grounding Counts</label>
+                <div class="list" id="groundingKpiCountsList"></div>
+              </div>
+              <div>
+                <label>Grounding Policy Reasons</label>
+                <div class="list" id="groundingKpiPolicyReasonsList"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <h2>Portfolio Metrics</h2>
           <div class="body">
             <div class="row4">
@@ -1380,6 +1412,10 @@ def render_demo_ui_html() -> str:
         qualityReadinessWarningsList: $("qualityReadinessWarningsList"),
         qualityReadinessWarningLevelPill: $("qualityReadinessWarningLevelPill"),
         qualityPreflightMetaLine: $("qualityPreflightMetaLine"),
+        groundingKpiCards: $("groundingKpiCards"),
+        groundingKpiMetaLine: $("groundingKpiMetaLine"),
+        groundingKpiCountsList: $("groundingKpiCountsList"),
+        groundingKpiPolicyReasonsList: $("groundingKpiPolicyReasonsList"),
         portfolioMetricsJson: $("portfolioMetricsJson"),
         portfolioQualityJson: $("portfolioQualityJson"),
         criticJson: $("criticJson"),
@@ -2264,6 +2300,179 @@ def render_demo_ui_html() -> str:
         }
       }
 
+      function setRiskClass(node, levelRaw) {
+        if (!node) return;
+        const level = normalizeRiskLevel(levelRaw);
+        node.classList.remove("risk-high", "risk-medium", "risk-low", "risk-none");
+        node.classList.add(`risk-${level}`);
+      }
+
+      function groundingLevelFromSupportRate(rateRaw) {
+        const rate = Number(rateRaw);
+        if (!Number.isFinite(rate)) return "none";
+        if (rate < 0.5) return "high";
+        if (rate < 0.7) return "medium";
+        return "low";
+      }
+
+      function groundingLevelFromFallbackRate(rateRaw) {
+        const rate = Number(rateRaw);
+        if (!Number.isFinite(rate)) return "none";
+        if (rate >= 0.8) return "high";
+        if (rate >= 0.5) return "medium";
+        return "low";
+      }
+
+      function groundingLevelFromGapRate(rateRaw) {
+        const rate = Number(rateRaw);
+        if (!Number.isFinite(rate)) return "none";
+        if (rate >= 0.6) return "high";
+        if (rate >= 0.3) return "medium";
+        return "low";
+      }
+
+      function renderGroundingKpiCards(summary) {
+        if (!els.groundingKpiCards) return;
+        const citations = summary?.citations || {};
+        const preflight = summary?.preflight || {};
+        const preflightPolicy =
+          preflight && typeof preflight.grounding_policy === "object" && !Array.isArray(preflight.grounding_policy)
+            ? preflight.grounding_policy
+            : {};
+        const melPolicy =
+          summary?.mel_grounding_policy &&
+          typeof summary.mel_grounding_policy === "object" &&
+          !Array.isArray(summary.mel_grounding_policy)
+            ? summary.mel_grounding_policy
+            : {};
+        const overallGroundingRisk = String(citations?.grounding_risk_level || "unknown").toLowerCase();
+        const preflightGroundingRisk = String(
+          preflight?.grounding_risk_level || preflightPolicy?.risk_level || "unknown"
+        ).toLowerCase();
+        const policyMode = String(preflightPolicy?.mode || "-");
+        const policyBlockingRaw = preflightPolicy?.blocking;
+        const policyBlocking =
+          typeof policyBlockingRaw === "boolean" ? (policyBlockingRaw ? "true" : "false") : "-";
+        const citationCount = Number(citations?.citation_count ?? 0);
+        const fallbackCount = Number(citations?.fallback_namespace_citation_count ?? 0);
+        const fallbackRate = Number(citations?.fallback_namespace_citation_rate ?? NaN);
+        const traceabilityCompleteCount = Number(citations?.traceability_complete_citation_count ?? 0);
+        const traceabilityGapCount = Number(citations?.traceability_gap_citation_count ?? 0);
+        const traceabilityCompleteRate = citationCount > 0 ? traceabilityCompleteCount / citationCount : NaN;
+        const traceabilityGapRate = Number(citations?.traceability_gap_citation_rate ?? NaN);
+        const architectClaimSupportRate = Number(citations?.architect_claim_support_rate ?? NaN);
+        const architectThresholdHitRate = Number(citations?.architect_threshold_hit_rate ?? NaN);
+        const melClaimSupportRate = Number(citations?.mel_claim_support_rate ?? NaN);
+        const melFallbackRate = Number(citations?.mel_fallback_namespace_citation_rate ?? NaN);
+        const fmtRate = (rawRate) => {
+          const rate = Number(rawRate);
+          return Number.isFinite(rate) ? `${(rate * 100).toFixed(1)}%` : "-";
+        };
+        const values = [
+          overallGroundingRisk || "-",
+          preflightGroundingRisk || "-",
+          policyMode || "-",
+          policyBlocking,
+          String(citationCount || 0),
+          fmtRate(fallbackRate),
+          fmtRate(traceabilityCompleteRate),
+          fmtRate(traceabilityGapRate),
+          fmtRate(architectClaimSupportRate),
+          fmtRate(architectThresholdHitRate),
+          fmtRate(melClaimSupportRate),
+          fmtRate(melFallbackRate),
+        ];
+        const groundingValueNodes = [...els.groundingKpiCards.querySelectorAll(".kpi .value")];
+        groundingValueNodes.forEach((node, i) => {
+          node.textContent = values[i] ?? "-";
+          node.title = "";
+        });
+        setRiskClass(groundingValueNodes[0], overallGroundingRisk);
+        setRiskClass(groundingValueNodes[1], preflightGroundingRisk);
+        setRiskClass(
+          groundingValueNodes[3],
+          policyBlocking === "true" ? "high" : policyBlocking === "false" ? "low" : "none"
+        );
+        setRiskClass(groundingValueNodes[5], groundingLevelFromFallbackRate(fallbackRate));
+        setRiskClass(groundingValueNodes[6], groundingLevelFromSupportRate(traceabilityCompleteRate));
+        setRiskClass(groundingValueNodes[7], groundingLevelFromGapRate(traceabilityGapRate));
+        setRiskClass(groundingValueNodes[8], groundingLevelFromSupportRate(architectClaimSupportRate));
+        setRiskClass(groundingValueNodes[9], groundingLevelFromSupportRate(architectThresholdHitRate));
+        setRiskClass(groundingValueNodes[10], groundingLevelFromSupportRate(melClaimSupportRate));
+        setRiskClass(groundingValueNodes[11], groundingLevelFromFallbackRate(melFallbackRate));
+
+        if (groundingValueNodes[5]) {
+          groundingValueNodes[5].title =
+            citationCount > 0 ? `${fallbackCount}/${citationCount} fallback namespace citations` : "No citations";
+        }
+        if (groundingValueNodes[6]) {
+          groundingValueNodes[6].title =
+            citationCount > 0
+              ? `${traceabilityCompleteCount}/${citationCount} complete traceability citations`
+              : "No citations";
+        }
+        if (groundingValueNodes[7]) {
+          groundingValueNodes[7].title =
+            citationCount > 0
+              ? `${traceabilityGapCount}/${citationCount} traceability gap citations`
+              : "No citations";
+        }
+        if (els.groundingKpiMetaLine) {
+          const fallbackRateLabel = fmtRate(fallbackRate);
+          const traceabilityGapRateLabel = fmtRate(traceabilityGapRate);
+          els.groundingKpiMetaLine.textContent = `citation_count=${citationCount} · fallback=${fallbackCount} (${fallbackRateLabel}) · traceability_gap=${traceabilityGapCount} (${traceabilityGapRateLabel})`;
+        }
+
+        renderKeyValueList(
+          els.groundingKpiCountsList,
+          {
+            citation_count: citationCount,
+            architect_citation_count: Number(citations?.architect_citation_count ?? 0),
+            mel_citation_count: Number(citations?.mel_citation_count ?? 0),
+            fallback_namespace_citation_count: fallbackCount,
+            rag_low_confidence_citation_count: Number(citations?.rag_low_confidence_citation_count ?? 0),
+            traceability_complete_citation_count: traceabilityCompleteCount,
+            traceability_partial_citation_count: Number(citations?.traceability_partial_citation_count ?? 0),
+            traceability_missing_citation_count: Number(citations?.traceability_missing_citation_count ?? 0),
+            traceability_gap_citation_count: traceabilityGapCount,
+          },
+          "No grounding counts for this job.",
+          12
+        );
+
+        if (els.groundingKpiPolicyReasonsList) {
+          const preflightReasons = Array.isArray(preflightPolicy?.reasons)
+            ? preflightPolicy.reasons.map((item) => String(item || "").trim()).filter(Boolean)
+            : [];
+          const melReasons = Array.isArray(melPolicy?.reasons)
+            ? melPolicy.reasons.map((item) => String(item || "").trim()).filter(Boolean)
+            : [];
+          const rows = [
+            ...preflightReasons.map((reason) => ({ title: "preflight", value: reason })),
+            ...melReasons.map((reason) => ({ title: "mel", value: reason })),
+          ];
+          els.groundingKpiPolicyReasonsList.innerHTML = "";
+          if (!rows.length) {
+            const div = document.createElement("div");
+            div.className = "item severity-low";
+            div.innerHTML =
+              `<div class="title">No policy reasons</div>` +
+              `<div class="sub mono">preflight_mode=${escapeHtml(policyMode)} · preflight_blocking=${escapeHtml(policyBlocking)}</div>`;
+            els.groundingKpiPolicyReasonsList.appendChild(div);
+          } else {
+            for (const row of rows) {
+              const div = document.createElement("div");
+              const severity = policyBlocking === "true" ? "high" : "medium";
+              div.className = `item severity-${severity}`;
+              div.innerHTML =
+                `<div class="title mono">${escapeHtml(row.title)}</div>` +
+                `<div class="sub mono">${escapeHtml(row.value)}</div>`;
+              els.groundingKpiPolicyReasonsList.appendChild(div);
+            }
+          }
+        }
+      }
+
       function renderQualityCards(summary) {
         const critic = summary?.critic || {};
         const citations = summary?.citations || {};
@@ -2440,6 +2649,7 @@ def render_demo_ui_html() -> str:
           "No LLM finding labels in this job.",
           8
         );
+        renderGroundingKpiCards(summary);
         renderQualityReadinessWarnings(readiness);
       }
 
