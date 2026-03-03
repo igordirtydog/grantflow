@@ -1527,6 +1527,65 @@ def test_status_critic_accepts_id_only_finding_entities():
     assert ack_body["status"] == "acknowledged"
 
 
+def test_status_critic_single_status_dry_run_previews_without_persisting():
+    job_id = "critic-findings-single-dry-run-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "single-dry-f1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC invalid.",
+                            "source": "rules",
+                        }
+                    ]
+                }
+            },
+        },
+    )
+
+    dry_resp = client.post(
+        f"/status/{job_id}/critic/findings/single-dry-f1/ack",
+        params={"dry_run": "true"},
+        headers={"X-Reviewer": "qa_reviewer"},
+    )
+    assert dry_resp.status_code == 200
+    dry_body = dry_resp.json()
+    assert dry_body["status"] == "acknowledged"
+    assert dry_body["dry_run"] is True
+    assert dry_body["persisted"] is False
+    assert dry_body["changed"] is True
+    assert dry_body["updated_by"] == "qa_reviewer"
+
+    critic_after_dry = client.get(f"/status/{job_id}/critic")
+    assert critic_after_dry.status_code == 200
+    flaw_after_dry = critic_after_dry.json()["fatal_flaws"][0]
+    assert flaw_after_dry["status"] == "open"
+
+    commit_resp = client.post(
+        f"/status/{job_id}/critic/findings/single-dry-f1/ack",
+        headers={"X-Reviewer": "qa_reviewer"},
+    )
+    assert commit_resp.status_code == 200
+    commit_body = commit_resp.json()
+    assert commit_body["dry_run"] is False
+    assert commit_body["persisted"] is True
+    assert commit_body["changed"] is True
+    assert commit_body["status"] == "acknowledged"
+
+    critic_after_commit = client.get(f"/status/{job_id}/critic")
+    assert critic_after_commit.status_code == 200
+    flaw_after_commit = critic_after_commit.json()["fatal_flaws"][0]
+    assert flaw_after_commit["status"] == "acknowledged"
+
+
 def test_status_critic_supports_legacy_state_critic_fatal_flaws_alias():
     job_id = "critic-findings-legacy-alias-1"
     api_app_module.JOB_STORE.set(
@@ -4940,10 +4999,14 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_critic_response_schema == {"$ref": "#/components/schemas/JobCriticPublicResponse"}
     assert status_critic_findings_response_schema == {"$ref": "#/components/schemas/CriticFindingsListPublicResponse"}
     assert status_critic_finding_detail_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
-    assert status_critic_finding_ack_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
-    assert status_critic_finding_open_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
+    assert status_critic_finding_ack_response_schema == {
+        "$ref": "#/components/schemas/CriticFatalFlawStatusUpdatePublicResponse"
+    }
+    assert status_critic_finding_open_response_schema == {
+        "$ref": "#/components/schemas/CriticFatalFlawStatusUpdatePublicResponse"
+    }
     assert status_critic_finding_resolve_response_schema == {
-        "$ref": "#/components/schemas/CriticFatalFlawPublicResponse"
+        "$ref": "#/components/schemas/CriticFatalFlawStatusUpdatePublicResponse"
     }
     assert status_critic_finding_bulk_status_response_schema == {
         "$ref": "#/components/schemas/CriticFindingsBulkStatusPublicResponse"
@@ -4996,6 +5059,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert "ReviewWorkflowTimelineEventPublicResponse" in schemas
     assert "CriticRuleCheckPublicResponse" in schemas
     assert "CriticFatalFlawPublicResponse" in schemas
+    assert "CriticFatalFlawStatusUpdatePublicResponse" in schemas
     assert "JobCommentsPublicResponse" in schemas
     assert "ReviewCommentPublicResponse" in schemas
     assert "PortfolioMetricsPublicResponse" in schemas

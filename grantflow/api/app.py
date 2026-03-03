@@ -44,6 +44,7 @@ from grantflow.api.schemas import (
     CriticFindingsBulkStatusPublicResponse,
     CriticFindingsListPublicResponse,
     CriticFatalFlawPublicResponse,
+    CriticFatalFlawStatusUpdatePublicResponse,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
     IngestRecentListPublicResponse,
@@ -1516,6 +1517,7 @@ def _set_critic_fatal_flaw_status(
     finding_id: str,
     next_status: str,
     actor: Optional[str] = None,
+    dry_run: bool = False,
 ) -> Dict[str, Any]:
     if next_status not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported critic finding status")
@@ -1559,7 +1561,7 @@ def _set_critic_fatal_flaw_status(
     if updated_finding is None:
         raise HTTPException(status_code=404, detail="Critic finding not found")
 
-    if changed:
+    if changed and not dry_run:
         next_state = dict(state)
         write_state_critic_findings(next_state, next_flaws, previous_items=next_flaws, default_source="rules")
         _update_job(job_id, state=next_state)
@@ -1573,7 +1575,11 @@ def _set_critic_fatal_flaw_status(
             actor=actor_value,
         )
 
-    return updated_finding
+    response = dict(updated_finding)
+    response["dry_run"] = bool(dry_run)
+    response["persisted"] = not bool(dry_run)
+    response["changed"] = bool(changed)
+    return response
 
 
 def _apply_critic_finding_status_transition(
@@ -3017,10 +3023,15 @@ def get_status_critic_finding(
 
 @app.post(
     "/status/{job_id}/critic/findings/{finding_id}/ack",
-    response_model=CriticFatalFlawPublicResponse,
+    response_model=CriticFatalFlawStatusUpdatePublicResponse,
     response_model_exclude_none=True,
 )
-def acknowledge_status_critic_finding(job_id: str, finding_id: str, request: Request):
+def acknowledge_status_critic_finding(
+    job_id: str,
+    finding_id: str,
+    request: Request,
+    dry_run: bool = False,
+):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
     if not job:
@@ -3031,15 +3042,21 @@ def acknowledge_status_critic_finding(job_id: str, finding_id: str, request: Req
         finding_id=finding_id,
         next_status="acknowledged",
         actor=_finding_actor_from_request(request),
+        dry_run=bool(dry_run),
     )
 
 
 @app.post(
     "/status/{job_id}/critic/findings/{finding_id}/open",
-    response_model=CriticFatalFlawPublicResponse,
+    response_model=CriticFatalFlawStatusUpdatePublicResponse,
     response_model_exclude_none=True,
 )
-def reopen_status_critic_finding(job_id: str, finding_id: str, request: Request):
+def reopen_status_critic_finding(
+    job_id: str,
+    finding_id: str,
+    request: Request,
+    dry_run: bool = False,
+):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
     if not job:
@@ -3050,15 +3067,21 @@ def reopen_status_critic_finding(job_id: str, finding_id: str, request: Request)
         finding_id=finding_id,
         next_status="open",
         actor=_finding_actor_from_request(request),
+        dry_run=bool(dry_run),
     )
 
 
 @app.post(
     "/status/{job_id}/critic/findings/{finding_id}/resolve",
-    response_model=CriticFatalFlawPublicResponse,
+    response_model=CriticFatalFlawStatusUpdatePublicResponse,
     response_model_exclude_none=True,
 )
-def resolve_status_critic_finding(job_id: str, finding_id: str, request: Request):
+def resolve_status_critic_finding(
+    job_id: str,
+    finding_id: str,
+    request: Request,
+    dry_run: bool = False,
+):
     require_api_key_if_configured(request)
     job = _get_job(job_id)
     if not job:
@@ -3069,6 +3092,7 @@ def resolve_status_critic_finding(job_id: str, finding_id: str, request: Request
         finding_id=finding_id,
         next_status="resolved",
         actor=_finding_actor_from_request(request),
+        dry_run=bool(dry_run),
     )
 
 

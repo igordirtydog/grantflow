@@ -360,6 +360,14 @@ class CriticFatalFlawPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class CriticFatalFlawStatusUpdatePublicResponse(CriticFatalFlawPublicResponse):
+    dry_run: bool = False
+    persisted: bool = True
+    changed: bool = False
+
+    model_config = ConfigDict(extra="allow")
+
+
 class CriticFindingsListFiltersPublicResponse(BaseModel):
     status: Optional[str] = None
     severity: Optional[str] = None
