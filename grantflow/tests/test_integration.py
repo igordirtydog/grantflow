@@ -912,6 +912,47 @@ def test_generate_strict_preflight_blocks_when_grounding_risk_is_high(monkeypatc
     assert detail["preflight"]["grounding_risk_level"] == "high"
 
 
+def test_generate_require_grounded_generation_blocks_llm_when_grounding_risk_is_high(monkeypatch):
+    monkeypatch.setattr(
+        api_app_module,
+        "_build_generate_preflight",
+        lambda donor_id, strategy, client_metadata: {
+            "donor_id": donor_id,
+            "risk_level": "medium",
+            "grounding_risk_level": "high",
+            "go_ahead": True,
+            "warning_count": 1,
+            "retrieval_namespace": "usaid_ads201",
+            "namespace_empty": False,
+            "warnings": [{"code": "LOW_DOC_COVERAGE", "severity": "medium"}],
+            "grounding_policy": {
+                "mode": "warn",
+                "risk_level": "high",
+                "blocking": False,
+                "go_ahead": True,
+                "summary": "namespace_empty_or_low_coverage",
+                "reasons": ["coverage_below_50pct"],
+            },
+        },
+    )
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Water Sanitation", "country": "Kenya"},
+            "llm_mode": True,
+            "require_grounded_generation": True,
+            "hitl_enabled": False,
+            "strict_preflight": False,
+        },
+    )
+    assert response.status_code == 409
+    detail = response.json()["detail"]
+    assert detail["reason"] == "llm_grounded_generation_block"
+    assert "grounding_risk_high" in (detail.get("strict_reasons") or [])
+    assert detail["preflight"]["grounding_risk_level"] == "high"
+
+
 def test_generate_blocks_when_preflight_grounding_policy_is_strict(monkeypatch):
     monkeypatch.setattr(api_app_module.config.graph, "grounding_gate_mode", "strict")
     monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_policy_mode", "strict")
@@ -3861,6 +3902,13 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert body["citations"]["rag_low_confidence_citation_count"] == 1
     assert body["citations"]["fallback_namespace_citation_count"] == 1
     assert body["citations"]["fallback_namespace_citation_rate"] == 0.25
+    assert body["citations"]["strategy_reference_citation_count"] == 0
+    assert body["citations"]["strategy_reference_citation_rate"] == 0.0
+    assert body["citations"]["retrieval_grounded_citation_count"] == 3
+    assert body["citations"]["retrieval_grounded_citation_rate"] == 0.75
+    assert body["citations"]["non_retrieval_citation_count"] == 1
+    assert body["citations"]["non_retrieval_citation_rate"] == 0.25
+    assert body["citations"]["retrieval_expected"] is True
     assert body["citations"]["grounding_risk_level"] == "low"
     assert body["citations"]["traceability_complete_citation_count"] == 0
     assert body["citations"]["traceability_partial_citation_count"] == 0

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from grantflow.swarm.citations import citation_traceability_status
+from grantflow.swarm.citations import (
+    citation_traceability_status,
+    is_fallback_namespace_citation_type,
+    is_non_retrieval_citation_type,
+    is_retrieval_grounded_citation_type,
+    is_strategy_reference_citation_type,
+)
 
 
 def evaluate_grounding_gate(
@@ -24,6 +30,9 @@ def evaluate_grounding_gate(
     low_confidence_count = 0
     rag_low_confidence_count = 0
     fallback_namespace_count = 0
+    strategy_reference_count = 0
+    retrieval_grounded_count = 0
+    non_retrieval_count = 0
     traceability_complete_count = 0
     traceability_partial_count = 0
     traceability_missing_count = 0
@@ -35,8 +44,14 @@ def evaluate_grounding_gate(
         citation_type = str(citation.get("citation_type") or "")
         if citation_type == "rag_low_confidence":
             rag_low_confidence_count += 1
-        if citation_type == "fallback_namespace":
+        if is_fallback_namespace_citation_type(citation_type):
             fallback_namespace_count += 1
+        if is_strategy_reference_citation_type(citation_type):
+            strategy_reference_count += 1
+        if is_retrieval_grounded_citation_type(citation_type):
+            retrieval_grounded_count += 1
+        if is_non_retrieval_citation_type(citation_type):
+            non_retrieval_count += 1
         traceability_status = citation_traceability_status(citation)
         if traceability_status == "complete":
             traceability_complete_count += 1
@@ -66,6 +81,10 @@ def evaluate_grounding_gate(
     weak_rag_or_fallback_ratio = (
         round(weak_rag_or_fallback_count / citation_count, 4) if citation_count and weak_rag_or_fallback_count else 0.0
     )
+    non_retrieval_ratio = round(non_retrieval_count / citation_count, 4) if citation_count and non_retrieval_count else 0.0
+    retrieval_grounded_ratio = (
+        round(retrieval_grounded_count / citation_count, 4) if citation_count and retrieval_grounded_count else 0.0
+    )
     low_confidence_ratio = (
         round(low_confidence_count / citation_count, 4) if citation_count and low_confidence_count else 0.0
     )
@@ -81,6 +100,8 @@ def evaluate_grounding_gate(
     if citation_count >= min_citations_for_calibration:
         if weak_rag_or_fallback_ratio >= max_weak_rag_or_fallback_ratio:
             reasons.append("fallback_or_low_rag_citations_dominate")
+        if architect_retrieval_enabled and non_retrieval_ratio >= max_weak_rag_or_fallback_ratio:
+            reasons.append("non_retrieval_citations_dominate_when_retrieval_enabled")
         if low_confidence_ratio >= max_low_confidence_ratio:
             reasons.append("low_confidence_citations_dominate")
         if traceability_gap_ratio >= max_traceability_gap_ratio:
@@ -102,12 +123,17 @@ def evaluate_grounding_gate(
         "low_confidence_citation_count": low_confidence_count,
         "rag_low_confidence_citation_count": rag_low_confidence_count,
         "fallback_namespace_citation_count": fallback_namespace_count,
+        "strategy_reference_citation_count": strategy_reference_count,
+        "retrieval_grounded_citation_count": retrieval_grounded_count,
+        "non_retrieval_citation_count": non_retrieval_count,
         "traceability_complete_citation_count": traceability_complete_count,
         "traceability_partial_citation_count": traceability_partial_count,
         "traceability_missing_citation_count": traceability_missing_count,
         "traceability_gap_citation_count": traceability_gap_count,
         "traceability_gap_ratio": traceability_gap_ratio,
         "weak_rag_or_fallback_ratio": weak_rag_or_fallback_ratio,
+        "non_retrieval_ratio": non_retrieval_ratio,
+        "retrieval_grounded_ratio": retrieval_grounded_ratio,
         "low_confidence_ratio": low_confidence_ratio,
         "architect_retrieval_enabled": architect_retrieval_enabled,
         "architect_retrieval_hits_count": architect_retrieval_hits_count,

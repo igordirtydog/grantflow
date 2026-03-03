@@ -1628,6 +1628,7 @@ class GenerateRequest(BaseModel):
     tenant_id: Optional[str] = None
     request_id: Optional[str] = None
     llm_mode: bool = False
+    require_grounded_generation: bool = False
     hitl_enabled: bool = False
     hitl_checkpoints: Optional[list[Literal["architect", "toc", "mel", "logframe"]]] = None
     strict_preflight: bool = False
@@ -3440,6 +3441,7 @@ async def generate(
             "input_context": req.input_context or {},
             "tenant_id": req.tenant_id,
             "llm_mode": bool(req.llm_mode),
+            "require_grounded_generation": bool(req.require_grounded_generation),
             "hitl_enabled": bool(req.hitl_enabled),
             "hitl_checkpoints": list(req.hitl_checkpoints or []),
             "strict_preflight": bool(req.strict_preflight),
@@ -3519,6 +3521,19 @@ async def generate(
                 "preflight": preflight_payload,
             },
         )
+    if req.llm_mode and req.require_grounded_generation and grounding_risk_high:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "llm_grounded_generation_block",
+                "message": (
+                    "Generation blocked because require_grounded_generation=true "
+                    "and predicted grounding risk is high."
+                ),
+                "strict_reasons": ["grounding_risk_high"],
+                "preflight": preflight_payload,
+            },
+        )
     job_id = str(uuid.uuid4())
     initial_state = build_graph_state(
         donor_id=donor,
@@ -3531,6 +3546,9 @@ async def generate(
         max_iterations=int(config.graph.max_iterations),
         generate_preflight=preflight_payload,
         strict_preflight=bool(req.strict_preflight),
+        extras={
+            "require_grounded_generation": bool(req.require_grounded_generation),
+        },
     )
 
     _set_job(
@@ -3544,6 +3562,7 @@ async def generate(
             "client_metadata": client_metadata,
             "generate_preflight": preflight_payload,
             "strict_preflight": req.strict_preflight,
+            "require_grounded_generation": req.require_grounded_generation,
         },
     )
     _record_job_event(
@@ -3556,6 +3575,8 @@ async def generate(
         warning_count=int(preflight_payload.get("warning_count") or 0),
         retrieval_namespace=preflight_payload.get("retrieval_namespace"),
         namespace_empty=bool(preflight_payload.get("namespace_empty")),
+        llm_mode=bool(req.llm_mode),
+        require_grounded_generation=bool(req.require_grounded_generation),
         grounding_policy_mode=str(grounding_policy.get("mode") or ""),
         grounding_policy_blocking=bool(grounding_policy.get("blocking")),
     )

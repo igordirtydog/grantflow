@@ -300,6 +300,9 @@ def test_citation_grounding_context_tracks_fallback_and_weak_grounding():
     ctx = _citation_grounding_context(state)
     assert ctx["citation_count"] == 5
     assert ctx["fallback_namespace_citation_count"] == 2
+    assert ctx["strategy_reference_citation_count"] == 0
+    assert ctx["retrieval_grounded_citation_count"] == 3
+    assert ctx["non_retrieval_citation_count"] == 2
     assert ctx["rag_low_confidence_citation_count"] == 2
     assert ctx["low_confidence_citation_count"] == 4
     assert ctx["traceability_complete_citation_count"] == 0
@@ -311,6 +314,26 @@ def test_citation_grounding_context_tracks_fallback_and_weak_grounding():
     assert ctx["weak_grounding"] is True
     assert "architect_retrieval_no_hits" in ctx["weak_grounding_reasons"]
     assert "citation_traceability_gaps_dominate" in ctx["weak_grounding_reasons"]
+
+
+def test_citation_grounding_context_flags_non_retrieval_dominance_when_retrieval_expected():
+    state = {
+        "architect_retrieval": {"enabled": True, "hits_count": 2},
+        "citations": [
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "rag_claim_support", "citation_confidence": 0.9},
+        ],
+    }
+
+    ctx = _citation_grounding_context(state)
+    assert ctx["strategy_reference_citation_count"] == 4
+    assert ctx["non_retrieval_citation_count"] == 4
+    assert ctx["retrieval_grounded_citation_count"] == 1
+    assert ctx["weak_grounding"] is True
+    assert "non_retrieval_citations_dominate_when_retrieval_enabled" in ctx["weak_grounding_reasons"]
 
 
 def test_combine_critic_scores_caps_llm_penalty_in_weak_grounding_context():

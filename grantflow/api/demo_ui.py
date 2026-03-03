@@ -396,9 +396,9 @@ def render_demo_ui_html() -> str:
               <div class="kpi"><div class="label">Avg citation conf</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Threshold hit-rate</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Claim-support</div><div class="value mono">-</div></div>
-              <div class="kpi"><div class="label">Architect fallback</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Architect non-retrieval</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">MEL claim-support</div><div class="value mono">-</div></div>
-              <div class="kpi"><div class="label">MEL fallback</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">MEL non-retrieval</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Preflight risk</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Strict preflight</div><div class="value mono">-</div></div>
             </div>
@@ -456,15 +456,15 @@ def render_demo_ui_html() -> str:
               <div class="kpi"><div class="label">Policy mode</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Policy blocking</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Citation count</div><div class="value mono">-</div></div>
-              <div class="kpi"><div class="label">Fallback rate</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Non-retrieval rate</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Traceability complete</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Traceability gap</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Architect claim-support</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Architect threshold hit</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">MEL claim-support</div><div class="value mono">-</div></div>
-              <div class="kpi"><div class="label">MEL fallback</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">MEL non-retrieval</div><div class="value mono">-</div></div>
             </div>
-            <div id="groundingKpiMetaLine" class="footer-note mono">citation_count=- · fallback=- · traceability_gap=-</div>
+            <div id="groundingKpiMetaLine" class="footer-note mono">citation_count=- · non_retrieval=- · retrieval_grounded=- · traceability_gap=-</div>
             <div class="row" style="margin-top:10px;">
               <div>
                 <label>Grounding Counts</label>
@@ -2355,7 +2355,11 @@ def render_demo_ui_html() -> str:
           typeof policyBlockingRaw === "boolean" ? (policyBlockingRaw ? "true" : "false") : "-";
         const citationCount = Number(citations?.citation_count ?? 0);
         const fallbackCount = Number(citations?.fallback_namespace_citation_count ?? 0);
-        const fallbackRate = Number(citations?.fallback_namespace_citation_rate ?? NaN);
+        const strategyReferenceCount = Number(citations?.strategy_reference_citation_count ?? 0);
+        const retrievalGroundedCount = Number(citations?.retrieval_grounded_citation_count ?? 0);
+        const nonRetrievalCount = Number(citations?.non_retrieval_citation_count ?? fallbackCount + strategyReferenceCount);
+        const nonRetrievalRate = Number(citations?.non_retrieval_citation_rate ?? NaN);
+        const retrievalGroundedRate = Number(citations?.retrieval_grounded_citation_rate ?? NaN);
         const traceabilityCompleteCount = Number(citations?.traceability_complete_citation_count ?? 0);
         const traceabilityGapCount = Number(citations?.traceability_gap_citation_count ?? 0);
         const traceabilityCompleteRate = citationCount > 0 ? traceabilityCompleteCount / citationCount : NaN;
@@ -2363,7 +2367,7 @@ def render_demo_ui_html() -> str:
         const architectClaimSupportRate = Number(citations?.architect_claim_support_rate ?? NaN);
         const architectThresholdHitRate = Number(citations?.architect_threshold_hit_rate ?? NaN);
         const melClaimSupportRate = Number(citations?.mel_claim_support_rate ?? NaN);
-        const melFallbackRate = Number(citations?.mel_fallback_namespace_citation_rate ?? NaN);
+        const melNonRetrievalRate = Number(citations?.mel_non_retrieval_citation_rate ?? NaN);
         const fmtRate = (rawRate) => {
           const rate = Number(rawRate);
           return Number.isFinite(rate) ? `${(rate * 100).toFixed(1)}%` : "-";
@@ -2374,13 +2378,13 @@ def render_demo_ui_html() -> str:
           policyMode || "-",
           policyBlocking,
           String(citationCount || 0),
-          fmtRate(fallbackRate),
+          fmtRate(nonRetrievalRate),
           fmtRate(traceabilityCompleteRate),
           fmtRate(traceabilityGapRate),
           fmtRate(architectClaimSupportRate),
           fmtRate(architectThresholdHitRate),
           fmtRate(melClaimSupportRate),
-          fmtRate(melFallbackRate),
+          fmtRate(melNonRetrievalRate),
         ];
         const groundingValueNodes = [...els.groundingKpiCards.querySelectorAll(".kpi .value")];
         groundingValueNodes.forEach((node, i) => {
@@ -2393,17 +2397,19 @@ def render_demo_ui_html() -> str:
           groundingValueNodes[3],
           policyBlocking === "true" ? "high" : policyBlocking === "false" ? "low" : "none"
         );
-        setRiskClass(groundingValueNodes[5], groundingLevelFromFallbackRate(fallbackRate));
+        setRiskClass(groundingValueNodes[5], groundingLevelFromFallbackRate(nonRetrievalRate));
         setRiskClass(groundingValueNodes[6], groundingLevelFromSupportRate(traceabilityCompleteRate));
         setRiskClass(groundingValueNodes[7], groundingLevelFromGapRate(traceabilityGapRate));
         setRiskClass(groundingValueNodes[8], groundingLevelFromSupportRate(architectClaimSupportRate));
         setRiskClass(groundingValueNodes[9], groundingLevelFromSupportRate(architectThresholdHitRate));
         setRiskClass(groundingValueNodes[10], groundingLevelFromSupportRate(melClaimSupportRate));
-        setRiskClass(groundingValueNodes[11], groundingLevelFromFallbackRate(melFallbackRate));
+        setRiskClass(groundingValueNodes[11], groundingLevelFromFallbackRate(melNonRetrievalRate));
 
         if (groundingValueNodes[5]) {
           groundingValueNodes[5].title =
-            citationCount > 0 ? `${fallbackCount}/${citationCount} fallback namespace citations` : "No citations";
+            citationCount > 0
+              ? `${nonRetrievalCount}/${citationCount} non-retrieval citations (fallback=${fallbackCount}, strategy_ref=${strategyReferenceCount})`
+              : "No citations";
         }
         if (groundingValueNodes[6]) {
           groundingValueNodes[6].title =
@@ -2418,9 +2424,13 @@ def render_demo_ui_html() -> str:
               : "No citations";
         }
         if (els.groundingKpiMetaLine) {
-          const fallbackRateLabel = fmtRate(fallbackRate);
+          const nonRetrievalRateLabel = fmtRate(nonRetrievalRate);
+          const retrievalGroundedRateLabel = fmtRate(retrievalGroundedRate);
           const traceabilityGapRateLabel = fmtRate(traceabilityGapRate);
-          els.groundingKpiMetaLine.textContent = `citation_count=${citationCount} · fallback=${fallbackCount} (${fallbackRateLabel}) · traceability_gap=${traceabilityGapCount} (${traceabilityGapRateLabel})`;
+          els.groundingKpiMetaLine.textContent =
+            `citation_count=${citationCount} · non_retrieval=${nonRetrievalCount} (${nonRetrievalRateLabel})` +
+            ` · retrieval_grounded=${retrievalGroundedCount} (${retrievalGroundedRateLabel})` +
+            ` · traceability_gap=${traceabilityGapCount} (${traceabilityGapRateLabel})`;
         }
 
         renderKeyValueList(
@@ -2430,6 +2440,9 @@ def render_demo_ui_html() -> str:
             architect_citation_count: Number(citations?.architect_citation_count ?? 0),
             mel_citation_count: Number(citations?.mel_citation_count ?? 0),
             fallback_namespace_citation_count: fallbackCount,
+            strategy_reference_citation_count: strategyReferenceCount,
+            retrieval_grounded_citation_count: retrievalGroundedCount,
+            non_retrieval_citation_count: nonRetrievalCount,
             rag_low_confidence_citation_count: Number(citations?.rag_low_confidence_citation_count ?? 0),
             traceability_complete_citation_count: traceabilityCompleteCount,
             traceability_partial_citation_count: Number(citations?.traceability_partial_citation_count ?? 0),
@@ -2528,14 +2541,14 @@ def render_demo_ui_html() -> str:
           typeof citations.architect_claim_support_rate === "number"
             ? `${(Number(citations.architect_claim_support_rate) * 100).toFixed(1)}%`
             : "-",
-          typeof citations.architect_fallback_namespace_citation_rate === "number"
-            ? `${(Number(citations.architect_fallback_namespace_citation_rate) * 100).toFixed(1)}%`
+          typeof citations.architect_non_retrieval_citation_rate === "number"
+            ? `${(Number(citations.architect_non_retrieval_citation_rate) * 100).toFixed(1)}%`
             : "-",
           typeof citations.mel_claim_support_rate === "number"
             ? `${(Number(citations.mel_claim_support_rate) * 100).toFixed(1)}%`
             : "-",
-          typeof citations.mel_fallback_namespace_citation_rate === "number"
-            ? `${(Number(citations.mel_fallback_namespace_citation_rate) * 100).toFixed(1)}%`
+          typeof citations.mel_non_retrieval_citation_rate === "number"
+            ? `${(Number(citations.mel_non_retrieval_citation_rate) * 100).toFixed(1)}%`
             : "-",
           preflightRiskValue,
           strictPreflightValue,
@@ -2564,7 +2577,7 @@ def render_demo_ui_html() -> str:
         }
         const architectFallbackNode = qualityValueNodes[7];
         if (architectFallbackNode) {
-          const fallbackRate = Number(citations?.architect_fallback_namespace_citation_rate ?? NaN);
+          const fallbackRate = Number(citations?.architect_non_retrieval_citation_rate ?? NaN);
           architectFallbackNode.classList.remove("risk-high", "risk-medium", "risk-low", "risk-none");
           if (Number.isFinite(fallbackRate)) {
             if (fallbackRate >= 0.8) architectFallbackNode.classList.add("risk-high");
@@ -2573,11 +2586,11 @@ def render_demo_ui_html() -> str:
           } else {
             architectFallbackNode.classList.add("risk-none");
           }
-          const fallbackCount = Number(citations?.architect_fallback_namespace_citation_count ?? 0);
+          const fallbackCount = Number(citations?.architect_non_retrieval_citation_count ?? 0);
           const architectCount = Number(citations?.architect_citation_count ?? 0);
           architectFallbackNode.title =
             architectCount > 0
-              ? `${fallbackCount}/${architectCount} architect fallback citations`
+              ? `${fallbackCount}/${architectCount} architect non-retrieval citations`
               : "No architect citations";
         }
         const melClaimSupportNode = qualityValueNodes[8];
@@ -2598,7 +2611,7 @@ def render_demo_ui_html() -> str:
         }
         const melFallbackNode = qualityValueNodes[9];
         if (melFallbackNode) {
-          const melFallbackRate = Number(citations?.mel_fallback_namespace_citation_rate ?? NaN);
+          const melFallbackRate = Number(citations?.mel_non_retrieval_citation_rate ?? NaN);
           melFallbackNode.classList.remove("risk-high", "risk-medium", "risk-low", "risk-none");
           if (Number.isFinite(melFallbackRate)) {
             if (melFallbackRate >= 0.8) melFallbackNode.classList.add("risk-high");
@@ -2607,10 +2620,10 @@ def render_demo_ui_html() -> str:
           } else {
             melFallbackNode.classList.add("risk-none");
           }
-          const fallbackCount = Number(citations?.mel_fallback_namespace_citation_count ?? 0);
+          const fallbackCount = Number(citations?.mel_non_retrieval_citation_count ?? 0);
           const melCount = Number(citations?.mel_citation_count ?? 0);
           melFallbackNode.title =
-            melCount > 0 ? `${fallbackCount}/${melCount} MEL fallback citations` : "No MEL citations";
+            melCount > 0 ? `${fallbackCount}/${melCount} MEL non-retrieval citations` : "No MEL citations";
         }
         const preflightRiskNode = qualityValueNodes[10];
         if (preflightRiskNode) {

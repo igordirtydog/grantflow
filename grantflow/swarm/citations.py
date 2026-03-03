@@ -2,6 +2,17 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable
 
+RETRIEVAL_GROUNDED_CITATION_TYPES = frozenset(
+    {
+        "rag_result",
+        "rag_support",
+        "rag_claim_support",
+        "rag_low_confidence",
+    }
+)
+STRATEGY_REFERENCE_CITATION_TYPES = frozenset({"strategy_reference", "strategy_namespace"})
+FALLBACK_NAMESPACE_CITATION_TYPES = frozenset({"fallback_namespace"})
+
 
 def _jsonable(value: Any) -> Any:
     if value is None or isinstance(value, (str, int, float, bool)):
@@ -38,6 +49,27 @@ def normalize_citation(record: Dict[str, Any]) -> Dict[str, Any]:
         if normalized_conf is not None:
             normalized["retrieval_confidence"] = normalized_conf
     return normalized
+
+
+def citation_type_token(record: Dict[str, Any]) -> str:
+    return str(record.get("citation_type") or "").strip().lower()
+
+
+def is_fallback_namespace_citation_type(citation_type: Any) -> bool:
+    return str(citation_type or "").strip().lower() in FALLBACK_NAMESPACE_CITATION_TYPES
+
+
+def is_strategy_reference_citation_type(citation_type: Any) -> bool:
+    return str(citation_type or "").strip().lower() in STRATEGY_REFERENCE_CITATION_TYPES
+
+
+def is_retrieval_grounded_citation_type(citation_type: Any) -> bool:
+    return str(citation_type or "").strip().lower() in RETRIEVAL_GROUNDED_CITATION_TYPES
+
+
+def is_non_retrieval_citation_type(citation_type: Any) -> bool:
+    token = str(citation_type or "").strip().lower()
+    return token in STRATEGY_REFERENCE_CITATION_TYPES or token in FALLBACK_NAMESPACE_CITATION_TYPES
 
 
 def _citation_key(record: Dict[str, Any]) -> tuple[Any, ...]:

@@ -37,6 +37,27 @@ def test_grounding_gate_warn_mode_flags_fallback_dominance_without_blocking():
     assert "fallback_or_low_rag_citations_dominate" in gate["reasons"]
 
 
+def test_grounding_gate_warn_mode_flags_non_retrieval_dominance_when_retrieval_expected():
+    state = {
+        "citations": [
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "strategy_reference", "citation_confidence": 0.75},
+            {"citation_type": "rag_claim_support", "citation_confidence": 0.8},
+        ],
+        "architect_retrieval": {"enabled": True, "hits_count": 1},
+    }
+    gate = evaluate_grounding_gate(state, mode="warn", min_citations_for_calibration=5)
+    assert gate["mode"] == "warn"
+    assert gate["passed"] is False
+    assert gate["blocking"] is False
+    assert gate["strategy_reference_citation_count"] == 4
+    assert gate["non_retrieval_citation_count"] == 4
+    assert gate["retrieval_grounded_citation_count"] == 1
+    assert "non_retrieval_citations_dominate_when_retrieval_enabled" in gate["reasons"]
+
+
 def test_grounding_gate_strict_blocks_on_weak_signals():
     state = {
         "citations": [

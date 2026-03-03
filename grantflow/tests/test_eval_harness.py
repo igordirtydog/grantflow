@@ -160,6 +160,7 @@ def test_format_eval_suite_report_highlights_fallback_dominance_signals():
     assert "- BASELINE_TARGET_MISSING: 2" in text
     assert "LLM advisory label mix (rejected) by donor" in text
     assert "- usaid: BASELINE_TARGET_MISSING=1" in text
+    assert "Grounding risk summary (non-retrieval dominance)" in text
     # c2 is below minimum citation threshold for dominance reporting
     assert "eu: fallback_dominance" not in text
 
@@ -212,6 +213,11 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
     assert metrics["low_confidence_citation_count"] == 2
     assert metrics["rag_low_confidence_citation_count"] == 1
     assert metrics["fallback_namespace_citation_count"] == 1
+    assert metrics["strategy_reference_citation_count"] == 0
+    assert metrics["retrieval_grounded_citation_count"] == 2
+    assert metrics["non_retrieval_citation_count"] == 1
+    assert metrics["non_retrieval_citation_rate"] == 0.3333
+    assert metrics["retrieval_grounded_citation_rate"] == 0.6667
     assert metrics["architect_claim_citation_count"] == 2
     assert metrics["architect_key_claim_coverage_ratio"] == 1.0
     assert metrics["architect_fallback_claim_ratio"] == 0.5
@@ -225,6 +231,27 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
     assert metrics["llm_advisory_applied_label_counts"]["CAUSAL_LINK_DETAIL"] == 2
     assert metrics["llm_advisory_applied_label_counts"]["BASELINE_TARGET_MISSING"] == 1
     assert metrics["llm_advisory_rejected_label_counts"] == {}
+
+
+def test_compute_state_metrics_tracks_strategy_reference_separately():
+    metrics = compute_state_metrics(
+        {
+            "toc_validation": {"valid": True},
+            "toc_draft": {"toc": {}},
+            "logframe_draft": {"indicators": []},
+            "citations": [
+                {"stage": "architect", "citation_type": "strategy_reference", "citation_confidence": 0.75},
+                {"stage": "mel", "citation_type": "strategy_reference", "citation_confidence": 0.75},
+                {"stage": "architect", "citation_type": "rag_claim_support", "citation_confidence": 0.9},
+            ],
+        }
+    )
+    assert metrics["citations_total"] == 3
+    assert metrics["fallback_namespace_citation_count"] == 0
+    assert metrics["strategy_reference_citation_count"] == 2
+    assert metrics["retrieval_grounded_citation_count"] == 1
+    assert metrics["non_retrieval_citation_count"] == 2
+    assert metrics["non_retrieval_citation_rate"] == 0.6667
 
 
 def test_compute_state_metrics_normalizes_legacy_alias_string_findings():

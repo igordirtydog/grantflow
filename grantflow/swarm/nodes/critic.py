@@ -11,7 +11,13 @@ from grantflow.swarm.critic_llm_policy import is_advisory_llm_finding as _is_adv
 from grantflow.swarm.critic_llm_policy import is_advisory_llm_message as _is_advisory_llm_message  # noqa: F401
 from grantflow.swarm.critic_llm_policy import llm_finding_policy_class as _llm_finding_policy_class
 from grantflow.swarm.critic_rules import CriticFatalFlaw, evaluate_rule_based_critic
-from grantflow.swarm.citations import citation_traceability_status
+from grantflow.swarm.citations import (
+    citation_traceability_status,
+    is_fallback_namespace_citation_type,
+    is_non_retrieval_citation_type,
+    is_retrieval_grounded_citation_type,
+    is_strategy_reference_citation_type,
+)
 from grantflow.swarm.findings import canonicalize_findings, finding_messages
 from grantflow.swarm.grounding_gate import evaluate_grounding_gate
 from grantflow.swarm.llm_provider import (
@@ -261,6 +267,9 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
     low_confidence_count = 0
     rag_low_confidence_count = 0
     fallback_namespace_count = 0
+    strategy_reference_count = 0
+    retrieval_grounded_count = 0
+    non_retrieval_count = 0
     traceability_complete_count = 0
     traceability_partial_count = 0
     traceability_missing_count = 0
@@ -275,8 +284,14 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         citation_type = str(citation.get("citation_type") or "")
         if citation_type == "rag_low_confidence":
             rag_low_confidence_count += 1
-        if citation_type == "fallback_namespace":
+        if is_fallback_namespace_citation_type(citation_type):
             fallback_namespace_count += 1
+        if is_strategy_reference_citation_type(citation_type):
+            strategy_reference_count += 1
+        if is_retrieval_grounded_citation_type(citation_type):
+            retrieval_grounded_count += 1
+        if is_non_retrieval_citation_type(citation_type):
+            non_retrieval_count += 1
         traceability_status = citation_traceability_status(citation)
         if traceability_status == "complete":
             traceability_complete_count += 1
@@ -309,6 +324,8 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
     low_confidence_ratio = round(low_confidence_count / citation_count, 4) if citation_count else None
     weak_rag_or_fallback_count = rag_low_confidence_count + fallback_namespace_count
     weak_rag_or_fallback_ratio = round(weak_rag_or_fallback_count / citation_count, 4) if citation_count else None
+    non_retrieval_ratio = round(non_retrieval_count / citation_count, 4) if citation_count else None
+    retrieval_grounded_ratio = round(retrieval_grounded_count / citation_count, 4) if citation_count else None
     traceability_gap_count = traceability_partial_count + traceability_missing_count
     traceability_gap_ratio = round(traceability_gap_count / citation_count, 4) if citation_count else None
     architect_traceability_gap_ratio = (
@@ -324,6 +341,13 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         and weak_rag_or_fallback_ratio >= WEAK_GROUNDING_FALLBACK_RATIO_THRESHOLD
     ):
         weak_grounding_reasons.append("fallback_or_low_rag_citations_dominate")
+    if (
+        retrieval_enabled
+        and citation_count >= WEAK_GROUNDING_MIN_CITATIONS_FOR_CALIBRATION
+        and non_retrieval_ratio is not None
+        and non_retrieval_ratio >= WEAK_GROUNDING_FALLBACK_RATIO_THRESHOLD
+    ):
+        weak_grounding_reasons.append("non_retrieval_citations_dominate_when_retrieval_enabled")
     if (
         citation_count >= WEAK_GROUNDING_MIN_CITATIONS_FOR_CALIBRATION
         and low_confidence_ratio is not None
@@ -342,6 +366,9 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "low_confidence_citation_count": low_confidence_count,
         "rag_low_confidence_citation_count": rag_low_confidence_count,
         "fallback_namespace_citation_count": fallback_namespace_count,
+        "strategy_reference_citation_count": strategy_reference_count,
+        "retrieval_grounded_citation_count": retrieval_grounded_count,
+        "non_retrieval_citation_count": non_retrieval_count,
         "traceability_complete_citation_count": traceability_complete_count,
         "traceability_partial_citation_count": traceability_partial_count,
         "traceability_missing_citation_count": traceability_missing_count,
@@ -351,6 +378,8 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "architect_traceability_gap_ratio": architect_traceability_gap_ratio,
         "low_confidence_ratio": low_confidence_ratio,
         "weak_rag_or_fallback_ratio": weak_rag_or_fallback_ratio,
+        "non_retrieval_ratio": non_retrieval_ratio,
+        "retrieval_grounded_ratio": retrieval_grounded_ratio,
         "architect_retrieval_enabled": retrieval_enabled,
         "architect_retrieval_hits_count": retrieval_hits_count,
         "weak_grounding": bool(weak_grounding_reasons),

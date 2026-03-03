@@ -9,7 +9,13 @@ from typing import Any, Dict, Optional, cast
 from grantflow.api.csv_utils import csv_text_from_mapping
 from grantflow.core.config import config
 from grantflow.exporters.donor_contracts import evaluate_export_contract_gate, normalize_export_contract_policy_mode
-from grantflow.swarm.citations import citation_traceability_status
+from grantflow.swarm.citations import (
+    citation_traceability_status,
+    is_fallback_namespace_citation_type,
+    is_non_retrieval_citation_type,
+    is_retrieval_grounded_citation_type,
+    is_strategy_reference_citation_type,
+)
 from grantflow.swarm.findings import finding_messages, finding_primary_id, state_critic_findings
 from grantflow.swarm.state_contract import normalized_state_copy, state_donor_id
 
@@ -45,6 +51,8 @@ REVIEW_WORKFLOW_STATE_FILTER_VALUES = {"pending", "overdue"}
 REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS = 48
 GROUNDING_FALLBACK_HIGH_THRESHOLD = 0.8
 GROUNDING_FALLBACK_MEDIUM_THRESHOLD = 0.5
+GROUNDING_NON_RETRIEVAL_HIGH_THRESHOLD = 0.8
+GROUNDING_NON_RETRIEVAL_MEDIUM_THRESHOLD = 0.5
 
 
 def _job_state_dict(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -175,15 +183,66 @@ def _grounding_risk_breakdown(
     return normalized_counts, normalized_rates
 
 
-def _grounding_risk_level(*, fallback_count: int, citation_count: int) -> str:
+def _grounding_risk_level(
+    *,
+    fallback_count: int,
+    citation_count: int,
+    strategy_reference_count: int = 0,
+    retrieval_grounded_count: int = 0,
+    retrieval_expected: bool = True,
+) -> str:
     if citation_count <= 0:
         return "unknown"
-    rate = fallback_count / citation_count
-    if rate >= GROUNDING_FALLBACK_HIGH_THRESHOLD:
+    if retrieval_expected:
+        non_retrieval_rate = (fallback_count + strategy_reference_count) / citation_count
+        if non_retrieval_rate >= GROUNDING_NON_RETRIEVAL_HIGH_THRESHOLD:
+            return "high"
+        if non_retrieval_rate >= GROUNDING_NON_RETRIEVAL_MEDIUM_THRESHOLD:
+            return "medium"
+        if retrieval_grounded_count <= 0:
+            return "medium"
+        return "low"
+    fallback_rate = fallback_count / citation_count
+    if fallback_rate >= GROUNDING_FALLBACK_HIGH_THRESHOLD:
         return "high"
-    if rate >= GROUNDING_FALLBACK_MEDIUM_THRESHOLD:
+    if fallback_rate >= GROUNDING_FALLBACK_MEDIUM_THRESHOLD:
         return "medium"
     return "low"
+
+
+def _state_retrieval_expected(state_dict: Dict[str, Any]) -> bool:
+    architect_retrieval = state_dict.get("architect_retrieval")
+    if isinstance(architect_retrieval, dict) and isinstance(architect_retrieval.get("enabled"), bool):
+        return bool(architect_retrieval.get("enabled"))
+    raw = state_dict.get("architect_rag_enabled")
+    if isinstance(raw, bool):
+        return raw
+    return True
+
+
+def _citation_grounding_counts(citations: list[Dict[str, Any]]) -> Dict[str, int]:
+    fallback_count = 0
+    strategy_reference_count = 0
+    retrieval_grounded_count = 0
+    non_retrieval_count = 0
+    for item in citations:
+        if not isinstance(item, dict):
+            continue
+        citation_type = item.get("citation_type")
+        if is_fallback_namespace_citation_type(citation_type):
+            fallback_count += 1
+        if is_strategy_reference_citation_type(citation_type):
+            strategy_reference_count += 1
+        if is_retrieval_grounded_citation_type(citation_type):
+            retrieval_grounded_count += 1
+        if is_non_retrieval_citation_type(citation_type):
+            non_retrieval_count += 1
+    return {
+        "fallback_namespace_citation_count": fallback_count,
+        "strategy_reference_citation_count": strategy_reference_count,
+        "retrieval_grounded_citation_count": retrieval_grounded_count,
+        "non_retrieval_citation_count": non_retrieval_count,
+    }
 
 
 def _citation_type_counts(citations: list[Dict[str, Any]]) -> Dict[str, int]:
@@ -205,16 +264,16 @@ def _job_grounding_risk_level(job: Dict[str, Any]) -> str:
     state = job.get("state")
     state_dict = state if isinstance(state, dict) else {}
     citations = state_dict.get("citations")
-    citations_list = citations if isinstance(citations, list) else []
-    citation_count = 0
-    fallback_count = 0
-    for item in citations_list:
-        if not isinstance(item, dict):
-            continue
-        citation_count += 1
-        if str(item.get("citation_type") or "").strip() == "fallback_namespace":
-            fallback_count += 1
-    return _grounding_risk_level(fallback_count=fallback_count, citation_count=citation_count)
+    citations_list = [item for item in citations if isinstance(item, dict)] if isinstance(citations, list) else []
+    citation_count = len(citations_list)
+    grounding_counts = _citation_grounding_counts(citations_list)
+    return _grounding_risk_level(
+        fallback_count=int(grounding_counts.get("fallback_namespace_citation_count") or 0),
+        strategy_reference_count=int(grounding_counts.get("strategy_reference_citation_count") or 0),
+        retrieval_grounded_count=int(grounding_counts.get("retrieval_grounded_citation_count") or 0),
+        citation_count=citation_count,
+        retrieval_expected=_state_retrieval_expected(state_dict),
+    )
 
 
 def _job_critic_findings(job: Dict[str, Any]) -> list[Dict[str, Any]]:
@@ -1384,18 +1443,27 @@ def public_job_quality_payload(
     citation_type_counts = _citation_type_counts(citations)
     architect_citation_type_counts = _citation_type_counts(architect_citations)
     mel_citation_type_counts = _citation_type_counts(mel_citations)
+    citation_grounding_counts = _citation_grounding_counts(citations)
+    architect_grounding_counts = _citation_grounding_counts(architect_citations)
+    mel_grounding_counts = _citation_grounding_counts(mel_citations)
+    retrieval_expected = _state_retrieval_expected(state_dict)
     architect_claim_support_citation_count = int(architect_citation_type_counts.get("rag_claim_support") or 0)
     architect_fallback_namespace_citation_count = int(architect_citation_type_counts.get("fallback_namespace") or 0)
+    architect_strategy_reference_citation_count = int(architect_citation_type_counts.get("strategy_reference") or 0) + int(
+        architect_citation_type_counts.get("strategy_namespace") or 0
+    )
     mel_claim_support_citation_count = sum(
         1 for c in mel_citations if _is_claim_support_citation_type(c.get("citation_type"))
     )
     mel_fallback_namespace_citation_count = int(mel_citation_type_counts.get("fallback_namespace") or 0)
+    mel_strategy_reference_citation_count = int(mel_citation_type_counts.get("strategy_reference") or 0) + int(
+        mel_citation_type_counts.get("strategy_namespace") or 0
+    )
 
     confidence_values: list[float] = []
     high_conf = 0
     low_conf = 0
     rag_low_conf = 0
-    fallback_ns = 0
     traceability_complete = 0
     traceability_partial = 0
     traceability_missing = 0
@@ -1406,8 +1474,6 @@ def public_job_quality_payload(
             continue
         if str(c.get("citation_type") or "") == "rag_low_confidence":
             rag_low_conf += 1
-        if str(c.get("citation_type") or "") == "fallback_namespace":
-            fallback_ns += 1
         traceability_status = citation_traceability_status(c)
         if traceability_status == "complete":
             traceability_complete += 1
@@ -1436,6 +1502,10 @@ def public_job_quality_payload(
                 architect_threshold_considered += 1
                 if conf is not None and conf >= thr:
                     architect_threshold_hits += 1
+    fallback_ns = int(citation_grounding_counts.get("fallback_namespace_citation_count") or 0)
+    strategy_reference_count = int(citation_grounding_counts.get("strategy_reference_citation_count") or 0)
+    retrieval_grounded_count = int(citation_grounding_counts.get("retrieval_grounded_citation_count") or 0)
+    non_retrieval_count = int(citation_grounding_counts.get("non_retrieval_citation_count") or 0)
 
     flaw_status_counts = {"open": 0, "acknowledged": 0, "resolved": 0}
     flaw_severity_counts = {"high": 0, "medium": 0, "low": 0}
@@ -1653,6 +1723,28 @@ def public_job_quality_payload(
                 if architect_citations
                 else None
             ),
+            "architect_strategy_reference_citation_count": architect_strategy_reference_citation_count,
+            "architect_strategy_reference_citation_rate": (
+                round(architect_strategy_reference_citation_count / len(architect_citations), 4)
+                if architect_citations
+                else None
+            ),
+            "architect_non_retrieval_citation_count": int(
+                architect_grounding_counts.get("non_retrieval_citation_count") or 0
+            ),
+            "architect_non_retrieval_citation_rate": (
+                round(int(architect_grounding_counts.get("non_retrieval_citation_count") or 0) / len(architect_citations), 4)
+                if architect_citations
+                else None
+            ),
+            "architect_retrieval_grounded_citation_count": int(
+                architect_grounding_counts.get("retrieval_grounded_citation_count") or 0
+            ),
+            "architect_retrieval_grounded_citation_rate": (
+                round(int(architect_grounding_counts.get("retrieval_grounded_citation_count") or 0) / len(architect_citations), 4)
+                if architect_citations
+                else None
+            ),
             "mel_claim_support_citation_count": mel_claim_support_citation_count,
             "mel_claim_support_rate": (
                 round(mel_claim_support_citation_count / len(mel_citations), 4) if mel_citations else None
@@ -1660,6 +1752,24 @@ def public_job_quality_payload(
             "mel_fallback_namespace_citation_count": mel_fallback_namespace_citation_count,
             "mel_fallback_namespace_citation_rate": (
                 round(mel_fallback_namespace_citation_count / len(mel_citations), 4) if mel_citations else None
+            ),
+            "mel_strategy_reference_citation_count": mel_strategy_reference_citation_count,
+            "mel_strategy_reference_citation_rate": (
+                round(mel_strategy_reference_citation_count / len(mel_citations), 4) if mel_citations else None
+            ),
+            "mel_non_retrieval_citation_count": int(mel_grounding_counts.get("non_retrieval_citation_count") or 0),
+            "mel_non_retrieval_citation_rate": (
+                round(int(mel_grounding_counts.get("non_retrieval_citation_count") or 0) / len(mel_citations), 4)
+                if mel_citations
+                else None
+            ),
+            "mel_retrieval_grounded_citation_count": int(
+                mel_grounding_counts.get("retrieval_grounded_citation_count") or 0
+            ),
+            "mel_retrieval_grounded_citation_rate": (
+                round(int(mel_grounding_counts.get("retrieval_grounded_citation_count") or 0) / len(mel_citations), 4)
+                if mel_citations
+                else None
             ),
             "architect_rag_low_confidence_citation_count": sum(
                 1 for c in architect_citations if str(c.get("citation_type") or "") == "rag_low_confidence"
@@ -1670,9 +1780,25 @@ def public_job_quality_payload(
             "rag_low_confidence_citation_count": rag_low_conf,
             "fallback_namespace_citation_count": fallback_ns,
             "fallback_namespace_citation_rate": round(fallback_ns / len(citations), 4) if citations else None,
+            "strategy_reference_citation_count": strategy_reference_count,
+            "strategy_reference_citation_rate": (
+                round(strategy_reference_count / len(citations), 4) if citations else None
+            ),
+            "retrieval_grounded_citation_count": retrieval_grounded_count,
+            "retrieval_grounded_citation_rate": (
+                round(retrieval_grounded_count / len(citations), 4) if citations else None
+            ),
+            "non_retrieval_citation_count": non_retrieval_count,
+            "non_retrieval_citation_rate": (
+                round(non_retrieval_count / len(citations), 4) if citations else None
+            ),
+            "retrieval_expected": retrieval_expected,
             "grounding_risk_level": _grounding_risk_level(
                 fallback_count=fallback_ns,
+                strategy_reference_count=strategy_reference_count,
+                retrieval_grounded_count=retrieval_grounded_count,
                 citation_count=len(citations),
+                retrieval_expected=retrieval_expected,
             ),
             "traceability_complete_citation_count": traceability_complete,
             "traceability_partial_citation_count": traceability_partial,
@@ -1953,10 +2079,15 @@ def public_portfolio_quality_payload(
     architect_rag_low_confidence_citation_count = 0
     mel_rag_low_confidence_citation_count = 0
     fallback_namespace_citation_count = 0
+    strategy_reference_citation_count = 0
+    retrieval_grounded_citation_count = 0
+    non_retrieval_citation_count = 0
     traceability_complete_citation_count = 0
     traceability_partial_citation_count = 0
     traceability_missing_citation_count = 0
     traceability_gap_citation_count = 0
+    retrieval_expected_true_job_count = 0
+    retrieval_expected_false_job_count = 0
     llm_finding_label_counts_total: Dict[str, int] = {}
     llm_advisory_diagnostics_job_count = 0
     llm_advisory_applied_job_count = 0
@@ -2016,10 +2147,23 @@ def public_portfolio_quality_payload(
         )
         mel_rag_low_confidence_citation_count += int(row_citations.get("mel_rag_low_confidence_citation_count") or 0)
         fallback_namespace_citation_count += int(row_citations.get("fallback_namespace_citation_count") or 0)
+        strategy_reference_citation_count += int(row_citations.get("strategy_reference_citation_count") or 0)
+        retrieval_grounded_citation_count += int(row_citations.get("retrieval_grounded_citation_count") or 0)
+        non_retrieval_citation_count += int(
+            row_citations.get("non_retrieval_citation_count")
+            if row_citations.get("non_retrieval_citation_count") is not None
+            else int(row_citations.get("fallback_namespace_citation_count") or 0)
+            + int(row_citations.get("strategy_reference_citation_count") or 0)
+        )
         traceability_complete_citation_count += int(row_citations.get("traceability_complete_citation_count") or 0)
         traceability_partial_citation_count += int(row_citations.get("traceability_partial_citation_count") or 0)
         traceability_missing_citation_count += int(row_citations.get("traceability_missing_citation_count") or 0)
         traceability_gap_citation_count += int(row_citations.get("traceability_gap_citation_count") or 0)
+        row_retrieval_expected = row_citations.get("retrieval_expected")
+        if row_retrieval_expected is False:
+            retrieval_expected_false_job_count += 1
+        else:
+            retrieval_expected_true_job_count += 1
         row_citation_type_counts = (
             cast(Dict[str, Any], row_citations.get("citation_type_counts"))
             if isinstance(row_citations.get("citation_type_counts"), dict)
@@ -2064,10 +2208,15 @@ def public_portfolio_quality_payload(
                 "architect_rag_low_confidence_citation_count": 0,
                 "mel_rag_low_confidence_citation_count": 0,
                 "fallback_namespace_citation_count": 0,
+                "strategy_reference_citation_count": 0,
+                "retrieval_grounded_citation_count": 0,
+                "non_retrieval_citation_count": 0,
                 "traceability_complete_citation_count": 0,
                 "traceability_partial_citation_count": 0,
                 "traceability_missing_citation_count": 0,
                 "traceability_gap_citation_count": 0,
+                "retrieval_expected_true_job_count": 0,
+                "retrieval_expected_false_job_count": 0,
                 "llm_finding_label_counts": {},
                 "llm_advisory_applied_label_counts": {},
                 "llm_advisory_rejected_label_counts": {},
@@ -2100,6 +2249,14 @@ def public_portfolio_quality_payload(
         donor_row["fallback_namespace_citation_count"] += int(
             row_citations.get("fallback_namespace_citation_count") or 0
         )
+        donor_row["strategy_reference_citation_count"] += int(row_citations.get("strategy_reference_citation_count") or 0)
+        donor_row["retrieval_grounded_citation_count"] += int(row_citations.get("retrieval_grounded_citation_count") or 0)
+        donor_row["non_retrieval_citation_count"] += int(
+            row_citations.get("non_retrieval_citation_count")
+            if row_citations.get("non_retrieval_citation_count") is not None
+            else int(row_citations.get("fallback_namespace_citation_count") or 0)
+            + int(row_citations.get("strategy_reference_citation_count") or 0)
+        )
         donor_row["traceability_complete_citation_count"] += int(
             row_citations.get("traceability_complete_citation_count") or 0
         )
@@ -2110,6 +2267,11 @@ def public_portfolio_quality_payload(
             row_citations.get("traceability_missing_citation_count") or 0
         )
         donor_row["traceability_gap_citation_count"] += int(row_citations.get("traceability_gap_citation_count") or 0)
+        row_retrieval_expected = row_citations.get("retrieval_expected")
+        if row_retrieval_expected is False:
+            donor_row["retrieval_expected_false_job_count"] += 1
+        else:
+            donor_row["retrieval_expected_true_job_count"] += 1
         donor_citation_type_counts = donor_row.get("citation_type_counts")
         if not isinstance(donor_citation_type_counts, dict):
             donor_citation_type_counts = {}
@@ -2244,8 +2406,32 @@ def public_portfolio_quality_payload(
         donor_citations_total = int(donor_row.get("citation_count_total") or 0)
         donor_architect_citations_total = int(donor_row.get("architect_citation_count_total") or 0)
         donor_fallback_total = int(donor_row.get("fallback_namespace_citation_count") or 0)
+        donor_strategy_reference_total = int(donor_row.get("strategy_reference_citation_count") or 0)
+        donor_retrieval_grounded_total = int(donor_row.get("retrieval_grounded_citation_count") or 0)
+        donor_non_retrieval_total = int(
+            donor_row.get("non_retrieval_citation_count")
+            if donor_row.get("non_retrieval_citation_count") is not None
+            else donor_fallback_total + donor_strategy_reference_total
+        )
+        donor_retrieval_expected_true = int(donor_row.get("retrieval_expected_true_job_count") or 0)
+        donor_retrieval_expected_false = int(donor_row.get("retrieval_expected_false_job_count") or 0)
+        donor_retrieval_expected = donor_retrieval_expected_true >= donor_retrieval_expected_false
+        donor_retrieval_expected_mode = (
+            "mixed"
+            if donor_retrieval_expected_true > 0 and donor_retrieval_expected_false > 0
+            else ("retrieval_expected" if donor_retrieval_expected else "strategy_reference_mode")
+        )
         donor_architect_claim_support_total = int(donor_row.get("architect_claim_support_citation_count") or 0)
         donor_fallback_rate = round(donor_fallback_total / donor_citations_total, 4) if donor_citations_total else None
+        donor_strategy_reference_rate = (
+            round(donor_strategy_reference_total / donor_citations_total, 4) if donor_citations_total else None
+        )
+        donor_non_retrieval_rate = (
+            round(donor_non_retrieval_total / donor_citations_total, 4) if donor_citations_total else None
+        )
+        donor_retrieval_grounded_rate = (
+            round(donor_retrieval_grounded_total / donor_citations_total, 4) if donor_citations_total else None
+        )
         donor_architect_claim_support_rate = (
             round(donor_architect_claim_support_total / donor_architect_citations_total, 4)
             if donor_architect_citations_total
@@ -2253,10 +2439,17 @@ def public_portfolio_quality_payload(
         )
         donor_grounding_level = _grounding_risk_level(
             fallback_count=donor_fallback_total,
+            strategy_reference_count=donor_strategy_reference_total,
+            retrieval_grounded_count=donor_retrieval_grounded_total,
             citation_count=donor_citations_total,
+            retrieval_expected=donor_retrieval_expected,
         )
         donor_row["fallback_namespace_citation_rate"] = donor_fallback_rate
+        donor_row["strategy_reference_citation_rate"] = donor_strategy_reference_rate
+        donor_row["non_retrieval_citation_rate"] = donor_non_retrieval_rate
+        donor_row["retrieval_grounded_citation_rate"] = donor_retrieval_grounded_rate
         donor_row["architect_claim_support_rate"] = donor_architect_claim_support_rate
+        donor_row["retrieval_expected_mode"] = donor_retrieval_expected_mode
         donor_row["grounding_risk_level"] = donor_grounding_level
         donor_grounding_risk_counts[donor_grounding_level] = (
             int(donor_grounding_risk_counts.get(donor_grounding_level, 0)) + 1
@@ -2268,6 +2461,13 @@ def public_portfolio_quality_payload(
             "architect_claim_support_rate": donor_architect_claim_support_rate,
             "fallback_namespace_citation_count": donor_fallback_total,
             "fallback_namespace_citation_rate": donor_fallback_rate,
+            "strategy_reference_citation_count": donor_strategy_reference_total,
+            "strategy_reference_citation_rate": donor_strategy_reference_rate,
+            "retrieval_grounded_citation_count": donor_retrieval_grounded_total,
+            "retrieval_grounded_citation_rate": donor_retrieval_grounded_rate,
+            "non_retrieval_citation_count": donor_non_retrieval_total,
+            "non_retrieval_citation_rate": donor_non_retrieval_rate,
+            "retrieval_expected_mode": donor_retrieval_expected_mode,
             "grounding_risk_level": donor_grounding_level,
         }
 
@@ -2283,6 +2483,21 @@ def public_portfolio_quality_payload(
     fallback_namespace_citation_rate = (
         round(fallback_namespace_citation_count / citation_count_total, 4) if citation_count_total else None
     )
+    strategy_reference_citation_rate = (
+        round(strategy_reference_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    non_retrieval_citation_rate = (
+        round(non_retrieval_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    retrieval_grounded_citation_rate = (
+        round(retrieval_grounded_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    retrieval_expected = retrieval_expected_true_job_count >= retrieval_expected_false_job_count
+    retrieval_expected_mode = (
+        "mixed"
+        if retrieval_expected_true_job_count > 0 and retrieval_expected_false_job_count > 0
+        else ("retrieval_expected" if retrieval_expected else "strategy_reference_mode")
+    )
     architect_claim_support_rate = (
         round(architect_claim_support_citation_count / architect_citation_count_total, 4)
         if architect_citation_count_total
@@ -2290,7 +2505,10 @@ def public_portfolio_quality_payload(
     )
     grounding_risk_level = _grounding_risk_level(
         fallback_count=fallback_namespace_citation_count,
+        strategy_reference_count=strategy_reference_citation_count,
+        retrieval_grounded_count=retrieval_grounded_citation_count,
         citation_count=citation_count_total,
+        retrieval_expected=retrieval_expected,
     )
 
     return {
@@ -2385,6 +2603,13 @@ def public_portfolio_quality_payload(
             ),
             "fallback_namespace_citation_count": fallback_namespace_citation_count,
             "fallback_namespace_citation_rate": fallback_namespace_citation_rate,
+            "strategy_reference_citation_count": strategy_reference_citation_count,
+            "strategy_reference_citation_rate": strategy_reference_citation_rate,
+            "non_retrieval_citation_count": non_retrieval_citation_count,
+            "non_retrieval_citation_rate": non_retrieval_citation_rate,
+            "retrieval_grounded_citation_count": retrieval_grounded_citation_count,
+            "retrieval_grounded_citation_rate": retrieval_grounded_citation_rate,
+            "retrieval_expected_mode": retrieval_expected_mode,
             "grounding_risk_level": grounding_risk_level,
             "traceability_complete_citation_count": traceability_complete_citation_count,
             "traceability_complete_citation_rate": (
