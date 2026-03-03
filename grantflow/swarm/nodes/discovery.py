@@ -5,7 +5,13 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from grantflow.core.strategies.factory import DonorFactory
-from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id, state_input_context
+from grantflow.swarm.state_contract import (
+    normalize_state_contract,
+    set_state_donor_strategy,
+    state_donor_id,
+    state_donor_strategy,
+    state_input_context,
+)
 
 
 def validate_input_richness(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -21,10 +27,8 @@ def validate_input_richness(state: Dict[str, Any]) -> Dict[str, Any]:
         return state
 
     try:
-        if state.get("donor_strategy") is None:
-            state["donor_strategy"] = DonorFactory.get_strategy(donor_id)
-        # Backward compatibility for older nodes/tests.
-        state["strategy"] = state["donor_strategy"]
+        if state_donor_strategy(state) is None:
+            set_state_donor_strategy(state, DonorFactory.get_strategy(donor_id))
     except ValueError as e:
         state["errors"].append(str(e))
 

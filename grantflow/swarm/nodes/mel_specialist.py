@@ -18,7 +18,13 @@ from grantflow.swarm.llm_provider import (
     openai_compatible_missing_reason,
 )
 from grantflow.swarm.retrieval_query import build_stage_query_text
-from grantflow.swarm.state_contract import normalize_state_contract, state_input_context
+from grantflow.swarm.state_contract import (
+    normalize_state_contract,
+    state_donor_id,
+    state_donor_strategy,
+    state_input_context,
+    state_iteration,
+)
 from grantflow.swarm.versioning import append_draft_version
 
 MEL_CITATION_HIGH_CONFIDENCE_THRESHOLD = 0.35
@@ -519,13 +525,13 @@ def _build_mel_citations(
 def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     """Назначает MEL индикаторы c RAG retrieval и optional LLM structured generation."""
     normalize_state_contract(state)
-    strategy = state.get("donor_strategy") or state.get("strategy")
+    strategy = state_donor_strategy(state)
     if not strategy:
         state.setdefault("errors", []).append("MEL cannot run without donor_strategy")
         return state
 
     namespace = strategy.get_rag_collection()
-    donor_id = str(state.get("donor_id") or state.get("donor") or getattr(strategy, "donor_id", "donor"))
+    donor_id = state_donor_id(state, default=str(getattr(strategy, "donor_id", "donor")))
     query_text = _build_query_text(state)
     top_k = _bounded_int(
         getattr(config.rag, "mel_top_k", getattr(config.rag, "default_top_k", 5)),
@@ -624,7 +630,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         prompts = getattr(strategy, "get_system_prompts", lambda: {})() or {}
         raw_payload, llm_engine, llm_error = _llm_structured_mel(
             system_prompt=str(prompts.get("MEL_Specialist") or ""),
-            donor_id=str(state.get("donor_id") or state.get("donor") or getattr(strategy, "donor_id", "donor")),
+            donor_id=donor_id,
             project=project,
             country=country,
             toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
@@ -641,7 +647,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
                 llm_repair_attempted = True
                 raw_payload_retry, llm_engine_retry, llm_error_retry = _llm_structured_mel(
                     system_prompt=str(prompts.get("MEL_Specialist") or ""),
-                    donor_id=str(state.get("donor_id") or state.get("donor") or getattr(strategy, "donor_id", "donor")),
+                    donor_id=donor_id,
                     project=project,
                     country=country,
                     toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
@@ -715,7 +721,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         section="logframe",
         content=state["logframe_draft"],
         node="mel_specialist",
-        iteration=int(state.get("iteration", state.get("iteration_count", 0)) or 0),
+        iteration=state_iteration(state),
     )
     append_citations(state, citation_records)
     return state

@@ -7,7 +7,14 @@ from typing import Any, Dict
 from grantflow.swarm.citations import append_citations
 from grantflow.swarm.nodes.architect_generation import generate_toc_under_contract
 from grantflow.swarm.nodes.architect_retrieval import retrieve_architect_evidence
-from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id, state_input_context
+from grantflow.swarm.state_contract import (
+    normalize_state_contract,
+    set_state_donor_strategy,
+    state_donor_id,
+    state_donor_strategy,
+    state_input_context,
+    state_iteration,
+)
 from grantflow.swarm.versioning import append_draft_version
 
 
@@ -16,8 +23,8 @@ def draft_toc(state: Dict[str, Any]) -> Dict[str, Any]:
     Создаёт черновик Theory of Change.
     """
     normalize_state_contract(state)
-    strategy = state.get("donor_strategy") or state.get("strategy")
-    iteration = int(state.get("iteration", state.get("iteration_count", 0)) or 0)
+    strategy = state_donor_strategy(state)
+    iteration = state_iteration(state)
     donor_id = state_donor_id(state)
     input_context = state_input_context(state)
     critic_notes = state.get("critic_notes")
@@ -81,7 +88,7 @@ def draft_toc(state: Dict[str, Any]) -> Dict[str, Any]:
         ]
         validation = state["toc_validation"]
 
-    state["strategy"] = strategy
+    set_state_donor_strategy(state, strategy)
     state["toc"] = toc
     state["toc_validation"] = validation
     state["architect_retrieval"] = retrieval_summary

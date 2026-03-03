@@ -19,7 +19,12 @@ from grantflow.swarm.llm_provider import (
     openai_compatible_llm_available,
     openai_compatible_missing_reason,
 )
-from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id
+from grantflow.swarm.state_contract import (
+    normalize_state_contract,
+    state_donor_id,
+    state_donor_strategy,
+    state_iteration,
+)
 
 WEAK_GROUNDING_LLM_SCORE_MAX_PENALTY = 1.5
 WEAK_GROUNDING_MIN_CITATIONS_FOR_CALIBRATION = 5
@@ -373,7 +378,7 @@ def _combine_critic_scores(
 def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
     """Evaluates the drafted ToC and LogFrame and updates loop-control fields."""
     normalize_state_contract(state)
-    donor_strategy = state.get("donor_strategy") or state.get("strategy")
+    donor_strategy = state_donor_strategy(state)
     if not donor_strategy:
         raise ValueError("Critical Error: DonorStrategy not found in state.")
 
@@ -411,7 +416,7 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
     else:
         llm_reason = "llm_mode=false" if not llm_mode else openai_compatible_missing_reason()
 
-    iteration = int(state.get("iteration", state.get("iteration_count", 0)) or 0) + 1
+    iteration = state_iteration(state) + 1
     max_iters = int(state.get("max_iterations", 3) or 3)
     llm_score = float(evaluation.score) if evaluation is not None else None
     llm_fatal_flaw_items: List[Dict[str, Any]] = []

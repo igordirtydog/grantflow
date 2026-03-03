@@ -1,7 +1,14 @@
 from __future__ import annotations
 
 from grantflow.swarm.nodes.discovery import validate_input_richness
-from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id, state_input_context
+from grantflow.swarm.state_contract import (
+    normalize_state_contract,
+    set_state_donor_strategy,
+    state_donor_id,
+    state_donor_strategy,
+    state_input_context,
+    state_iteration,
+)
 
 
 def test_normalize_state_contract_unifies_aliases_and_defaults():
@@ -33,10 +40,25 @@ def test_state_helpers_prefer_canonical_fields():
         "donor": "usaid",
         "input_context": {"project": "Digital Governance"},
         "input": {"project": "Legacy Value"},
+        "iteration_count": "3",
+        "iteration": "99",
     }
 
     assert state_donor_id(state) == "eu"
     assert state_input_context(state) == {"project": "Digital Governance"}
+    assert state_iteration(state) == 3
+
+
+def test_state_strategy_helpers_prefer_canonical_field():
+    state = {"donor_strategy": "canonical", "strategy": "legacy"}
+    assert state_donor_strategy(state) == "canonical"
+
+    state = {"strategy": "legacy_only"}
+    assert state_donor_strategy(state) == "legacy_only"
+
+    set_state_donor_strategy(state, "normalized")
+    assert state["donor_strategy"] == "normalized"
+    assert state["strategy"] == "normalized"
 
 
 def test_discovery_normalizes_state_contract_for_legacy_inputs():
@@ -52,3 +74,18 @@ def test_discovery_normalizes_state_contract_for_legacy_inputs():
     assert out["input_context"]["project"] == "Water Sanitation"
     assert out["input"]["country"] == "Kenya"
     assert isinstance(out["critic_notes"], dict)
+
+
+def test_normalize_state_contract_coerces_string_lists_and_max_iterations():
+    state = {
+        "donor": "USAID",
+        "input": {"project": "Water Sanitation"},
+        "critic_feedback_history": ["ok", 123, None],
+        "errors": "single error",
+        "max_iterations": "0",
+    }
+
+    out = normalize_state_contract(state)
+    assert out["critic_feedback_history"] == ["ok", "123"]
+    assert out["errors"] == ["single error"]
+    assert out["max_iterations"] == 1
