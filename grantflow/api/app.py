@@ -959,6 +959,22 @@ def _ensure_job_tenant_read_access(request: Request, job: Dict[str, Any]) -> Opt
     return request_tenant
 
 
+def _ensure_job_tenant_write_access(request: Request, job: Dict[str, Any]) -> Optional[str]:
+    return _ensure_job_tenant_read_access(request, job)
+
+
+def _ensure_checkpoint_tenant_write_access(request: Request, checkpoint: Dict[str, Any]) -> Optional[str]:
+    if not _tenant_authz_enabled():
+        return None
+    request_tenant = _resolve_tenant_id(request, require_if_enabled=True)
+    checkpoint_tenant = _checkpoint_tenant_id(checkpoint)
+    if not request_tenant or not checkpoint_tenant:
+        raise HTTPException(status_code=403, detail="Tenant access denied for requested checkpoint")
+    if request_tenant != checkpoint_tenant:
+        raise HTTPException(status_code=403, detail="Tenant access denied for requested checkpoint")
+    return request_tenant
+
+
 def _filter_jobs_by_tenant(jobs: Dict[str, Dict[str, Any]], tenant_id: Optional[str]) -> Dict[str, Dict[str, Any]]:
     token = _normalize_tenant_candidate(tenant_id)
     if not token:
@@ -2572,6 +2588,7 @@ def cancel_job(job_id: str, request: Request):
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
 
     status = str(job.get("status") or "")
     if status == "canceled":
@@ -2601,6 +2618,7 @@ async def resume_job(job_id: str, background_tasks: BackgroundTasks, request: Re
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     if job.get("status") != "pending_hitl":
         raise HTTPException(status_code=409, detail="Job is not waiting for HITL review")
 
@@ -2813,6 +2831,10 @@ def get_status_critic(job_id: str, request: Request):
 )
 def acknowledge_status_critic_finding(job_id: str, finding_id: str, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     return _set_critic_fatal_flaw_status(
         job_id,
         finding_id=finding_id,
@@ -2828,6 +2850,10 @@ def acknowledge_status_critic_finding(job_id: str, finding_id: str, request: Req
 )
 def reopen_status_critic_finding(job_id: str, finding_id: str, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     return _set_critic_fatal_flaw_status(
         job_id,
         finding_id=finding_id,
@@ -2843,6 +2869,10 @@ def reopen_status_critic_finding(job_id: str, finding_id: str, request: Request)
 )
 def resolve_status_critic_finding(job_id: str, finding_id: str, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     return _set_critic_fatal_flaw_status(
         job_id,
         finding_id=finding_id,
@@ -2858,6 +2888,10 @@ def resolve_status_critic_finding(job_id: str, finding_id: str, request: Request
 )
 def bulk_status_critic_findings(job_id: str, req: CriticFindingsBulkStatusRequest, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     next_status = str(req.next_status or "").strip().lower()
     return _set_critic_fatal_flaws_status_bulk(
         job_id,
@@ -2995,6 +3029,10 @@ def recompute_status_review_workflow_sla(
     req: Optional[ReviewWorkflowSLARecomputeRequest] = None,
 ):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     payload = req or ReviewWorkflowSLARecomputeRequest()
     return _recompute_review_workflow_sla(
         job_id,
@@ -3063,6 +3101,7 @@ def add_status_comment(job_id: str, req: JobCommentCreateRequest, request: Reque
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
 
     section = (req.section or "").strip().lower()
     if section not in REVIEW_COMMENT_SECTIONS:
@@ -3111,6 +3150,10 @@ def add_status_comment(job_id: str, req: JobCommentCreateRequest, request: Reque
 )
 def resolve_status_comment(job_id: str, comment_id: str, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     return _set_review_comment_status(job_id, comment_id=comment_id, next_status="resolved")
 
 
@@ -3121,6 +3164,10 @@ def resolve_status_comment(job_id: str, comment_id: str, request: Request):
 )
 def reopen_status_comment(job_id: str, comment_id: str, request: Request):
     require_api_key_if_configured(request)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_write_access(request, job)
     return _set_review_comment_status(job_id, comment_id=comment_id, next_status="open")
 
 
@@ -3130,6 +3177,7 @@ def approve_checkpoint(req: HITLApprovalRequest, request: Request):
     checkpoint = hitl_manager.get_checkpoint(req.checkpoint_id)
     if not checkpoint:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
+    _ensure_checkpoint_tenant_write_access(request, checkpoint)
 
     if req.approved:
         hitl_manager.approve(req.checkpoint_id, req.feedback)

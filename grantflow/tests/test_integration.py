@@ -622,6 +622,118 @@ def test_hitl_pending_filters_by_tenant_when_tenant_authz_enabled(monkeypatch):
     assert all((cp.get("tenant_id") == "tenant_hitl_b") for cp in tenant_b_body["checkpoints"])
 
 
+def test_status_write_endpoints_block_cross_tenant_when_tenant_authz_enabled(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_write_a,tenant_write_b")
+
+    generated = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_write_a",
+            "input_context": {"project": "Cross tenant writes", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert generated.status_code == 200
+    job_id = generated.json()["job_id"]
+
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        status = client.get(f"/status/{job_id}", headers={"X-Tenant-ID": "tenant_write_a"})
+        assert status.status_code == 200
+        if status.json()["status"] in {"done", "error", "pending_hitl"}:
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("Timed out waiting for tenant A terminal status")
+
+    cross_tenant_headers = {"X-Tenant-ID": "tenant_write_b"}
+    cross_tenant_requests = [
+        ("POST", f"/cancel/{job_id}", {}),
+        (
+            "POST",
+            f"/status/{job_id}/comments",
+            {"section": "general", "message": "cross tenant create"},
+        ),
+        ("POST", f"/status/{job_id}/comments/nonexistent/resolve", {}),
+        ("POST", f"/status/{job_id}/comments/nonexistent/reopen", {}),
+        ("POST", f"/status/{job_id}/critic/findings/nonexistent/ack", {}),
+        ("POST", f"/status/{job_id}/critic/findings/nonexistent/open", {}),
+        ("POST", f"/status/{job_id}/critic/findings/nonexistent/resolve", {}),
+        (
+            "POST",
+            f"/status/{job_id}/critic/findings/bulk-status",
+            {"next_status": "acknowledged", "apply_to_all": True},
+        ),
+        ("POST", f"/status/{job_id}/review/workflow/sla/recompute", {}),
+    ]
+    for method, path, payload in cross_tenant_requests:
+        response = client.request(method, path, headers=cross_tenant_headers, json=payload)
+        assert response.status_code == 403
+
+    owner_comment = client.post(
+        f"/status/{job_id}/comments",
+        headers={"X-Tenant-ID": "tenant_write_a"},
+        json={"section": "general", "message": "owner comment"},
+    )
+    assert owner_comment.status_code == 200
+
+
+def test_hitl_write_endpoints_block_cross_tenant_when_tenant_authz_enabled(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_hitl_write_a,tenant_hitl_write_b")
+
+    generated = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_hitl_write_a",
+            "input_context": {"project": "HITL tenant writes", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+        },
+    )
+    assert generated.status_code == 200
+    job_id = generated.json()["job_id"]
+
+    deadline = time.time() + 3.0
+    checkpoint_id = None
+    while time.time() < deadline:
+        status = client.get(f"/status/{job_id}", headers={"X-Tenant-ID": "tenant_hitl_write_a"})
+        assert status.status_code == 200
+        body = status.json()
+        if body["status"] == "pending_hitl":
+            checkpoint_id = body.get("checkpoint_id")
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("Timed out waiting for tenant HITL pending state")
+    assert checkpoint_id
+
+    cross_headers = {"X-Tenant-ID": "tenant_hitl_write_b"}
+    cross_approve = client.post(
+        "/hitl/approve",
+        headers=cross_headers,
+        json={"checkpoint_id": checkpoint_id, "approved": True, "feedback": "cross tenant"},
+    )
+    assert cross_approve.status_code == 403
+
+    cross_resume = client.post(f"/resume/{job_id}", headers=cross_headers, json={})
+    assert cross_resume.status_code == 403
+
+    owner_approve = client.post(
+        "/hitl/approve",
+        headers={"X-Tenant-ID": "tenant_hitl_write_a"},
+        json={"checkpoint_id": checkpoint_id, "approved": True, "feedback": "owner approved"},
+    )
+    assert owner_approve.status_code == 200
+
+    owner_resume = client.post(f"/resume/{job_id}", headers={"X-Tenant-ID": "tenant_hitl_write_a"}, json={})
+    assert owner_resume.status_code == 200
+
+
 def test_generate_response_and_status_include_preflight_payload():
     api_app_module.INGEST_AUDIT_STORE.clear()
 
