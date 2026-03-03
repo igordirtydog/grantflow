@@ -10,6 +10,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from grantflow.exporters.donor_contracts import evaluate_export_contract
 from grantflow.exporters.template_profile import build_export_template_profile, normalize_export_template_key
+from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 
 def _autosize_columns(ws) -> None:
@@ -26,11 +27,11 @@ def _autosize_columns(ws) -> None:
         ws.column_dimensions[column].width = adjusted_width
 
 
-def _toc_root(payload: Dict[str, Any]) -> Dict[str, Any]:
-    toc = payload.get("toc")
-    if isinstance(toc, dict):
-        return toc
-    return payload if isinstance(payload, dict) else {}
+def _toc_root(payload: Dict[str, Any], donor_id: str | None = None) -> Dict[str, Any]:
+    if not donor_id:
+        return unwrap_toc_payload(payload)
+    donor_key = normalize_export_template_key(donor_id)
+    return normalize_toc_for_export(donor_key, unwrap_toc_payload(payload))
 
 
 def _add_citations_sheet(wb: Workbook, citations: list[Dict[str, Any]]) -> None:
@@ -576,10 +577,11 @@ def build_xlsx_from_logframe(
         ws.cell(row=row, column=5, value=ind.get("baseline", "TBD")).border = thin_border
         ws.cell(row=row, column=6, value=ind.get("target", "TBD")).border = thin_border
 
-    toc_payload = toc_draft if isinstance(toc_draft, dict) else {}
-    if not toc_payload:
-        toc_payload = logframe_draft if isinstance(logframe_draft, dict) else {}
-    profile = build_export_template_profile(donor_id=donor_id, toc_payload=_toc_root(toc_payload))
+    toc_payload_raw = toc_draft if isinstance(toc_draft, dict) else {}
+    if not toc_payload_raw:
+        toc_payload_raw = logframe_draft if isinstance(logframe_draft, dict) else {}
+    toc_payload = _toc_root(toc_payload_raw, donor_id)
+    profile = build_export_template_profile(donor_id=donor_id, toc_payload=toc_payload)
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
         _add_usaid_results_sheet(wb, toc_payload)
@@ -594,7 +596,7 @@ def build_xlsx_from_logframe(
 
     _autosize_columns(ws)
     _add_template_meta_sheet(wb, profile)
-    contract = evaluate_export_contract(donor_id=donor_id, toc_payload=_toc_root(toc_payload), workbook_sheetnames=wb.sheetnames)
+    contract = evaluate_export_contract(donor_id=donor_id, toc_payload=toc_payload, workbook_sheetnames=wb.sheetnames)
     _add_export_contract_sheet(wb, contract)
     _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
     _add_critic_findings_sheet(wb, critic_findings or [])

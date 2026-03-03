@@ -7,6 +7,7 @@ from grantflow.exporters.template_profile import (
     build_export_template_profile,
     normalize_export_template_key,
 )
+from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 DONOR_DOCX_EXPECTED_HEADINGS: dict[str, list[str]] = {
     "usaid": ["USAID Results Framework", "Project Goal", "Development Objectives", "Critical Assumptions"],
@@ -47,12 +48,7 @@ def normalize_export_contract_policy_mode(raw_mode: Any) -> str:
 
 
 def normalize_toc_payload(toc_payload: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(toc_payload, dict):
-        return {}
-    toc_root = toc_payload.get("toc")
-    if isinstance(toc_root, dict):
-        return toc_root
-    return toc_payload
+    return unwrap_toc_payload(toc_payload)
 
 
 def evaluate_export_contract(
@@ -61,9 +57,10 @@ def evaluate_export_contract(
     toc_payload: Dict[str, Any],
     workbook_sheetnames: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
-    toc_root = normalize_toc_payload(toc_payload if isinstance(toc_payload, dict) else {})
     donor_key = normalize_export_template_key(donor_id)
-    profile = build_export_template_profile(donor_id=donor_id, toc_payload=toc_root)
+    toc_root = normalize_toc_payload(toc_payload if isinstance(toc_payload, dict) else {})
+    normalized_toc = normalize_toc_for_export(donor_key, toc_root)
+    profile = build_export_template_profile(donor_id=donor_id, toc_payload=normalized_toc)
 
     required_sections = list(profile.get("required_sections") or [])
     missing_required_sections = list(profile.get("missing_sections") or [])

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
+
 DONOR_TEMPLATE_ALIASES: dict[str, str] = {
     "usaid": "usaid",
     "eu": "eu",
@@ -50,8 +52,9 @@ def _is_non_empty(value: Any) -> bool:
 
 def build_export_template_profile(*, donor_id: str, toc_payload: Dict[str, Any]) -> Dict[str, Any]:
     template_key = normalize_export_template_key(donor_id)
+    normalized_toc_payload = normalize_toc_for_export(template_key, unwrap_toc_payload(toc_payload))
     required_sections = list(TEMPLATE_REQUIRED_SECTIONS.get(template_key, []))
-    present_sections = [name for name in required_sections if _is_non_empty((toc_payload or {}).get(name))]
+    present_sections = [name for name in required_sections if _is_non_empty((normalized_toc_payload or {}).get(name))]
     missing_sections = [name for name in required_sections if name not in present_sections]
     coverage_rate = round(len(present_sections) / len(required_sections), 4) if required_sections else 1.0
 
