@@ -7,6 +7,8 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-03-03
+
 ### Changed
 - Dependency management moved to `pyproject.toml` as the canonical source of truth (`[project]` + `[project.optional-dependencies]`).
 - CI, Docker, and docs install flows updated to `pip install .` / `pip install ".[dev]"`.
