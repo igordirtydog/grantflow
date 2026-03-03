@@ -891,6 +891,30 @@ def render_demo_ui_html() -> str:
               <button id="exportPayloadBtn" class="ghost">Load Export Payload</button>
               <button id="copyExportPayloadBtn" class="ghost">Copy Payload JSON</button>
             </div>
+            <div class="row3" style="margin-top:10px;">
+              <div>
+                <label>Export Contract</label>
+                <div id="exportContractPill" class="pill readiness-level-none">
+                  <span class="dot"></span><span id="exportContractPillText">not loaded</span>
+                </div>
+              </div>
+              <div>
+                <label for="productionExportMode">Production Export</label>
+                <select id="productionExportMode">
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </div>
+              <div>
+                <label for="allowUnsafeExport">Allow Unsafe Override</label>
+                <select id="allowUnsafeExport">
+                  <option value="false">false</option>
+                  <option value="true">true</option>
+                </select>
+              </div>
+            </div>
+            <div id="exportContractMetaLine" class="footer-note mono">mode=- · status=- · risk=- · missing=-</div>
+            <div class="list" id="exportContractWarningsList" style="margin-top:10px;"></div>
             <div style="margin-top:10px;">
               <button id="exportZipFromPayloadBtn" class="secondary">Export ZIP from Payload</button>
             </div>
@@ -1117,6 +1141,8 @@ def render_demo_ui_html() -> str:
         ["portfolioFindingStatusFilter", "grantflow_demo_portfolio_finding_status"],
         ["portfolioFindingSeverityFilter", "grantflow_demo_portfolio_finding_severity"],
         ["exportGzipEnabled", "grantflow_demo_export_gzip_enabled"],
+        ["productionExportMode", "grantflow_demo_production_export_mode"],
+        ["allowUnsafeExport", "grantflow_demo_allow_unsafe_export"],
         ["commentsFilterSection", "grantflow_demo_comments_filter_section"],
         ["commentsFilterStatus", "grantflow_demo_comments_filter_status"],
         ["commentsFilterVersionId", "grantflow_demo_comments_filter_version_id"],
@@ -1357,6 +1383,10 @@ def render_demo_ui_html() -> str:
         portfolioQualityJson: $("portfolioQualityJson"),
         criticJson: $("criticJson"),
         exportPayloadJson: $("exportPayloadJson"),
+        exportContractPill: $("exportContractPill"),
+        exportContractPillText: $("exportContractPillText"),
+        exportContractMetaLine: $("exportContractMetaLine"),
+        exportContractWarningsList: $("exportContractWarningsList"),
         diffPre: $("diffPre"),
         versionsList: $("versionsList"),
         citationsList: $("citationsList"),
@@ -1441,6 +1471,8 @@ def render_demo_ui_html() -> str:
         portfolioFindingStatusFilter: $("portfolioFindingStatusFilter"),
         portfolioFindingSeverityFilter: $("portfolioFindingSeverityFilter"),
         exportGzipEnabled: $("exportGzipEnabled"),
+        productionExportMode: $("productionExportMode"),
+        allowUnsafeExport: $("allowUnsafeExport"),
         commentsFilterSection: $("commentsFilterSection"),
         commentsFilterStatus: $("commentsFilterStatus"),
         commentsFilterVersionId: $("commentsFilterVersionId"),
@@ -1499,12 +1531,19 @@ def render_demo_ui_html() -> str:
         state.ingestChecklistProgress = loadIngestChecklistProgress();
         state.zeroReadinessWarningPrefs = loadZeroReadinessWarningPrefs();
         restoreUiState();
+        if (!String(els.productionExportMode?.value || "").trim()) {
+          els.productionExportMode.value = "false";
+        }
+        if (!String(els.allowUnsafeExport?.value || "").trim()) {
+          els.allowUnsafeExport.value = "false";
+        }
         if (!String(els.ingestDonorId.value || "").trim()) {
           els.ingestDonorId.value = String(els.donorId.value || "usaid");
         }
         renderIngestPresetGuidance();
         renderIngestChecklistProgress();
         renderGeneratePresetReadiness();
+        renderExportContract(null);
         renderZeroReadinessWarningPreference();
         renderGeneratePreflightAlert(null);
         if (String(els.ingestPresetSelect.value || "").trim()) {
@@ -1571,15 +1610,105 @@ def render_demo_ui_html() -> str:
         return String(els.exportGzipEnabled.value || "").toLowerCase() === "true";
       }
 
+      function productionExportEnabled() {
+        return String(els.productionExportMode?.value || "").toLowerCase() === "true";
+      }
+
+      function allowUnsafeExportEnabled() {
+        return String(els.allowUnsafeExport?.value || "").toLowerCase() === "true";
+      }
+
+      function normalizeRiskLevel(raw) {
+        const token = String(raw || "").trim().toLowerCase();
+        if (["high", "medium", "low", "none"].includes(token)) return token;
+        return "none";
+      }
+
+      function renderExportContract(contract) {
+        if (!els.exportContractPill || !els.exportContractPillText) return;
+        const gate = contract && typeof contract === "object" ? contract : null;
+        const mode = gate ? String(gate.mode || "-") : "-";
+        const status = gate ? String(gate.status || "unknown").toLowerCase() : "not_loaded";
+        const summary = gate ? String(gate.summary || "-") : "-";
+        const riskFromGate = gate ? String(gate.risk_level || "").toLowerCase() : "";
+        const fallbackRisk = status === "pass" ? "low" : status === "warning" ? "medium" : "none";
+        const risk = normalizeRiskLevel(riskFromGate || fallbackRisk);
+        const missingSections = gate && Array.isArray(gate.missing_required_sections)
+          ? gate.missing_required_sections.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const missingSheets = gate && Array.isArray(gate.missing_required_sheets)
+          ? gate.missing_required_sheets.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const reasons = gate && Array.isArray(gate.reasons)
+          ? gate.reasons.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const warnings = gate && Array.isArray(gate.warnings)
+          ? gate.warnings.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        const warningSet = Array.from(new Set([...reasons, ...warnings]));
+
+        els.exportContractPill.className = `pill readiness-level-${risk}`;
+        const displayStatus = status === "not_loaded" ? "not loaded" : status;
+        els.exportContractPillText.textContent = `${displayStatus} (${mode})`;
+        els.exportContractPill.title = `summary=${summary}`;
+
+        if (els.exportContractMetaLine) {
+          els.exportContractMetaLine.textContent =
+            `mode=${mode} · status=${displayStatus} · risk=${risk} · missing_sections=${missingSections.length} · missing_sheets=${missingSheets.length}`;
+        }
+
+        if (!els.exportContractWarningsList) return;
+        els.exportContractWarningsList.innerHTML = "";
+        if (!gate) {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `<div class="title">Export contract is not loaded</div><div class="sub">Click "Load Export Payload" to fetch current contract gate.</div>`;
+          els.exportContractWarningsList.appendChild(div);
+          return;
+        }
+
+        const severityClass = risk === "high" ? "severity-high" : risk === "medium" ? "severity-medium" : "severity-low";
+        if (missingSections.length) {
+          const div = document.createElement("div");
+          div.className = `item ${severityClass}`.trim();
+          div.innerHTML =
+            `<div class="title">Missing required ToC sections</div><div class="sub mono">${missingSections.join(", ")}</div>`;
+          els.exportContractWarningsList.appendChild(div);
+        }
+        if (missingSheets.length) {
+          const div = document.createElement("div");
+          div.className = `item ${severityClass}`.trim();
+          div.innerHTML =
+            `<div class="title">Missing required workbook sheets</div><div class="sub mono">${missingSheets.join(", ")}</div>`;
+          els.exportContractWarningsList.appendChild(div);
+        }
+        if (warningSet.length) {
+          const div = document.createElement("div");
+          div.className = `item ${severityClass}`.trim();
+          div.innerHTML =
+            `<div class="title">Gate reasons</div><div class="sub mono">${warningSet.join(", ")}</div>`;
+          els.exportContractWarningsList.appendChild(div);
+        }
+        if (!missingSections.length && !missingSheets.length && !warningSet.length) {
+          const div = document.createElement("div");
+          div.className = "item severity-low";
+          div.innerHTML = `<div class="title">Export contract is clean</div><div class="sub">No missing required sections or sheets.</div>`;
+          els.exportContractWarningsList.appendChild(div);
+        }
+      }
+
       async function clearDemoFilters() {
         for (const [elKey] of uiStateFields) {
           const el = els[elKey];
           if (!el) continue;
           el.value = "";
         }
+        if (els.productionExportMode) els.productionExportMode.value = "false";
+        if (els.allowUnsafeExport) els.allowUnsafeExport.value = "false";
         persistUiState();
         if (state.lastCritic) renderCriticLists(state.lastCritic);
         if (state.lastCitations) renderCriticContextCitations();
+        renderExportContract(null);
         renderGeneratePreflightAlert(null);
         renderGeneratePresetReadiness();
         await Promise.allSettled([refreshPortfolioBundle(), refreshComments(), refreshReviewWorkflow(), refreshDiff()]);
@@ -3661,9 +3790,17 @@ def render_demo_ui_html() -> str:
 
       async function refreshExportPayload() {
         const jobId = currentJobId();
-        if (!jobId) return;
+        if (!jobId) {
+          renderExportContract(null);
+          return;
+        }
         const body = await apiFetch(`/status/${encodeURIComponent(jobId)}/export-payload`);
         setJson(els.exportPayloadJson, body);
+        const payload = body && typeof body === "object" ? body.payload : null;
+        const exportContract = payload && typeof payload === "object"
+          ? (payload.export_contract || ((payload.state && typeof payload.state === "object") ? payload.state.export_contract_gate : null))
+          : null;
+        renderExportContract(exportContract && typeof exportContract === "object" ? exportContract : null);
         return body;
       }
 
@@ -4300,10 +4437,17 @@ def render_demo_ui_html() -> str:
         }
 
         persistBasics();
+        persistUiState();
+        const requestBody = {
+          payload: parsed.payload,
+          format: "both",
+          production_export: productionExportEnabled(),
+          allow_unsafe_export: allowUnsafeExportEnabled(),
+        };
         const res = await fetch(`${apiBase()}/export`, {
           method: "POST",
           headers: { "Content-Type": "application/json", ...headers() },
-          body: JSON.stringify({ payload: parsed.payload, format: "both" }),
+          body: JSON.stringify(requestBody),
         });
         if (!res.ok) {
           const ct = res.headers.get("content-type") || "";
@@ -4315,6 +4459,20 @@ def render_demo_ui_html() -> str:
             errText = await res.text();
           }
           throw new Error(errText || `Export failed (${res.status})`);
+        }
+
+        const payloadRoot = parsed && typeof parsed.payload === "object" ? parsed.payload : {};
+        const stateRoot = payloadRoot && typeof payloadRoot.state === "object" ? payloadRoot.state : {};
+        const payloadContract = payloadRoot.export_contract || stateRoot.export_contract_gate || null;
+        if (payloadContract && typeof payloadContract === "object") {
+          const headerMode = String(res.headers.get("x-grantflow-export-contract-mode") || "").trim();
+          const headerStatus = String(res.headers.get("x-grantflow-export-contract-status") || "").trim();
+          const headerSummary = String(res.headers.get("x-grantflow-export-contract-summary") || "").trim();
+          const mergedContract = { ...payloadContract };
+          if (headerMode) mergedContract.mode = headerMode;
+          if (headerStatus) mergedContract.status = headerStatus;
+          if (headerSummary) mergedContract.summary = headerSummary;
+          renderExportContract(mergedContract);
         }
 
         const blob = await res.blob();
@@ -4681,6 +4839,8 @@ def render_demo_ui_html() -> str:
           renderZeroReadinessWarningPreference();
         });
         els.exportGzipEnabled.addEventListener("change", persistUiState);
+        els.productionExportMode.addEventListener("change", persistUiState);
+        els.allowUnsafeExport.addEventListener("change", persistUiState);
         els.inputContextJson.addEventListener("change", persistUiState);
         els.ingestPresetSelect.addEventListener("change", () => {
           persistUiState();

@@ -151,7 +151,15 @@ def test_demo_console_page_loads():
     assert "exportPayloadBtn" in body
     assert "copyExportPayloadBtn" in body
     assert "exportZipFromPayloadBtn" in body
+    assert "exportContractPill" in body
+    assert "exportContractPillText" in body
+    assert "exportContractMetaLine" in body
+    assert "exportContractWarningsList" in body
+    assert "productionExportMode" in body
+    assert "allowUnsafeExport" in body
     assert "exportPayloadJson" in body
+    assert "production_export" in body
+    assert "allow_unsafe_export" in body
     assert "commentsFilterStatus" in body
     assert "commentsFilterVersionId" in body
     assert "grantflow_demo_diff_section" in body
@@ -161,6 +169,8 @@ def test_demo_console_page_loads():
     assert "grantflow_demo_portfolio_finding_status" in body
     assert "grantflow_demo_portfolio_finding_severity" in body
     assert "grantflow_demo_export_gzip_enabled" in body
+    assert "grantflow_demo_production_export_mode" in body
+    assert "grantflow_demo_allow_unsafe_export" in body
     assert "generatePreflightAlert" in body
     assert "generatePreflightAlertTitle" in body
     assert "generatePreflightAlertBody" in body
