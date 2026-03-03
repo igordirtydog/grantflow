@@ -57,7 +57,13 @@ Generic strategy:
 ### 1) Install
 
 ```bash
-pip install -r grantflow/requirements.txt
+pip install .
+```
+
+For local development tooling (`pytest`, `mypy`, `ruff`, `black`, pre-commit):
+
+```bash
+pip install ".[dev]"
 ```
 
 ### 2) Run API

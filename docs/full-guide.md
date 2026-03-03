@@ -63,7 +63,13 @@ Use `GET /donors` to resolve canonical IDs and aliases at runtime.
 ### Install
 
 ```bash
-pip install -r grantflow/requirements.txt
+pip install .
+```
+
+Development setup (tests/type checks/formatters):
+
+```bash
+pip install ".[dev]"
 ```
 
 ### Start API
