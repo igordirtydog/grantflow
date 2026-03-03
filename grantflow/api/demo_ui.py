@@ -2447,7 +2447,33 @@ def render_demo_ui_html() -> str:
           const melReasons = Array.isArray(melPolicy?.reasons)
             ? melPolicy.reasons.map((item) => String(item || "").trim()).filter(Boolean)
             : [];
+          const architectClaims =
+            preflight?.architect_claims && typeof preflight.architect_claims === "object"
+              ? preflight.architect_claims
+              : null;
+          let architectClaimsSummary = "";
+          if (architectClaims && Object.keys(architectClaims).length > 0) {
+            const available = Boolean(architectClaims.available);
+            if (available) {
+              const claimCount = Number(architectClaims.claim_citation_count ?? 0);
+              const keyCoverage = Number(architectClaims.key_claim_coverage_ratio ?? NaN);
+              const fallbackRatio = Number(architectClaims.fallback_claim_ratio ?? NaN);
+              const thresholdHit = Number(architectClaims.threshold_hit_rate ?? NaN);
+              const fmtRate = (rawRate) => {
+                const rate = Number(rawRate);
+                return Number.isFinite(rate) ? `${(rate * 100).toFixed(1)}%` : "-";
+              };
+              architectClaimsSummary =
+                `claims=${claimCount}` +
+                ` · key_cov=${fmtRate(keyCoverage)}` +
+                ` · fallback=${fmtRate(fallbackRatio)}` +
+                ` · threshold_hit=${fmtRate(thresholdHit)}`;
+            } else {
+              architectClaimsSummary = `claims=n/a · reason=${String(architectClaims.reason || "not_evaluated")}`;
+            }
+          }
           const rows = [
+            ...(architectClaimsSummary ? [{ title: "architect_claims", value: architectClaimsSummary }] : []),
             ...preflightReasons.map((reason) => ({ title: "preflight", value: reason })),
             ...melReasons.map((reason) => ({ title: "mel", value: reason })),
           ];
@@ -3823,6 +3849,20 @@ def render_demo_ui_html() -> str:
         const reasonTokens = Array.isArray(policy.reasons)
           ? policy.reasons.map((r) => String(r || "").trim()).filter(Boolean).slice(0, 3)
           : [];
+        const architectClaims =
+          preflight.architect_claims && typeof preflight.architect_claims === "object"
+            ? preflight.architect_claims
+            : {};
+        const architectClaimsAvailable = Boolean(architectClaims.available);
+        const architectClaimCount = Number(architectClaims.claim_citation_count ?? 0);
+        const architectKeyCoverage = Number(architectClaims.key_claim_coverage_ratio ?? NaN);
+        const architectFallbackRatio = Number(architectClaims.fallback_claim_ratio ?? NaN);
+        const architectTraceabilityGap = Number(architectClaims.traceability_gap_rate ?? NaN);
+        const architectThresholdHit = Number(architectClaims.threshold_hit_rate ?? NaN);
+        const fmtRate = (rawRate) => {
+          const rate = Number(rawRate);
+          return Number.isFinite(rate) ? `${Math.round(rate * 100)}%` : "-";
+        };
         const coverageLabel =
           typeof preflight.coverage_rate === "number"
             ? `${Math.round(Number(preflight.coverage_rate) * 100)}%`
@@ -3839,16 +3879,18 @@ def render_demo_ui_html() -> str:
         let severity = "low";
         if (policyBlocking || riskLevel === "high" || groundingRiskLevel === "high") severity = "high";
         else if (riskLevel === "medium" || groundingRiskLevel === "medium") severity = "medium";
+        const gateStatus = policyBlocking ? "block" : severity === "high" || severity === "medium" ? "warn" : "pass";
+        const architectClaimsLabel = architectClaimsAvailable
+          ? `claims=${architectClaimCount} · key_cov=${fmtRate(architectKeyCoverage)} · fallback=${fmtRate(architectFallbackRatio)} · trace_gap=${fmtRate(architectTraceabilityGap)} · threshold_hit=${fmtRate(architectThresholdHit)}`
+          : `claims=n/a (${String(architectClaims.reason || "not_evaluated")})`;
 
         container.className = `item preflight-alert severity-${severity} blink-in`;
-        title.textContent =
-          policyBlocking
-            ? "Preflight blocked by grounding policy"
-            : `Preflight advisory (${severity})`;
+        title.textContent = `Preflight gate: ${gateStatus}`;
         body.textContent =
           `risk=${riskLevel} · grounding=${groundingRiskLevel} · policy=${policyMode}` +
           ` · coverage=${coverageLabel} · warnings=${warningCount}` +
-          (reasonTokens.length ? ` · reasons=${reasonTokens.join(",")}` : "");
+          (reasonTokens.length ? ` · reasons=${reasonTokens.join(",")}` : "") +
+          ` · ${architectClaimsLabel}`;
       }
 
       async function generateJob() {

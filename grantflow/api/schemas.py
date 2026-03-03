@@ -491,6 +491,29 @@ class JobQualityArchitectSummaryPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobQualityArchitectClaimsSummaryPublicResponse(BaseModel):
+    claim_citation_count: int = 0
+    claims_total: Optional[int] = None
+    key_claims_total: Optional[int] = None
+    claim_paths_covered: Optional[int] = None
+    key_claim_paths_covered: Optional[int] = None
+    confident_claim_paths_covered: Optional[int] = None
+    fallback_claim_count: Optional[int] = None
+    low_confidence_claim_count: Optional[int] = None
+    claim_coverage_ratio: Optional[float] = None
+    key_claim_coverage_ratio: Optional[float] = None
+    fallback_claim_ratio: Optional[float] = None
+    threshold_hit_rate: Optional[float] = None
+    traceability_complete_citation_count: Optional[int] = None
+    traceability_partial_citation_count: Optional[int] = None
+    traceability_missing_citation_count: Optional[int] = None
+    traceability_gap_citation_count: Optional[int] = None
+    traceability_complete_rate: Optional[float] = None
+    traceability_gap_rate: Optional[float] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobQualityMelSummaryPublicResponse(BaseModel):
     engine: Optional[str] = None
     llm_used: Optional[bool] = None
@@ -556,6 +579,7 @@ class JobQualitySummaryPublicResponse(BaseModel):
     critic: JobQualityCriticSummaryPublicResponse
     citations: JobQualityCitationSummaryPublicResponse
     architect: JobQualityArchitectSummaryPublicResponse
+    architect_claims: Optional[JobQualityArchitectClaimsSummaryPublicResponse] = None
     mel: Optional[JobQualityMelSummaryPublicResponse] = None
     mel_grounding_policy: Optional[Dict[str, Any]] = None
     export_contract: Optional[JobQualityExportContractPublicResponse] = None

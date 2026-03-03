@@ -48,3 +48,53 @@ def test_export_grounding_policy_strict_blocks_on_traceability_gap(monkeypatch):
     assert policy["blocking"] is True
     assert "traceability_complete_rate_below_min" in (policy.get("reasons") or [])
     assert "traceability_gap_rate_above_max" in (policy.get("reasons") or [])
+
+
+def test_preflight_grounding_policy_strict_blocks_on_architect_claim_thresholds(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_policy_mode", "strict")
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_high_risk_coverage_threshold", 0.5)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_medium_risk_coverage_threshold", 0.8)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_uploads", 3)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_key_claim_coverage_rate", 0.6)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_max_fallback_claim_ratio", 0.8)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_max_traceability_gap_rate", 0.6)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_threshold_hit_rate", 0.4)
+
+    policy = api_app_module._build_preflight_grounding_policy(
+        coverage_rate=1.0,
+        namespace_empty=False,
+        inventory_total_uploads=8,
+        missing_doc_families=[],
+        architect_claims={
+            "available": True,
+            "claim_citation_count": 4,
+            "key_claim_coverage_ratio": 0.25,
+            "fallback_claim_ratio": 0.95,
+            "traceability_gap_rate": 0.9,
+            "threshold_hit_rate": 0.1,
+        },
+    )
+    assert policy["mode"] == "strict"
+    assert policy["risk_level"] == "high"
+    assert policy["blocking"] is True
+    reasons = policy.get("reasons") or []
+    assert "architect_key_claim_coverage_below_min" in reasons
+    assert "architect_fallback_claim_ratio_above_max" in reasons
+    assert "architect_traceability_gap_rate_above_max" in reasons
+    assert "architect_threshold_hit_rate_below_min" in reasons
+
+
+def test_preflight_grounding_policy_warns_when_architect_claims_not_evaluated(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_policy_mode", "warn")
+
+    policy = api_app_module._build_preflight_grounding_policy(
+        coverage_rate=1.0,
+        namespace_empty=False,
+        inventory_total_uploads=8,
+        missing_doc_families=[],
+        architect_claims={"available": False, "reason": "input_context_missing"},
+    )
+    assert policy["mode"] == "warn"
+    assert policy["risk_level"] == "medium"
+    assert policy["blocking"] is False
+    assert "architect_claim_policy_not_evaluated" in (policy.get("reasons") or [])

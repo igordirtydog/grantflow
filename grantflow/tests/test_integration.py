@@ -369,6 +369,10 @@ def test_ready_endpoint_reflects_preflight_grounding_threshold_overrides(monkeyp
     monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_high_risk_coverage_threshold", 0.42)
     monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_medium_risk_coverage_threshold", 0.91)
     monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_uploads", 7)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_key_claim_coverage_rate", 0.61)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_max_fallback_claim_ratio", 0.72)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_max_traceability_gap_rate", 0.33)
+    monkeypatch.setattr(api_app_module.config.graph, "preflight_grounding_min_threshold_hit_rate", 0.44)
 
     response = client.get("/ready")
     assert response.status_code == 200
@@ -379,6 +383,10 @@ def test_ready_endpoint_reflects_preflight_grounding_threshold_overrides(monkeyp
     assert thresholds["high_risk_coverage_threshold"] == 0.42
     assert thresholds["medium_risk_coverage_threshold"] == 0.91
     assert thresholds["min_uploads"] == 7
+    assert thresholds["min_key_claim_coverage_rate"] == 0.61
+    assert thresholds["max_fallback_claim_ratio"] == 0.72
+    assert thresholds["max_traceability_gap_rate"] == 0.33
+    assert thresholds["min_threshold_hit_rate"] == 0.44
 
 
 def test_ready_endpoint_preflight_policy_mode_can_differ_from_pipeline_mode(monkeypatch):
@@ -471,6 +479,14 @@ def test_generate_preflight_reports_high_risk_when_namespace_empty():
         thresholds.get("high_risk_coverage_threshold") or 0.0
     )
     assert int(thresholds.get("min_uploads") or 0) >= 1
+    assert 0.0 <= float(thresholds.get("min_key_claim_coverage_rate") or 0.0) <= 1.0
+    assert 0.0 <= float(thresholds.get("max_fallback_claim_ratio") or 0.0) <= 1.0
+    assert 0.0 <= float(thresholds.get("max_traceability_gap_rate") or 0.0) <= 1.0
+    assert 0.0 <= float(thresholds.get("min_threshold_hit_rate") or 0.0) <= 1.0
+    architect_claims = body.get("architect_claims") or {}
+    assert isinstance(architect_claims, dict)
+    assert architect_claims.get("available") is False
+    assert architect_claims.get("reason") == "input_context_missing"
 
 
 def test_generate_with_tenant_id_uses_tenant_scoped_namespace():
