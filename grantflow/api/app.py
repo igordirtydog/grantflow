@@ -772,7 +772,11 @@ def _build_generate_preflight(
     namespace = _tenant_rag_namespace(base_namespace or "", resolved_tenant_id) if base_namespace else None
     namespace_normalized = vector_store.normalize_namespace(namespace or "")
     inventory_rows = _ingest_inventory(donor_id=donor_id or None, tenant_id=resolved_tenant_id)
-    inventory_payload = public_ingest_inventory_payload(inventory_rows, donor_id=donor_id or None)
+    inventory_payload = public_ingest_inventory_payload(
+        inventory_rows,
+        donor_id=donor_id or None,
+        tenant_id=resolved_tenant_id,
+    )
     doc_family_counts_raw = inventory_payload.get("doc_family_counts")
     doc_family_counts = doc_family_counts_raw if isinstance(doc_family_counts_raw, dict) else {}
     inventory_total_uploads = int(inventory_payload.get("total_uploads") or 0)
@@ -886,6 +890,84 @@ def _list_jobs() -> Dict[str, Dict[str, Any]]:
         if isinstance(result, dict):
             return result
     return {}
+
+
+def _tenant_from_namespace(namespace: Any) -> Optional[str]:
+    raw = str(namespace or "").strip()
+    if "/" not in raw:
+        return None
+    prefix = raw.split("/", 1)[0]
+    return _normalize_tenant_candidate(prefix)
+
+
+def _job_tenant_id(job: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(job, dict):
+        return None
+    metadata = job.get("client_metadata") if isinstance(job.get("client_metadata"), dict) else {}
+    state = job.get("state") if isinstance(job.get("state"), dict) else {}
+    preflight = job.get("generate_preflight") if isinstance(job.get("generate_preflight"), dict) else {}
+    candidates = [
+        metadata.get("tenant_id"),
+        metadata.get("tenant"),
+        state.get("tenant_id"),
+        preflight.get("tenant_id"),
+        state.get("rag_namespace"),
+        state.get("retrieval_namespace"),
+        preflight.get("retrieval_namespace"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_tenant_candidate(candidate)
+        if normalized:
+            if isinstance(candidate, str) and "/" in candidate:
+                from_namespace = _tenant_from_namespace(candidate)
+                if from_namespace:
+                    return from_namespace
+            return normalized
+    return None
+
+
+def _checkpoint_tenant_id(checkpoint: Dict[str, Any]) -> Optional[str]:
+    if not isinstance(checkpoint, dict):
+        return None
+    snapshot = checkpoint.get("state_snapshot") if isinstance(checkpoint.get("state_snapshot"), dict) else {}
+    candidates = [
+        checkpoint.get("tenant_id"),
+        snapshot.get("tenant_id"),
+        snapshot.get("rag_namespace"),
+        snapshot.get("retrieval_namespace"),
+    ]
+    for candidate in candidates:
+        normalized = _normalize_tenant_candidate(candidate)
+        if normalized:
+            if isinstance(candidate, str) and "/" in candidate:
+                from_namespace = _tenant_from_namespace(candidate)
+                if from_namespace:
+                    return from_namespace
+            return normalized
+    return None
+
+
+def _ensure_job_tenant_read_access(request: Request, job: Dict[str, Any]) -> Optional[str]:
+    if not _tenant_authz_enabled():
+        return None
+    request_tenant = _resolve_tenant_id(request, require_if_enabled=True)
+    job_tenant = _job_tenant_id(job)
+    if not request_tenant or not job_tenant:
+        raise HTTPException(status_code=403, detail="Tenant access denied for requested job")
+    if request_tenant != job_tenant:
+        raise HTTPException(status_code=403, detail="Tenant access denied for requested job")
+    return request_tenant
+
+
+def _filter_jobs_by_tenant(jobs: Dict[str, Dict[str, Any]], tenant_id: Optional[str]) -> Dict[str, Dict[str, Any]]:
+    token = _normalize_tenant_candidate(tenant_id)
+    if not token:
+        return jobs
+    filtered: Dict[str, Dict[str, Any]] = {}
+    for job_id, job in jobs.items():
+        if _job_tenant_id(job) == token:
+            filtered[job_id] = job
+    return filtered
 
 
 class GenerateRequest(BaseModel):
@@ -2203,13 +2285,15 @@ def demo_console():
 def get_portfolio_metrics(
     request: Request,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = Query(default=None),
     status: Optional[str] = None,
     hitl_enabled: Optional[bool] = Query(default=None),
     warning_level: Optional[str] = None,
     grounding_risk_level: Optional[str] = None,
 ):
     require_api_key_if_configured(request, for_read=True)
-    jobs = _list_jobs()
+    resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
+    jobs = _filter_jobs_by_tenant(_list_jobs(), resolved_tenant_id)
     return public_portfolio_metrics_payload(
         jobs,
         donor_id=(donor_id or None),
@@ -2224,6 +2308,7 @@ def get_portfolio_metrics(
 def export_portfolio_metrics(
     request: Request,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = Query(default=None),
     status: Optional[str] = None,
     hitl_enabled: Optional[bool] = Query(default=None),
     warning_level: Optional[str] = None,
@@ -2232,7 +2317,8 @@ def export_portfolio_metrics(
     gzip_enabled: bool = Query(default=False, alias="gzip"),
 ):
     require_api_key_if_configured(request, for_read=True)
-    jobs = _list_jobs()
+    resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
+    jobs = _filter_jobs_by_tenant(_list_jobs(), resolved_tenant_id)
     payload = public_portfolio_metrics_payload(
         jobs,
         donor_id=(donor_id or None),
@@ -2262,6 +2348,7 @@ def export_portfolio_metrics(
 def get_portfolio_quality(
     request: Request,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = Query(default=None),
     status: Optional[str] = None,
     hitl_enabled: Optional[bool] = Query(default=None),
     warning_level: Optional[str] = None,
@@ -2270,7 +2357,8 @@ def get_portfolio_quality(
     finding_severity: Optional[str] = None,
 ):
     require_api_key_if_configured(request, for_read=True)
-    jobs = _list_jobs()
+    resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
+    jobs = _filter_jobs_by_tenant(_list_jobs(), resolved_tenant_id)
     return public_portfolio_quality_payload(
         jobs,
         donor_id=(donor_id or None),
@@ -2287,6 +2375,7 @@ def get_portfolio_quality(
 def export_portfolio_quality(
     request: Request,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = Query(default=None),
     status: Optional[str] = None,
     hitl_enabled: Optional[bool] = Query(default=None),
     warning_level: Optional[str] = None,
@@ -2297,7 +2386,8 @@ def export_portfolio_quality(
     gzip_enabled: bool = Query(default=False, alias="gzip"),
 ):
     require_api_key_if_configured(request, for_read=True)
-    jobs = _list_jobs()
+    resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
+    jobs = _filter_jobs_by_tenant(_list_jobs(), resolved_tenant_id)
     payload = public_portfolio_quality_payload(
         jobs,
         donor_id=(donor_id or None),
@@ -2565,6 +2655,7 @@ def get_status(job_id: str, request: Request):
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_payload(job)
 
 
@@ -2578,6 +2669,7 @@ def get_status_citations(job_id: str, request: Request):
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_citations_payload(job_id, job)
 
 
@@ -2588,18 +2680,21 @@ def get_status_citations(job_id: str, request: Request):
 )
 def get_status_export_payload(job_id: str, request: Request):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
     state = job.get("state")
     state_dict = state if isinstance(state, dict) else {}
+    job_tenant_id = _job_tenant_id(job)
     donor = str(
         state_dict.get("donor_id")
         or state_dict.get("donor")
         or ((job.get("client_metadata") or {}) if isinstance(job.get("client_metadata"), dict) else {}).get("donor_id")
         or ""
     ).strip()
-    inventory_rows = _ingest_inventory(donor_id=donor or None)
+    inventory_rows = _ingest_inventory(donor_id=donor or None, tenant_id=job_tenant_id)
     return public_job_export_payload(job_id, job, ingest_inventory_rows=inventory_rows)
 
 
@@ -2613,6 +2708,7 @@ def get_status_versions(job_id: str, request: Request, section: Optional[str] = 
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_versions_payload(job_id, job, section=section)
 
 
@@ -2632,6 +2728,7 @@ def get_status_diff(
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_diff_payload(
         job_id,
         job,
@@ -2651,6 +2748,7 @@ def get_status_events(job_id: str, request: Request):
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_events_payload(job_id, job)
 
 
@@ -2664,6 +2762,7 @@ def get_status_metrics(job_id: str, request: Request):
     job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
     return public_job_metrics_payload(job_id, job)
 
 
@@ -2674,18 +2773,21 @@ def get_status_metrics(job_id: str, request: Request):
 )
 def get_status_quality(job_id: str, request: Request):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
     state = job.get("state")
     state_dict = state if isinstance(state, dict) else {}
+    job_tenant_id = _job_tenant_id(job)
     donor = str(
         state_dict.get("donor_id")
         or state_dict.get("donor")
         or ((job.get("client_metadata") or {}) if isinstance(job.get("client_metadata"), dict) else {}).get("donor_id")
         or ""
     ).strip()
-    inventory_rows = _ingest_inventory(donor_id=donor or None)
+    inventory_rows = _ingest_inventory(donor_id=donor or None, tenant_id=job_tenant_id)
     return public_job_quality_payload(job_id, job, ingest_inventory_rows=inventory_rows)
 
 
@@ -2696,9 +2798,11 @@ def get_status_quality(job_id: str, request: Request):
 )
 def get_status_critic(job_id: str, request: Request):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
     return public_job_critic_payload(job_id, job)
 
 
@@ -2780,10 +2884,12 @@ def get_status_comments(
     version_id: Optional[str] = None,
 ):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
-    job = _normalize_review_comments_for_job(job_id) or job
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
     return public_job_comments_payload(
         job_id,
         job,
@@ -2816,10 +2922,12 @@ def get_status_review_workflow(
     workflow_state_filter = str(workflow_state or "").strip().lower() or None
     if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
         raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
-    job = _normalize_review_comments_for_job(job_id) or job
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
     return public_job_review_workflow_payload(
         job_id,
         job,
@@ -2847,10 +2955,12 @@ def get_status_review_workflow_sla(
     ),
 ):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
-    job = _normalize_review_comments_for_job(job_id) or job
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
     return public_job_review_workflow_sla_payload(
         job_id,
         job,
@@ -2865,10 +2975,12 @@ def get_status_review_workflow_sla(
 )
 def get_status_review_workflow_sla_profile(job_id: str, request: Request):
     require_api_key_if_configured(request, for_read=True)
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
-    job = _normalize_review_comments_for_job(job_id) or job
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
     return _review_workflow_sla_profile_payload(job_id, job)
 
 
@@ -2914,10 +3026,12 @@ def export_status_review_workflow(
     workflow_state_filter = str(workflow_state or "").strip().lower() or None
     if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
         raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
-    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
-    job = _normalize_review_comments_for_job(job_id) or job
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
     payload = public_job_review_workflow_payload(
         job_id,
         job,
@@ -3026,9 +3140,20 @@ def approve_checkpoint(req: HITLApprovalRequest, request: Request):
 
 
 @app.get("/hitl/pending", response_model=HITLPendingListPublicResponse, response_model_exclude_none=True)
-def list_pending_hitl(request: Request, donor_id: Optional[str] = None):
+def list_pending_hitl(request: Request, donor_id: Optional[str] = None, tenant_id: Optional[str] = None):
     require_api_key_if_configured(request, for_read=True)
+    resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
     pending = hitl_manager.list_pending(donor_id)
+    if resolved_tenant_id:
+        filtered = []
+        for checkpoint in pending:
+            checkpoint_tenant_id = _checkpoint_tenant_id(checkpoint)
+            if checkpoint_tenant_id != resolved_tenant_id:
+                continue
+            cp = dict(checkpoint)
+            cp["tenant_id"] = checkpoint_tenant_id
+            filtered.append(cp)
+        pending = filtered
     return {
         "pending_count": len(pending),
         "checkpoints": [public_checkpoint_payload(cp) for cp in pending],
@@ -3045,7 +3170,7 @@ def list_recent_ingests(
     require_api_key_if_configured(request, for_read=True)
     resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
     rows = _list_ingest_events(donor_id=donor_id, tenant_id=resolved_tenant_id, limit=limit)
-    return public_ingest_recent_payload(rows, donor_id=(donor_id or None))
+    return public_ingest_recent_payload(rows, donor_id=(donor_id or None), tenant_id=resolved_tenant_id)
 
 
 @app.get("/ingest/inventory", response_model=IngestInventoryPublicResponse, response_model_exclude_none=True)
@@ -3057,7 +3182,7 @@ def get_ingest_inventory(
     require_api_key_if_configured(request, for_read=True)
     resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
     rows = _ingest_inventory(donor_id=donor_id, tenant_id=resolved_tenant_id)
-    return public_ingest_inventory_payload(rows, donor_id=(donor_id or None))
+    return public_ingest_inventory_payload(rows, donor_id=(donor_id or None), tenant_id=resolved_tenant_id)
 
 
 @app.get("/ingest/inventory/export")
@@ -3071,7 +3196,7 @@ def export_ingest_inventory(
     require_api_key_if_configured(request, for_read=True)
     resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
     rows = _ingest_inventory(donor_id=donor_id, tenant_id=resolved_tenant_id)
-    payload = public_ingest_inventory_payload(rows, donor_id=(donor_id or None))
+    payload = public_ingest_inventory_payload(rows, donor_id=(donor_id or None), tenant_id=resolved_tenant_id)
     return _portfolio_export_response(
         payload=payload,
         filename_prefix="grantflow_ingest_inventory",

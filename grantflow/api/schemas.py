@@ -673,6 +673,7 @@ class IngestRecentRecordPublicResponse(BaseModel):
     event_id: str
     ts: str
     donor_id: str
+    tenant_id: Optional[str] = None
     namespace: Optional[str] = None
     filename: Optional[str] = None
     content_type: Optional[str] = None
@@ -685,12 +686,14 @@ class IngestRecentRecordPublicResponse(BaseModel):
 class IngestRecentListPublicResponse(BaseModel):
     count: int
     donor_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     records: list[IngestRecentRecordPublicResponse]
 
     model_config = ConfigDict(extra="allow")
 
 
 class IngestInventoryDocFamilyPublicResponse(BaseModel):
+    tenant_id: Optional[str] = None
     donor_id: str
     doc_family: str
     count: int
@@ -704,6 +707,7 @@ class IngestInventoryDocFamilyPublicResponse(BaseModel):
 
 class IngestInventoryPublicResponse(BaseModel):
     donor_id: Optional[str] = None
+    tenant_id: Optional[str] = None
     total_uploads: int
     family_count: int
     doc_family_counts: Dict[str, int]

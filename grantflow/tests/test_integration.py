@@ -496,6 +496,132 @@ def test_generate_requires_allowed_tenant_when_tenant_authz_enabled(monkeypatch)
     assert allowed.status_code == 200
 
 
+def test_status_endpoint_blocks_cross_tenant_when_tenant_authz_enabled(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_red,tenant_blue")
+
+    generated = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_red",
+            "input_context": {"project": "Water Sanitation", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert generated.status_code == 200
+    job_id = generated.json()["job_id"]
+
+    forbidden = client.get(f"/status/{job_id}", headers={"X-Tenant-ID": "tenant_blue"})
+    assert forbidden.status_code == 403
+
+    allowed = client.get(f"/status/{job_id}", headers={"X-Tenant-ID": "tenant_red"})
+    assert allowed.status_code == 200
+
+
+def test_portfolio_metrics_filters_by_tenant_when_tenant_authz_enabled(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_portfolio_a,tenant_portfolio_b")
+
+    a_job = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_portfolio_a",
+            "input_context": {"project": "Gov Services A", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert a_job.status_code == 200
+
+    b_job = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_portfolio_b",
+            "input_context": {"project": "Gov Services B", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert b_job.status_code == 200
+
+    a_metrics = client.get("/portfolio/metrics", headers={"X-Tenant-ID": "tenant_portfolio_a"})
+    assert a_metrics.status_code == 200
+    a_body = a_metrics.json()
+    assert a_body["job_count"] >= 1
+    assert a_body["donor_counts"].get("usaid", 0) >= 1
+
+    b_metrics = client.get("/portfolio/metrics", headers={"X-Tenant-ID": "tenant_portfolio_b"})
+    assert b_metrics.status_code == 200
+    b_body = b_metrics.json()
+    assert b_body["job_count"] >= 1
+    assert b_body["donor_counts"].get("usaid", 0) >= 1
+
+
+def test_hitl_pending_filters_by_tenant_when_tenant_authz_enabled(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_hitl_a,tenant_hitl_b")
+
+    a_job = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_hitl_a",
+            "input_context": {"project": "HITL A", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+        },
+    )
+    assert a_job.status_code == 200
+    a_job_id = a_job.json()["job_id"]
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        a_status = client.get(f"/status/{a_job_id}", headers={"X-Tenant-ID": "tenant_hitl_a"})
+        assert a_status.status_code == 200
+        if a_status.json()["status"] == "pending_hitl":
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("Timed out waiting for tenant A HITL pending state")
+
+    b_job = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "tenant_id": "tenant_hitl_b",
+            "input_context": {"project": "HITL B", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+        },
+    )
+    assert b_job.status_code == 200
+    b_job_id = b_job.json()["job_id"]
+    deadline = time.time() + 3.0
+    while time.time() < deadline:
+        b_status = client.get(f"/status/{b_job_id}", headers={"X-Tenant-ID": "tenant_hitl_b"})
+        assert b_status.status_code == 200
+        if b_status.json()["status"] == "pending_hitl":
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("Timed out waiting for tenant B HITL pending state")
+
+    tenant_a_pending = client.get("/hitl/pending", headers={"X-Tenant-ID": "tenant_hitl_a"})
+    assert tenant_a_pending.status_code == 200
+    tenant_a_body = tenant_a_pending.json()
+    assert tenant_a_body["pending_count"] >= 1
+    assert all((cp.get("tenant_id") == "tenant_hitl_a") for cp in tenant_a_body["checkpoints"])
+
+    tenant_b_pending = client.get("/hitl/pending", headers={"X-Tenant-ID": "tenant_hitl_b"})
+    assert tenant_b_pending.status_code == 200
+    tenant_b_body = tenant_b_pending.json()
+    assert tenant_b_body["pending_count"] >= 1
+    assert all((cp.get("tenant_id") == "tenant_hitl_b") for cp in tenant_b_body["checkpoints"])
+
+
 def test_generate_response_and_status_include_preflight_payload():
     api_app_module.INGEST_AUDIT_STORE.clear()
 
@@ -4674,6 +4800,7 @@ def test_ingest_inventory_endpoint_filters_by_tenant(monkeypatch):
     response = client.get("/ingest/inventory", params={"donor_id": "usaid", "tenant_id": "tenant_a"})
     assert response.status_code == 200
     body = response.json()
+    assert body["tenant_id"] == "tenant_a"
     assert body["total_uploads"] == 2
     assert body["doc_family_counts"]["donor_policy"] == 1
     assert body["doc_family_counts"]["country_context"] == 1

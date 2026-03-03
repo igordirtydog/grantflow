@@ -103,10 +103,10 @@ def test_sqlite_ingest_audit_store_roundtrip_and_filtering(tmp_path):
             "event_id": "evt-1",
             "ts": "2026-02-25T10:00:00+00:00",
             "donor_id": "usaid",
-            "namespace": "usaid_ads201",
+            "namespace": "tenant_a/usaid_ads201",
             "filename": "ads.pdf",
             "content_type": "application/pdf",
-            "metadata": {"doc_family": "donor_policy"},
+            "metadata": {"doc_family": "donor_policy", "tenant_id": "tenant_a"},
             "result": {"chunks_ingested": 3},
         }
     )
@@ -115,10 +115,10 @@ def test_sqlite_ingest_audit_store_roundtrip_and_filtering(tmp_path):
             "event_id": "evt-2",
             "ts": "2026-02-25T10:05:00+00:00",
             "donor_id": "eu",
-            "namespace": "eu_intpa",
+            "namespace": "tenant_b/eu_intpa",
             "filename": "eu.pdf",
             "content_type": "application/pdf",
-            "metadata": {"doc_family": "donor_policy"},
+            "metadata": {"doc_family": "donor_policy", "tenant_id": "tenant_b"},
             "result": {"chunks_ingested": 2},
         }
     )
@@ -127,10 +127,10 @@ def test_sqlite_ingest_audit_store_roundtrip_and_filtering(tmp_path):
             "event_id": "evt-3",
             "ts": "2026-02-25T10:10:00+00:00",
             "donor_id": "usaid",
-            "namespace": "usaid_ads201",
+            "namespace": "tenant_a/usaid_ads201",
             "filename": "kz-context.pdf",
             "content_type": "application/pdf",
-            "metadata": {"doc_family": "country_context"},
+            "metadata": {"doc_family": "country_context", "tenant_id": "tenant_a"},
             "result": {"chunks_ingested": 4},
         }
     )
@@ -150,6 +150,12 @@ def test_sqlite_ingest_audit_store_roundtrip_and_filtering(tmp_path):
     assert by_family["country_context"]["count"] == 1
     assert by_family["country_context"]["latest_filename"] == "kz-context.pdf"
     assert by_family["donor_policy"]["count"] == 1
+    assert by_family["donor_policy"]["tenant_id"] == "tenant_a"
+
+    tenant_rows = store.list_recent(limit=10, tenant_id="tenant_a")
+    assert [row["event_id"] for row in tenant_rows] == ["evt-3", "evt-1"]
+    tenant_inventory = store.inventory(tenant_id="tenant_a")
+    assert len(tenant_inventory) == 2
 
 
 def test_sqlite_stores_initialize_pragmas_and_schema_meta(monkeypatch, tmp_path):

@@ -912,11 +912,13 @@ def public_ingest_recent_payload(
     records: list[Dict[str, Any]],
     *,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     safe_records = [sanitize_for_public_response(item) for item in records if isinstance(item, dict)]
     return {
         "count": len(safe_records),
         "donor_id": donor_id,
+        "tenant_id": tenant_id,
         "records": safe_records,
     }
 
@@ -925,6 +927,7 @@ def public_ingest_inventory_payload(
     rows: list[Dict[str, Any]],
     *,
     donor_id: Optional[str] = None,
+    tenant_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     safe_rows = [sanitize_for_public_response(item) for item in rows if isinstance(item, dict)]
     doc_family_counts: Dict[str, int] = {}
@@ -942,6 +945,7 @@ def public_ingest_inventory_payload(
         total_uploads += count_int
     return {
         "donor_id": donor_id,
+        "tenant_id": tenant_id,
         "total_uploads": total_uploads,
         "family_count": len(doc_family_counts),
         "doc_family_counts": doc_family_counts,

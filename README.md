@@ -174,7 +174,36 @@ If preflight grounding policy itself is strict-blocking, API returns:
 curl -s http://127.0.0.1:8000/status/<JOB_ID>
 ```
 
-### 9) Export artifacts
+### 9) (Optional) Tenant isolation / authz
+
+Enable tenant-aware access control:
+
+```bash
+export GRANTFLOW_TENANT_AUTHZ_ENABLED=true
+export GRANTFLOW_ALLOWED_TENANTS=tenant_a,tenant_b
+```
+
+Send tenant in request body (`tenant_id`) or header:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/generate \
+  -H 'Content-Type: application/json' \
+  -H 'X-Tenant-ID: tenant_a' \
+  -d '{
+    "donor_id": "usaid",
+    "tenant_id": "tenant_a",
+    "input_context": {"project": "Water", "country": "Kenya"},
+    "llm_mode": false,
+    "hitl_enabled": false
+  }'
+```
+
+With tenant authz enabled:
+- read endpoints (`/status/*`, `/portfolio/*`, `/hitl/pending`, `/ingest/*`) are tenant-scoped
+- access is denied (`403`) for cross-tenant reads
+- RAG namespace becomes tenant-aware: `{tenant}/{donor_namespace}` (example: `tenant_a/usaid_ads201`)
+
+### 10) Export artifacts
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/export \
@@ -187,6 +216,7 @@ curl -s -X POST http://127.0.0.1:8000/export \
 
 - `GET /health`, `GET /ready`, `GET /donors`
 - `POST /generate/preflight`, `POST /generate`, `POST /cancel/{job_id}`, `POST /resume/{job_id}`
+  - `tenant_id` supported on `generate/preflight` and `generate`
 - `GET /status/{job_id}` plus:
   - `/citations`, `/versions`, `/diff`, `/events`, `/metrics`, `/quality`, `/critic`, `/comments`, `/review/workflow`, `/review/workflow/sla`, `/review/workflow/export`
   - `GET /status/{job_id}/review/workflow/sla/profile`
@@ -197,11 +227,12 @@ curl -s -X POST http://127.0.0.1:8000/export \
   - `POST /status/{job_id}/critic/findings/bulk-status`
   - `GET /status/{job_id}/review/workflow` filters: `event_type`, `finding_id`, `comment_status`, `workflow_state (pending|overdue)`, `overdue_after_hours`
 - `GET /portfolio/metrics` and `/portfolio/metrics/export` support filters:
-  - `donor_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`
+  - `donor_id`, `tenant_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`
 - `GET /portfolio/quality` and `/portfolio/quality/export` support filters:
-  - `donor_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`, `finding_status`, `finding_severity`
-- `POST /hitl/approve`, `GET /hitl/pending`
+  - `donor_id`, `tenant_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`, `finding_status`, `finding_severity`
+- `POST /hitl/approve`, `GET /hitl/pending` (`tenant_id` supported)
 - `POST /ingest`, `GET /ingest/recent`, `GET /ingest/inventory`, `GET /ingest/inventory/export`
+  - `tenant_id` supported on ingest and ingest read endpoints
 - `POST /export`
 
 ## Deployment
