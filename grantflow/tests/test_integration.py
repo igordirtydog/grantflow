@@ -4069,6 +4069,30 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert body["citations"]["strategy_reference_citation_rate"] == 0.0
     assert body["citations"]["retrieval_grounded_citation_count"] == 3
     assert body["citations"]["retrieval_grounded_citation_rate"] == 0.75
+    assert body["citations"]["doc_id_present_citation_count"] == 0
+    assert body["citations"]["doc_id_present_citation_rate"] == 0.0
+    assert body["citations"]["retrieval_rank_present_citation_count"] == 0
+    assert body["citations"]["retrieval_rank_present_citation_rate"] == 0.0
+    assert body["citations"]["retrieval_confidence_present_citation_count"] == 4
+    assert body["citations"]["retrieval_confidence_present_citation_rate"] == 1.0
+    assert body["citations"]["retrieval_metadata_complete_citation_count"] == 0
+    assert body["citations"]["retrieval_metadata_complete_citation_rate"] == 0.0
+    assert body["citations"]["architect_doc_id_present_citation_count"] == 0
+    assert body["citations"]["architect_doc_id_present_citation_rate"] == 0.0
+    assert body["citations"]["architect_retrieval_rank_present_citation_count"] == 0
+    assert body["citations"]["architect_retrieval_rank_present_citation_rate"] == 0.0
+    assert body["citations"]["architect_retrieval_confidence_present_citation_count"] == 3
+    assert body["citations"]["architect_retrieval_confidence_present_citation_rate"] == 1.0
+    assert body["citations"]["architect_retrieval_metadata_complete_citation_count"] == 0
+    assert body["citations"]["architect_retrieval_metadata_complete_citation_rate"] == 0.0
+    assert body["citations"]["mel_doc_id_present_citation_count"] == 0
+    assert body["citations"]["mel_doc_id_present_citation_rate"] == 0.0
+    assert body["citations"]["mel_retrieval_rank_present_citation_count"] == 0
+    assert body["citations"]["mel_retrieval_rank_present_citation_rate"] == 0.0
+    assert body["citations"]["mel_retrieval_confidence_present_citation_count"] == 1
+    assert body["citations"]["mel_retrieval_confidence_present_citation_rate"] == 1.0
+    assert body["citations"]["mel_retrieval_metadata_complete_citation_count"] == 0
+    assert body["citations"]["mel_retrieval_metadata_complete_citation_rate"] == 0.0
     assert body["citations"]["non_retrieval_citation_count"] == 1
     assert body["citations"]["non_retrieval_citation_rate"] == 0.25
     assert body["citations"]["retrieval_expected"] is True
@@ -4725,7 +4749,6 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["citations"]["citation_type_counts_total"]["rag_claim_support"] >= 1
     assert body["citations"]["citation_type_counts_total"]["fallback_namespace"] >= 1
 
-
     assert body["citations"]["architect_citation_type_counts_total"]["rag_claim_support"] >= 1
     assert body["citations"]["mel_citation_type_counts_total"]["fallback_namespace"] >= 1
     assert body["citations"]["low_confidence_citation_count"] >= 1
@@ -4736,6 +4759,30 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert "mel_rag_low_confidence_citation_rate" in body["citations"]
     assert "fallback_namespace_citation_count" in body["citations"]
     assert "fallback_namespace_citation_rate" in body["citations"]
+    assert "doc_id_present_citation_count" in body["citations"]
+    assert "doc_id_present_citation_rate" in body["citations"]
+    assert "retrieval_rank_present_citation_count" in body["citations"]
+    assert "retrieval_rank_present_citation_rate" in body["citations"]
+    assert "retrieval_confidence_present_citation_count" in body["citations"]
+    assert "retrieval_confidence_present_citation_rate" in body["citations"]
+    assert "retrieval_metadata_complete_citation_count" in body["citations"]
+    assert "retrieval_metadata_complete_citation_rate" in body["citations"]
+    assert "architect_doc_id_present_citation_count" in body["citations"]
+    assert "architect_doc_id_present_citation_rate" in body["citations"]
+    assert "architect_retrieval_rank_present_citation_count" in body["citations"]
+    assert "architect_retrieval_rank_present_citation_rate" in body["citations"]
+    assert "architect_retrieval_confidence_present_citation_count" in body["citations"]
+    assert "architect_retrieval_confidence_present_citation_rate" in body["citations"]
+    assert "architect_retrieval_metadata_complete_citation_count" in body["citations"]
+    assert "architect_retrieval_metadata_complete_citation_rate" in body["citations"]
+    assert "mel_doc_id_present_citation_count" in body["citations"]
+    assert "mel_doc_id_present_citation_rate" in body["citations"]
+    assert "mel_retrieval_rank_present_citation_count" in body["citations"]
+    assert "mel_retrieval_rank_present_citation_rate" in body["citations"]
+    assert "mel_retrieval_confidence_present_citation_count" in body["citations"]
+    assert "mel_retrieval_confidence_present_citation_rate" in body["citations"]
+    assert "mel_retrieval_metadata_complete_citation_count" in body["citations"]
+    assert "mel_retrieval_metadata_complete_citation_rate" in body["citations"]
     assert body["citations"]["grounding_risk_level"] in {"high", "medium", "low", "unknown"}
     assert "traceability_gap_citation_count" in body["citations"]
     assert "traceability_gap_citation_rate" in body["citations"]
@@ -4757,6 +4804,14 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert "architect_citation_type_counts" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "mel_citation_type_counts" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "fallback_namespace_citation_rate" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "doc_id_present_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "doc_id_present_citation_rate" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_rank_present_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_rank_present_citation_rate" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_confidence_present_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_confidence_present_citation_rate" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_metadata_complete_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "retrieval_metadata_complete_citation_rate" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert body["donor_weighted_risk_breakdown"]["usaid"]["grounding_risk_level"] in {
         "high",
         "medium",
@@ -4790,6 +4845,14 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["donor_grounding_risk_breakdown"]["usaid"]["architect_claim_support_citation_count"] >= 1
     assert body["donor_grounding_risk_breakdown"]["usaid"]["architect_claim_support_rate"] is not None
     assert body["donor_grounding_risk_breakdown"]["usaid"]["fallback_namespace_citation_count"] >= 0
+    assert "doc_id_present_citation_count" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "doc_id_present_citation_rate" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_rank_present_citation_count" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_rank_present_citation_rate" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_confidence_present_citation_count" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_confidence_present_citation_rate" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_metadata_complete_citation_count" in body["donor_grounding_risk_breakdown"]["usaid"]
+    assert "retrieval_metadata_complete_citation_rate" in body["donor_grounding_risk_breakdown"]["usaid"]
     if body["donor_grounding_risk_breakdown"]["usaid"]["citation_count_total"] > 0:
         assert body["donor_grounding_risk_breakdown"]["usaid"]["fallback_namespace_citation_rate"] is not None
     assert body["donor_grounding_risk_breakdown"]["usaid"]["grounding_risk_level"] in {
@@ -4860,7 +4923,10 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     toc_text_risk_filtered_body = toc_text_risk_filtered.json()
     assert toc_text_risk_filtered_body["filters"]["toc_text_risk_level"] == "high"
     assert toc_text_risk_filtered_body["job_count"] >= 1
-    assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["high"] == toc_text_risk_filtered_body["job_count"]
+    assert (
+        toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["high"]
+        == toc_text_risk_filtered_body["job_count"]
+    )
     assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["medium"] == 0
     assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["low"] == 0
     assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["unknown"] == 0
@@ -4879,7 +4945,12 @@ def test_portfolio_filters_accept_legacy_state_donor_alias():
                 "needs_revision": False,
             },
             "job_events": [
-                {"event_id": "legacy1", "ts": "2026-02-25T10:00:00+00:00", "type": "status_changed", "to_status": "done"}
+                {
+                    "event_id": "legacy1",
+                    "ts": "2026-02-25T10:00:00+00:00",
+                    "type": "status_changed",
+                    "to_status": "done",
+                }
             ],
         },
     )
@@ -5663,8 +5734,7 @@ def test_openapi_declares_api_key_security_scheme():
     status_critic_finding_detail_response_schema = (
         (
             (
-                ((spec.get("paths") or {}).get("/status/{job_id}/critic/findings/{finding_id}") or {}).get("get")
-                or {}
+                ((spec.get("paths") or {}).get("/status/{job_id}/critic/findings/{finding_id}") or {}).get("get") or {}
             ).get("responses")
             or {}
         )
@@ -5887,7 +5957,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_quality_response_schema == {"$ref": "#/components/schemas/JobQualitySummaryPublicResponse"}
     assert status_critic_response_schema == {"$ref": "#/components/schemas/JobCriticPublicResponse"}
     assert status_critic_findings_response_schema == {"$ref": "#/components/schemas/CriticFindingsListPublicResponse"}
-    assert status_critic_finding_detail_response_schema == {"$ref": "#/components/schemas/CriticFatalFlawPublicResponse"}
+    assert status_critic_finding_detail_response_schema == {
+        "$ref": "#/components/schemas/CriticFatalFlawPublicResponse"
+    }
     assert status_critic_finding_ack_response_schema == {
         "$ref": "#/components/schemas/CriticFatalFlawStatusUpdatePublicResponse"
     }
@@ -5969,18 +6041,18 @@ def test_openapi_declares_api_key_security_scheme():
     assert "GeneratePreflightWarningPublicResponse" in schemas
     assert "GeneratePreflightArchitectClaimsPublicResponse" in schemas
     assert "GeneratePreflightGroundingPolicyPublicResponse" in schemas
-    portfolio_quality_params = (
-        (((spec.get("paths") or {}).get("/portfolio/quality") or {}).get("get") or {}).get("parameters") or []
-    )
-    portfolio_metrics_params = (
-        (((spec.get("paths") or {}).get("/portfolio/metrics") or {}).get("get") or {}).get("parameters") or []
-    )
+    portfolio_quality_params = (((spec.get("paths") or {}).get("/portfolio/quality") or {}).get("get") or {}).get(
+        "parameters"
+    ) or []
+    portfolio_metrics_params = (((spec.get("paths") or {}).get("/portfolio/metrics") or {}).get("get") or {}).get(
+        "parameters"
+    ) or []
     portfolio_metrics_export_params = (
-        (((spec.get("paths") or {}).get("/portfolio/metrics/export") or {}).get("get") or {}).get("parameters") or []
-    )
+        ((spec.get("paths") or {}).get("/portfolio/metrics/export") or {}).get("get") or {}
+    ).get("parameters") or []
     portfolio_quality_export_params = (
-        (((spec.get("paths") or {}).get("/portfolio/quality/export") or {}).get("get") or {}).get("parameters") or []
-    )
+        ((spec.get("paths") or {}).get("/portfolio/quality/export") or {}).get("get") or {}
+    ).get("parameters") or []
     assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_metrics_params if isinstance(p, dict)]
     assert "toc_text_risk_level" in [
         str(p.get("name") or "") for p in portfolio_metrics_export_params if isinstance(p, dict)
@@ -6052,7 +6124,11 @@ def test_ingest_endpoint_applies_tenant_scoped_namespace(monkeypatch):
 
     response = client.post(
         "/ingest",
-        data={"donor_id": "usaid", "tenant_id": "Tenant Alpha", "metadata_json": json.dumps({"doc_family": "donor_policy"})},
+        data={
+            "donor_id": "usaid",
+            "tenant_id": "Tenant Alpha",
+            "metadata_json": json.dumps({"doc_family": "donor_policy"}),
+        },
         files={"file": ("tenant-ads.pdf", b"%PDF-1.4 fake", "application/pdf")},
     )
     assert response.status_code == 200

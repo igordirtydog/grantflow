@@ -44,6 +44,12 @@ def test_eval_harness_expectations_detect_regression():
         "low_confidence_citation_count": 1,
         "rag_low_confidence_citation_count": 0,
         "fallback_namespace_citation_count": 0,
+        "non_retrieval_citation_rate": 0.5,
+        "traceability_gap_citation_rate": 0.5,
+        "doc_id_present_citation_rate": 0.6,
+        "retrieval_rank_present_citation_rate": 0.6,
+        "retrieval_confidence_present_citation_rate": 0.6,
+        "retrieval_metadata_complete_citation_rate": 0.6,
         "draft_version_count": 2,
         "fatal_flaw_count": 0,
         "high_severity_fatal_flaw_count": 0,
@@ -63,6 +69,12 @@ def test_eval_harness_expectations_detect_regression():
             "max_rag_low_confidence_citations": 0,
             "max_architect_fallback_claim_ratio": 0.4,
             "max_fallback_namespace_citations": 0,
+            "max_non_retrieval_citation_rate": 0.4,
+            "max_traceability_gap_citation_rate": 0.4,
+            "min_doc_id_present_citation_rate": 0.7,
+            "min_retrieval_rank_present_citation_rate": 0.7,
+            "min_retrieval_confidence_present_citation_rate": 0.7,
+            "min_retrieval_metadata_complete_citation_rate": 0.7,
             "require_toc_draft": True,
         },
     )
@@ -197,6 +209,9 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
                     "statement_path": "toc.project_goal",
                     "citation_type": "fallback_namespace",
                     "citation_confidence": 0.1,
+                    "doc_id": "doc-1",
+                    "retrieval_rank": 1,
+                    "retrieval_confidence": 0.2,
                 },
                 {
                     "stage": "architect",
@@ -204,6 +219,9 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
                     "statement_path": "toc.objectives[0].description",
                     "citation_type": "rag_low_confidence",
                     "citation_confidence": 0.2,
+                    "doc_id": "doc-2",
+                    "retrieval_rank": 2,
+                    "retrieval_confidence": 0.4,
                 },
                 {"stage": "mel", "citation_type": "rag_result", "citation_confidence": 0.8},
             ],
@@ -218,12 +236,20 @@ def test_compute_state_metrics_splits_fallback_namespace_from_rag_low_confidence
     assert metrics["non_retrieval_citation_count"] == 1
     assert metrics["non_retrieval_citation_rate"] == 0.3333
     assert metrics["retrieval_grounded_citation_rate"] == 0.6667
+    assert metrics["doc_id_present_citation_count"] == 2
+    assert metrics["doc_id_present_citation_rate"] == 0.6667
+    assert metrics["retrieval_rank_present_citation_count"] == 2
+    assert metrics["retrieval_rank_present_citation_rate"] == 0.6667
+    assert metrics["retrieval_confidence_present_citation_count"] == 3
+    assert metrics["retrieval_confidence_present_citation_rate"] == 1.0
+    assert metrics["retrieval_metadata_complete_citation_count"] == 2
+    assert metrics["retrieval_metadata_complete_citation_rate"] == 0.6667
     assert metrics["architect_claim_citation_count"] == 2
     assert metrics["architect_key_claim_coverage_ratio"] == 1.0
     assert metrics["architect_fallback_claim_ratio"] == 0.5
     assert metrics["traceability_complete_citation_count"] == 0
-    assert metrics["traceability_partial_citation_count"] == 0
-    assert metrics["traceability_missing_citation_count"] == 3
+    assert metrics["traceability_partial_citation_count"] == 2
+    assert metrics["traceability_missing_citation_count"] == 1
     assert metrics["traceability_gap_citation_count"] == 3
     assert metrics["traceability_gap_citation_rate"] == 1.0
     assert metrics["llm_finding_label_counts"]["CAUSAL_LINK_DETAIL"] == 2

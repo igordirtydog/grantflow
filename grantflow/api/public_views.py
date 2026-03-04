@@ -10,6 +10,10 @@ from grantflow.api.csv_utils import csv_text_from_mapping
 from grantflow.core.config import config
 from grantflow.exporters.donor_contracts import evaluate_export_contract_gate, normalize_export_contract_policy_mode
 from grantflow.swarm.citations import (
+    citation_has_doc_id,
+    citation_has_retrieval_confidence,
+    citation_has_retrieval_metadata,
+    citation_has_retrieval_rank,
     citation_traceability_status,
     is_fallback_namespace_citation_type,
     is_non_retrieval_citation_type,
@@ -264,6 +268,33 @@ def _citation_grounding_counts(citations: list[Dict[str, Any]]) -> Dict[str, int
         "strategy_reference_citation_count": strategy_reference_count,
         "retrieval_grounded_citation_count": retrieval_grounded_count,
         "non_retrieval_citation_count": non_retrieval_count,
+    }
+
+
+def _citation_retrieval_metadata_counts(citations: list[Dict[str, Any]]) -> Dict[str, int]:
+    doc_id_present_count = 0
+    retrieval_rank_present_count = 0
+    retrieval_confidence_present_count = 0
+    retrieval_metadata_complete_count = 0
+    for item in citations:
+        if not isinstance(item, dict):
+            continue
+        has_doc_id = citation_has_doc_id(item)
+        has_retrieval_rank = citation_has_retrieval_rank(item)
+        has_retrieval_confidence = citation_has_retrieval_confidence(item)
+        if has_doc_id:
+            doc_id_present_count += 1
+        if has_retrieval_rank:
+            retrieval_rank_present_count += 1
+        if has_retrieval_confidence:
+            retrieval_confidence_present_count += 1
+        if citation_has_retrieval_metadata(item):
+            retrieval_metadata_complete_count += 1
+    return {
+        "doc_id_present_citation_count": doc_id_present_count,
+        "retrieval_rank_present_citation_count": retrieval_rank_present_count,
+        "retrieval_confidence_present_citation_count": retrieval_confidence_present_count,
+        "retrieval_metadata_complete_citation_count": retrieval_metadata_complete_count,
     }
 
 
@@ -1537,12 +1568,15 @@ def public_job_quality_payload(
     citation_grounding_counts = _citation_grounding_counts(citations)
     architect_grounding_counts = _citation_grounding_counts(architect_citations)
     mel_grounding_counts = _citation_grounding_counts(mel_citations)
+    citation_retrieval_metadata_counts = _citation_retrieval_metadata_counts(citations)
+    architect_retrieval_metadata_counts = _citation_retrieval_metadata_counts(architect_citations)
+    mel_retrieval_metadata_counts = _citation_retrieval_metadata_counts(mel_citations)
     retrieval_expected = _state_retrieval_expected(state_dict)
     architect_claim_support_citation_count = int(architect_citation_type_counts.get("rag_claim_support") or 0)
     architect_fallback_namespace_citation_count = int(architect_citation_type_counts.get("fallback_namespace") or 0)
-    architect_strategy_reference_citation_count = int(architect_citation_type_counts.get("strategy_reference") or 0) + int(
-        architect_citation_type_counts.get("strategy_namespace") or 0
-    )
+    architect_strategy_reference_citation_count = int(
+        architect_citation_type_counts.get("strategy_reference") or 0
+    ) + int(architect_citation_type_counts.get("strategy_namespace") or 0)
     mel_claim_support_citation_count = sum(
         1 for c in mel_citations if _is_claim_support_citation_type(c.get("citation_type"))
     )
@@ -1744,7 +1778,9 @@ def public_job_quality_payload(
     key_claims_total = _claim_meta_int("key_claims_total", len(architect_key_claim_paths))
     claim_paths_covered = _claim_meta_int("claim_paths_covered", len(architect_claim_paths))
     key_claim_paths_covered = _claim_meta_int("key_claim_paths_covered", len(architect_key_claim_paths))
-    confident_claim_paths_covered = _claim_meta_int("confident_claim_paths_covered", len(architect_confident_claim_paths))
+    confident_claim_paths_covered = _claim_meta_int(
+        "confident_claim_paths_covered", len(architect_confident_claim_paths)
+    )
     fallback_claim_count = _claim_meta_int("fallback_claim_count", architect_claim_fallback_count)
     low_confidence_claim_count = _claim_meta_int("low_confidence_claim_count", architect_claim_low_confidence_count)
     claim_coverage_ratio = _claim_meta_rate(
@@ -1765,7 +1801,9 @@ def public_job_quality_payload(
         else None
     )
     architect_claim_traceability_gap_rate = (
-        round(architect_claim_traceability_gap / len(architect_claim_citations), 4) if architect_claim_citations else None
+        round(architect_claim_traceability_gap / len(architect_claim_citations), 4)
+        if architect_claim_citations
+        else None
     )
 
     return {
@@ -1835,7 +1873,10 @@ def public_job_quality_payload(
                 architect_grounding_counts.get("non_retrieval_citation_count") or 0
             ),
             "architect_non_retrieval_citation_rate": (
-                round(int(architect_grounding_counts.get("non_retrieval_citation_count") or 0) / len(architect_citations), 4)
+                round(
+                    int(architect_grounding_counts.get("non_retrieval_citation_count") or 0) / len(architect_citations),
+                    4,
+                )
                 if architect_citations
                 else None
             ),
@@ -1843,7 +1884,59 @@ def public_job_quality_payload(
                 architect_grounding_counts.get("retrieval_grounded_citation_count") or 0
             ),
             "architect_retrieval_grounded_citation_rate": (
-                round(int(architect_grounding_counts.get("retrieval_grounded_citation_count") or 0) / len(architect_citations), 4)
+                round(
+                    int(architect_grounding_counts.get("retrieval_grounded_citation_count") or 0)
+                    / len(architect_citations),
+                    4,
+                )
+                if architect_citations
+                else None
+            ),
+            "architect_doc_id_present_citation_count": int(
+                architect_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0
+            ),
+            "architect_doc_id_present_citation_rate": (
+                round(
+                    int(architect_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0)
+                    / len(architect_citations),
+                    4,
+                )
+                if architect_citations
+                else None
+            ),
+            "architect_retrieval_rank_present_citation_count": int(
+                architect_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0
+            ),
+            "architect_retrieval_rank_present_citation_rate": (
+                round(
+                    int(architect_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0)
+                    / len(architect_citations),
+                    4,
+                )
+                if architect_citations
+                else None
+            ),
+            "architect_retrieval_confidence_present_citation_count": int(
+                architect_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0
+            ),
+            "architect_retrieval_confidence_present_citation_rate": (
+                round(
+                    int(architect_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0)
+                    / len(architect_citations),
+                    4,
+                )
+                if architect_citations
+                else None
+            ),
+            "architect_retrieval_metadata_complete_citation_count": int(
+                architect_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0
+            ),
+            "architect_retrieval_metadata_complete_citation_rate": (
+                round(
+                    int(architect_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0)
+                    / len(architect_citations),
+                    4,
+                )
                 if architect_citations
                 else None
             ),
@@ -1873,6 +1966,52 @@ def public_job_quality_payload(
                 if mel_citations
                 else None
             ),
+            "mel_doc_id_present_citation_count": int(
+                mel_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0
+            ),
+            "mel_doc_id_present_citation_rate": (
+                round(
+                    int(mel_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0) / len(mel_citations), 4
+                )
+                if mel_citations
+                else None
+            ),
+            "mel_retrieval_rank_present_citation_count": int(
+                mel_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0
+            ),
+            "mel_retrieval_rank_present_citation_rate": (
+                round(
+                    int(mel_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0)
+                    / len(mel_citations),
+                    4,
+                )
+                if mel_citations
+                else None
+            ),
+            "mel_retrieval_confidence_present_citation_count": int(
+                mel_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0
+            ),
+            "mel_retrieval_confidence_present_citation_rate": (
+                round(
+                    int(mel_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0)
+                    / len(mel_citations),
+                    4,
+                )
+                if mel_citations
+                else None
+            ),
+            "mel_retrieval_metadata_complete_citation_count": int(
+                mel_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0
+            ),
+            "mel_retrieval_metadata_complete_citation_rate": (
+                round(
+                    int(mel_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0)
+                    / len(mel_citations),
+                    4,
+                )
+                if mel_citations
+                else None
+            ),
             "architect_rag_low_confidence_citation_count": sum(
                 1 for c in architect_citations if str(c.get("citation_type") or "") == "rag_low_confidence"
             ),
@@ -1890,10 +2029,55 @@ def public_job_quality_payload(
             "retrieval_grounded_citation_rate": (
                 round(retrieval_grounded_count / len(citations), 4) if citations else None
             ),
-            "non_retrieval_citation_count": non_retrieval_count,
-            "non_retrieval_citation_rate": (
-                round(non_retrieval_count / len(citations), 4) if citations else None
+            "doc_id_present_citation_count": int(
+                citation_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0
             ),
+            "doc_id_present_citation_rate": (
+                round(
+                    int(citation_retrieval_metadata_counts.get("doc_id_present_citation_count") or 0) / len(citations),
+                    4,
+                )
+                if citations
+                else None
+            ),
+            "retrieval_rank_present_citation_count": int(
+                citation_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0
+            ),
+            "retrieval_rank_present_citation_rate": (
+                round(
+                    int(citation_retrieval_metadata_counts.get("retrieval_rank_present_citation_count") or 0)
+                    / len(citations),
+                    4,
+                )
+                if citations
+                else None
+            ),
+            "retrieval_confidence_present_citation_count": int(
+                citation_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0
+            ),
+            "retrieval_confidence_present_citation_rate": (
+                round(
+                    int(citation_retrieval_metadata_counts.get("retrieval_confidence_present_citation_count") or 0)
+                    / len(citations),
+                    4,
+                )
+                if citations
+                else None
+            ),
+            "retrieval_metadata_complete_citation_count": int(
+                citation_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0
+            ),
+            "retrieval_metadata_complete_citation_rate": (
+                round(
+                    int(citation_retrieval_metadata_counts.get("retrieval_metadata_complete_citation_count") or 0)
+                    / len(citations),
+                    4,
+                )
+                if citations
+                else None
+            ),
+            "non_retrieval_citation_count": non_retrieval_count,
+            "non_retrieval_citation_rate": (round(non_retrieval_count / len(citations), 4) if citations else None),
             "retrieval_expected": retrieval_expected,
             "grounding_risk_level": _grounding_risk_level(
                 fallback_count=fallback_ns,
@@ -2193,7 +2377,19 @@ def public_portfolio_quality_payload(
     fallback_namespace_citation_count = 0
     strategy_reference_citation_count = 0
     retrieval_grounded_citation_count = 0
+    doc_id_present_citation_count = 0
+    retrieval_rank_present_citation_count = 0
+    retrieval_confidence_present_citation_count = 0
+    retrieval_metadata_complete_citation_count = 0
     non_retrieval_citation_count = 0
+    architect_doc_id_present_citation_count = 0
+    architect_retrieval_rank_present_citation_count = 0
+    architect_retrieval_confidence_present_citation_count = 0
+    architect_retrieval_metadata_complete_citation_count = 0
+    mel_doc_id_present_citation_count = 0
+    mel_retrieval_rank_present_citation_count = 0
+    mel_retrieval_confidence_present_citation_count = 0
+    mel_retrieval_metadata_complete_citation_count = 0
     traceability_complete_citation_count = 0
     traceability_partial_citation_count = 0
     traceability_missing_citation_count = 0
@@ -2280,6 +2476,36 @@ def public_portfolio_quality_payload(
         fallback_namespace_citation_count += int(row_citations.get("fallback_namespace_citation_count") or 0)
         strategy_reference_citation_count += int(row_citations.get("strategy_reference_citation_count") or 0)
         retrieval_grounded_citation_count += int(row_citations.get("retrieval_grounded_citation_count") or 0)
+        doc_id_present_citation_count += int(row_citations.get("doc_id_present_citation_count") or 0)
+        retrieval_rank_present_citation_count += int(row_citations.get("retrieval_rank_present_citation_count") or 0)
+        retrieval_confidence_present_citation_count += int(
+            row_citations.get("retrieval_confidence_present_citation_count") or 0
+        )
+        retrieval_metadata_complete_citation_count += int(
+            row_citations.get("retrieval_metadata_complete_citation_count") or 0
+        )
+        architect_doc_id_present_citation_count += int(
+            row_citations.get("architect_doc_id_present_citation_count") or 0
+        )
+        architect_retrieval_rank_present_citation_count += int(
+            row_citations.get("architect_retrieval_rank_present_citation_count") or 0
+        )
+        architect_retrieval_confidence_present_citation_count += int(
+            row_citations.get("architect_retrieval_confidence_present_citation_count") or 0
+        )
+        architect_retrieval_metadata_complete_citation_count += int(
+            row_citations.get("architect_retrieval_metadata_complete_citation_count") or 0
+        )
+        mel_doc_id_present_citation_count += int(row_citations.get("mel_doc_id_present_citation_count") or 0)
+        mel_retrieval_rank_present_citation_count += int(
+            row_citations.get("mel_retrieval_rank_present_citation_count") or 0
+        )
+        mel_retrieval_confidence_present_citation_count += int(
+            row_citations.get("mel_retrieval_confidence_present_citation_count") or 0
+        )
+        mel_retrieval_metadata_complete_citation_count += int(
+            row_citations.get("mel_retrieval_metadata_complete_citation_count") or 0
+        )
         row_non_retrieval_raw = row_citations.get("non_retrieval_citation_count")
         if row_non_retrieval_raw is None:
             row_non_retrieval_count = _coerce_int(row_citations.get("fallback_namespace_citation_count")) + _coerce_int(
@@ -2326,22 +2552,26 @@ def public_portfolio_quality_payload(
         row_toc_risk_level = str(row_toc_text_quality.get("risk_level") or "unknown").strip().lower()
         if row_toc_risk_level not in toc_text_quality_risk_counts:
             row_toc_risk_level = "unknown"
-        toc_text_quality_risk_counts[row_toc_risk_level] = int(toc_text_quality_risk_counts.get(row_toc_risk_level, 0)) + 1
+        toc_text_quality_risk_counts[row_toc_risk_level] = (
+            int(toc_text_quality_risk_counts.get(row_toc_risk_level, 0)) + 1
+        )
         toc_text_quality_issues_total += int(row_toc_text_quality.get("issues_total") or 0)
         toc_text_quality_placeholder_finding_count += int(row_toc_text_quality.get("placeholder_finding_count") or 0)
         toc_text_quality_repetition_finding_count += int(row_toc_text_quality.get("repetition_finding_count") or 0)
-        placeholder_check_status = str(row_toc_text_quality.get("placeholder_check_status") or "unknown").strip().lower()
+        placeholder_check_status = (
+            str(row_toc_text_quality.get("placeholder_check_status") or "unknown").strip().lower()
+        )
         if placeholder_check_status not in toc_text_quality_placeholder_check_status_counts:
             placeholder_check_status = "unknown"
-        toc_text_quality_placeholder_check_status_counts[placeholder_check_status] = int(
-            toc_text_quality_placeholder_check_status_counts.get(placeholder_check_status, 0)
-        ) + 1
+        toc_text_quality_placeholder_check_status_counts[placeholder_check_status] = (
+            int(toc_text_quality_placeholder_check_status_counts.get(placeholder_check_status, 0)) + 1
+        )
         repetition_check_status = str(row_toc_text_quality.get("repetition_check_status") or "unknown").strip().lower()
         if repetition_check_status not in toc_text_quality_repetition_check_status_counts:
             repetition_check_status = "unknown"
-        toc_text_quality_repetition_check_status_counts[repetition_check_status] = int(
-            toc_text_quality_repetition_check_status_counts.get(repetition_check_status, 0)
-        ) + 1
+        toc_text_quality_repetition_check_status_counts[repetition_check_status] = (
+            int(toc_text_quality_repetition_check_status_counts.get(repetition_check_status, 0)) + 1
+        )
 
         donor_for_row = str(row.get("_donor_id") or "unknown")
         donor_row = donor_weighted_risk_breakdown.setdefault(
@@ -2362,7 +2592,19 @@ def public_portfolio_quality_payload(
                 "fallback_namespace_citation_count": 0,
                 "strategy_reference_citation_count": 0,
                 "retrieval_grounded_citation_count": 0,
+                "doc_id_present_citation_count": 0,
+                "retrieval_rank_present_citation_count": 0,
+                "retrieval_confidence_present_citation_count": 0,
+                "retrieval_metadata_complete_citation_count": 0,
                 "non_retrieval_citation_count": 0,
+                "architect_doc_id_present_citation_count": 0,
+                "architect_retrieval_rank_present_citation_count": 0,
+                "architect_retrieval_confidence_present_citation_count": 0,
+                "architect_retrieval_metadata_complete_citation_count": 0,
+                "mel_doc_id_present_citation_count": 0,
+                "mel_retrieval_rank_present_citation_count": 0,
+                "mel_retrieval_confidence_present_citation_count": 0,
+                "mel_retrieval_metadata_complete_citation_count": 0,
                 "traceability_complete_citation_count": 0,
                 "traceability_partial_citation_count": 0,
                 "traceability_missing_citation_count": 0,
@@ -2401,13 +2643,51 @@ def public_portfolio_quality_payload(
         donor_row["fallback_namespace_citation_count"] += int(
             row_citations.get("fallback_namespace_citation_count") or 0
         )
-        donor_row["strategy_reference_citation_count"] += int(row_citations.get("strategy_reference_citation_count") or 0)
-        donor_row["retrieval_grounded_citation_count"] += int(row_citations.get("retrieval_grounded_citation_count") or 0)
+        donor_row["strategy_reference_citation_count"] += int(
+            row_citations.get("strategy_reference_citation_count") or 0
+        )
+        donor_row["retrieval_grounded_citation_count"] += int(
+            row_citations.get("retrieval_grounded_citation_count") or 0
+        )
+        donor_row["doc_id_present_citation_count"] += int(row_citations.get("doc_id_present_citation_count") or 0)
+        donor_row["retrieval_rank_present_citation_count"] += int(
+            row_citations.get("retrieval_rank_present_citation_count") or 0
+        )
+        donor_row["retrieval_confidence_present_citation_count"] += int(
+            row_citations.get("retrieval_confidence_present_citation_count") or 0
+        )
+        donor_row["retrieval_metadata_complete_citation_count"] += int(
+            row_citations.get("retrieval_metadata_complete_citation_count") or 0
+        )
+        donor_row["architect_doc_id_present_citation_count"] += int(
+            row_citations.get("architect_doc_id_present_citation_count") or 0
+        )
+        donor_row["architect_retrieval_rank_present_citation_count"] += int(
+            row_citations.get("architect_retrieval_rank_present_citation_count") or 0
+        )
+        donor_row["architect_retrieval_confidence_present_citation_count"] += int(
+            row_citations.get("architect_retrieval_confidence_present_citation_count") or 0
+        )
+        donor_row["architect_retrieval_metadata_complete_citation_count"] += int(
+            row_citations.get("architect_retrieval_metadata_complete_citation_count") or 0
+        )
+        donor_row["mel_doc_id_present_citation_count"] += int(
+            row_citations.get("mel_doc_id_present_citation_count") or 0
+        )
+        donor_row["mel_retrieval_rank_present_citation_count"] += int(
+            row_citations.get("mel_retrieval_rank_present_citation_count") or 0
+        )
+        donor_row["mel_retrieval_confidence_present_citation_count"] += int(
+            row_citations.get("mel_retrieval_confidence_present_citation_count") or 0
+        )
+        donor_row["mel_retrieval_metadata_complete_citation_count"] += int(
+            row_citations.get("mel_retrieval_metadata_complete_citation_count") or 0
+        )
         donor_row_non_retrieval_raw = row_citations.get("non_retrieval_citation_count")
         if donor_row_non_retrieval_raw is None:
-            donor_row_non_retrieval_count = _coerce_int(row_citations.get("fallback_namespace_citation_count")) + _coerce_int(
-                row_citations.get("strategy_reference_citation_count")
-            )
+            donor_row_non_retrieval_count = _coerce_int(
+                row_citations.get("fallback_namespace_citation_count")
+            ) + _coerce_int(row_citations.get("strategy_reference_citation_count"))
         else:
             donor_row_non_retrieval_count = _coerce_int(donor_row_non_retrieval_raw)
         donor_row["non_retrieval_citation_count"] += donor_row_non_retrieval_count
@@ -2559,9 +2839,34 @@ def public_portfolio_quality_payload(
         )
         donor_citations_total = int(donor_row.get("citation_count_total") or 0)
         donor_architect_citations_total = int(donor_row.get("architect_citation_count_total") or 0)
+        donor_mel_citations_total = max(0, donor_citations_total - donor_architect_citations_total)
         donor_fallback_total = int(donor_row.get("fallback_namespace_citation_count") or 0)
         donor_strategy_reference_total = int(donor_row.get("strategy_reference_citation_count") or 0)
         donor_retrieval_grounded_total = int(donor_row.get("retrieval_grounded_citation_count") or 0)
+        donor_doc_id_present_total = int(donor_row.get("doc_id_present_citation_count") or 0)
+        donor_retrieval_rank_present_total = int(donor_row.get("retrieval_rank_present_citation_count") or 0)
+        donor_retrieval_confidence_present_total = int(
+            donor_row.get("retrieval_confidence_present_citation_count") or 0
+        )
+        donor_retrieval_metadata_complete_total = int(donor_row.get("retrieval_metadata_complete_citation_count") or 0)
+        donor_architect_doc_id_present_total = int(donor_row.get("architect_doc_id_present_citation_count") or 0)
+        donor_architect_retrieval_rank_present_total = int(
+            donor_row.get("architect_retrieval_rank_present_citation_count") or 0
+        )
+        donor_architect_retrieval_confidence_present_total = int(
+            donor_row.get("architect_retrieval_confidence_present_citation_count") or 0
+        )
+        donor_architect_retrieval_metadata_complete_total = int(
+            donor_row.get("architect_retrieval_metadata_complete_citation_count") or 0
+        )
+        donor_mel_doc_id_present_total = int(donor_row.get("mel_doc_id_present_citation_count") or 0)
+        donor_mel_retrieval_rank_present_total = int(donor_row.get("mel_retrieval_rank_present_citation_count") or 0)
+        donor_mel_retrieval_confidence_present_total = int(
+            donor_row.get("mel_retrieval_confidence_present_citation_count") or 0
+        )
+        donor_mel_retrieval_metadata_complete_total = int(
+            donor_row.get("mel_retrieval_metadata_complete_citation_count") or 0
+        )
         donor_non_retrieval_raw = donor_row.get("non_retrieval_citation_count")
         if donor_non_retrieval_raw is None:
             donor_non_retrieval_total = donor_fallback_total + donor_strategy_reference_total
@@ -2586,6 +2891,58 @@ def public_portfolio_quality_payload(
         donor_retrieval_grounded_rate = (
             round(donor_retrieval_grounded_total / donor_citations_total, 4) if donor_citations_total else None
         )
+        donor_doc_id_present_rate = (
+            round(donor_doc_id_present_total / donor_citations_total, 4) if donor_citations_total else None
+        )
+        donor_retrieval_rank_present_rate = (
+            round(donor_retrieval_rank_present_total / donor_citations_total, 4) if donor_citations_total else None
+        )
+        donor_retrieval_confidence_present_rate = (
+            round(donor_retrieval_confidence_present_total / donor_citations_total, 4)
+            if donor_citations_total
+            else None
+        )
+        donor_retrieval_metadata_complete_rate = (
+            round(donor_retrieval_metadata_complete_total / donor_citations_total, 4) if donor_citations_total else None
+        )
+        donor_architect_doc_id_present_rate = (
+            round(donor_architect_doc_id_present_total / donor_architect_citations_total, 4)
+            if donor_architect_citations_total
+            else None
+        )
+        donor_architect_retrieval_rank_present_rate = (
+            round(donor_architect_retrieval_rank_present_total / donor_architect_citations_total, 4)
+            if donor_architect_citations_total
+            else None
+        )
+        donor_architect_retrieval_confidence_present_rate = (
+            round(donor_architect_retrieval_confidence_present_total / donor_architect_citations_total, 4)
+            if donor_architect_citations_total
+            else None
+        )
+        donor_architect_retrieval_metadata_complete_rate = (
+            round(donor_architect_retrieval_metadata_complete_total / donor_architect_citations_total, 4)
+            if donor_architect_citations_total
+            else None
+        )
+        donor_mel_doc_id_present_rate = (
+            round(donor_mel_doc_id_present_total / donor_mel_citations_total, 4) if donor_mel_citations_total else None
+        )
+        donor_mel_retrieval_rank_present_rate = (
+            round(donor_mel_retrieval_rank_present_total / donor_mel_citations_total, 4)
+            if donor_mel_citations_total
+            else None
+        )
+        donor_mel_retrieval_confidence_present_rate = (
+            round(donor_mel_retrieval_confidence_present_total / donor_mel_citations_total, 4)
+            if donor_mel_citations_total
+            else None
+        )
+        donor_mel_retrieval_metadata_complete_rate = (
+            round(donor_mel_retrieval_metadata_complete_total / donor_mel_citations_total, 4)
+            if donor_mel_citations_total
+            else None
+        )
         donor_architect_claim_support_rate = (
             round(donor_architect_claim_support_total / donor_architect_citations_total, 4)
             if donor_architect_citations_total
@@ -2602,6 +2959,22 @@ def public_portfolio_quality_payload(
         donor_row["strategy_reference_citation_rate"] = donor_strategy_reference_rate
         donor_row["non_retrieval_citation_rate"] = donor_non_retrieval_rate
         donor_row["retrieval_grounded_citation_rate"] = donor_retrieval_grounded_rate
+        donor_row["doc_id_present_citation_rate"] = donor_doc_id_present_rate
+        donor_row["retrieval_rank_present_citation_rate"] = donor_retrieval_rank_present_rate
+        donor_row["retrieval_confidence_present_citation_rate"] = donor_retrieval_confidence_present_rate
+        donor_row["retrieval_metadata_complete_citation_rate"] = donor_retrieval_metadata_complete_rate
+        donor_row["architect_doc_id_present_citation_rate"] = donor_architect_doc_id_present_rate
+        donor_row["architect_retrieval_rank_present_citation_rate"] = donor_architect_retrieval_rank_present_rate
+        donor_row["architect_retrieval_confidence_present_citation_rate"] = (
+            donor_architect_retrieval_confidence_present_rate
+        )
+        donor_row["architect_retrieval_metadata_complete_citation_rate"] = (
+            donor_architect_retrieval_metadata_complete_rate
+        )
+        donor_row["mel_doc_id_present_citation_rate"] = donor_mel_doc_id_present_rate
+        donor_row["mel_retrieval_rank_present_citation_rate"] = donor_mel_retrieval_rank_present_rate
+        donor_row["mel_retrieval_confidence_present_citation_rate"] = donor_mel_retrieval_confidence_present_rate
+        donor_row["mel_retrieval_metadata_complete_citation_rate"] = donor_mel_retrieval_metadata_complete_rate
         donor_row["architect_claim_support_rate"] = donor_architect_claim_support_rate
         donor_row["retrieval_expected_mode"] = donor_retrieval_expected_mode
         donor_row["grounding_risk_level"] = donor_grounding_level
@@ -2619,6 +2992,30 @@ def public_portfolio_quality_payload(
             "strategy_reference_citation_rate": donor_strategy_reference_rate,
             "retrieval_grounded_citation_count": donor_retrieval_grounded_total,
             "retrieval_grounded_citation_rate": donor_retrieval_grounded_rate,
+            "doc_id_present_citation_count": donor_doc_id_present_total,
+            "doc_id_present_citation_rate": donor_doc_id_present_rate,
+            "retrieval_rank_present_citation_count": donor_retrieval_rank_present_total,
+            "retrieval_rank_present_citation_rate": donor_retrieval_rank_present_rate,
+            "retrieval_confidence_present_citation_count": donor_retrieval_confidence_present_total,
+            "retrieval_confidence_present_citation_rate": donor_retrieval_confidence_present_rate,
+            "retrieval_metadata_complete_citation_count": donor_retrieval_metadata_complete_total,
+            "retrieval_metadata_complete_citation_rate": donor_retrieval_metadata_complete_rate,
+            "architect_doc_id_present_citation_count": donor_architect_doc_id_present_total,
+            "architect_doc_id_present_citation_rate": donor_architect_doc_id_present_rate,
+            "architect_retrieval_rank_present_citation_count": donor_architect_retrieval_rank_present_total,
+            "architect_retrieval_rank_present_citation_rate": donor_architect_retrieval_rank_present_rate,
+            "architect_retrieval_confidence_present_citation_count": donor_architect_retrieval_confidence_present_total,
+            "architect_retrieval_confidence_present_citation_rate": donor_architect_retrieval_confidence_present_rate,
+            "architect_retrieval_metadata_complete_citation_count": donor_architect_retrieval_metadata_complete_total,
+            "architect_retrieval_metadata_complete_citation_rate": donor_architect_retrieval_metadata_complete_rate,
+            "mel_doc_id_present_citation_count": donor_mel_doc_id_present_total,
+            "mel_doc_id_present_citation_rate": donor_mel_doc_id_present_rate,
+            "mel_retrieval_rank_present_citation_count": donor_mel_retrieval_rank_present_total,
+            "mel_retrieval_rank_present_citation_rate": donor_mel_retrieval_rank_present_rate,
+            "mel_retrieval_confidence_present_citation_count": donor_mel_retrieval_confidence_present_total,
+            "mel_retrieval_confidence_present_citation_rate": donor_mel_retrieval_confidence_present_rate,
+            "mel_retrieval_metadata_complete_citation_count": donor_mel_retrieval_metadata_complete_total,
+            "mel_retrieval_metadata_complete_citation_rate": donor_mel_retrieval_metadata_complete_rate,
             "non_retrieval_citation_count": donor_non_retrieval_total,
             "non_retrieval_citation_rate": donor_non_retrieval_rate,
             "retrieval_expected_mode": donor_retrieval_expected_mode,
@@ -2649,6 +3046,57 @@ def public_portfolio_quality_payload(
     )
     retrieval_grounded_citation_rate = (
         round(retrieval_grounded_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    doc_id_present_citation_rate = (
+        round(doc_id_present_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    retrieval_rank_present_citation_rate = (
+        round(retrieval_rank_present_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    retrieval_confidence_present_citation_rate = (
+        round(retrieval_confidence_present_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    retrieval_metadata_complete_citation_rate = (
+        round(retrieval_metadata_complete_citation_count / citation_count_total, 4) if citation_count_total else None
+    )
+    architect_doc_id_present_citation_rate = (
+        round(architect_doc_id_present_citation_count / architect_citation_count_total, 4)
+        if architect_citation_count_total
+        else None
+    )
+    architect_retrieval_rank_present_citation_rate = (
+        round(architect_retrieval_rank_present_citation_count / architect_citation_count_total, 4)
+        if architect_citation_count_total
+        else None
+    )
+    architect_retrieval_confidence_present_citation_rate = (
+        round(architect_retrieval_confidence_present_citation_count / architect_citation_count_total, 4)
+        if architect_citation_count_total
+        else None
+    )
+    architect_retrieval_metadata_complete_citation_rate = (
+        round(architect_retrieval_metadata_complete_citation_count / architect_citation_count_total, 4)
+        if architect_citation_count_total
+        else None
+    )
+    mel_citation_count_total = max(0, citation_count_total - architect_citation_count_total)
+    mel_doc_id_present_citation_rate = (
+        round(mel_doc_id_present_citation_count / mel_citation_count_total, 4) if mel_citation_count_total else None
+    )
+    mel_retrieval_rank_present_citation_rate = (
+        round(mel_retrieval_rank_present_citation_count / mel_citation_count_total, 4)
+        if mel_citation_count_total
+        else None
+    )
+    mel_retrieval_confidence_present_citation_rate = (
+        round(mel_retrieval_confidence_present_citation_count / mel_citation_count_total, 4)
+        if mel_citation_count_total
+        else None
+    )
+    mel_retrieval_metadata_complete_citation_rate = (
+        round(mel_retrieval_metadata_complete_citation_count / mel_citation_count_total, 4)
+        if mel_citation_count_total
+        else None
     )
     retrieval_expected = retrieval_expected_true_job_count >= retrieval_expected_false_job_count
     retrieval_expected_mode = (
@@ -2782,6 +3230,30 @@ def public_portfolio_quality_payload(
             "non_retrieval_citation_rate": non_retrieval_citation_rate,
             "retrieval_grounded_citation_count": retrieval_grounded_citation_count,
             "retrieval_grounded_citation_rate": retrieval_grounded_citation_rate,
+            "doc_id_present_citation_count": doc_id_present_citation_count,
+            "doc_id_present_citation_rate": doc_id_present_citation_rate,
+            "retrieval_rank_present_citation_count": retrieval_rank_present_citation_count,
+            "retrieval_rank_present_citation_rate": retrieval_rank_present_citation_rate,
+            "retrieval_confidence_present_citation_count": retrieval_confidence_present_citation_count,
+            "retrieval_confidence_present_citation_rate": retrieval_confidence_present_citation_rate,
+            "retrieval_metadata_complete_citation_count": retrieval_metadata_complete_citation_count,
+            "retrieval_metadata_complete_citation_rate": retrieval_metadata_complete_citation_rate,
+            "architect_doc_id_present_citation_count": architect_doc_id_present_citation_count,
+            "architect_doc_id_present_citation_rate": architect_doc_id_present_citation_rate,
+            "architect_retrieval_rank_present_citation_count": architect_retrieval_rank_present_citation_count,
+            "architect_retrieval_rank_present_citation_rate": architect_retrieval_rank_present_citation_rate,
+            "architect_retrieval_confidence_present_citation_count": architect_retrieval_confidence_present_citation_count,
+            "architect_retrieval_confidence_present_citation_rate": architect_retrieval_confidence_present_citation_rate,
+            "architect_retrieval_metadata_complete_citation_count": architect_retrieval_metadata_complete_citation_count,
+            "architect_retrieval_metadata_complete_citation_rate": architect_retrieval_metadata_complete_citation_rate,
+            "mel_doc_id_present_citation_count": mel_doc_id_present_citation_count,
+            "mel_doc_id_present_citation_rate": mel_doc_id_present_citation_rate,
+            "mel_retrieval_rank_present_citation_count": mel_retrieval_rank_present_citation_count,
+            "mel_retrieval_rank_present_citation_rate": mel_retrieval_rank_present_citation_rate,
+            "mel_retrieval_confidence_present_citation_count": mel_retrieval_confidence_present_citation_count,
+            "mel_retrieval_confidence_present_citation_rate": mel_retrieval_confidence_present_citation_rate,
+            "mel_retrieval_metadata_complete_citation_count": mel_retrieval_metadata_complete_citation_count,
+            "mel_retrieval_metadata_complete_citation_rate": mel_retrieval_metadata_complete_citation_rate,
             "retrieval_expected_mode": retrieval_expected_mode,
             "grounding_risk_level": grounding_risk_level,
             "traceability_complete_citation_count": traceability_complete_citation_count,

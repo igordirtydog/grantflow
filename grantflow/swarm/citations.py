@@ -72,6 +72,43 @@ def is_non_retrieval_citation_type(citation_type: Any) -> bool:
     return token in STRATEGY_REFERENCE_CITATION_TYPES or token in FALLBACK_NAMESPACE_CITATION_TYPES
 
 
+def citation_has_doc_id(record: Dict[str, Any]) -> bool:
+    return bool(str(record.get("doc_id") or record.get("chunk_id") or "").strip())
+
+
+def citation_has_retrieval_rank(record: Dict[str, Any]) -> bool:
+    raw: Any = record.get("retrieval_rank")
+    if raw in (None, ""):
+        raw = record.get("rank")
+    if raw in (None, ""):
+        return False
+    try:
+        return int(raw) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def citation_has_retrieval_confidence(record: Dict[str, Any]) -> bool:
+    raw: Any = record.get("retrieval_confidence")
+    if raw in (None, ""):
+        raw = record.get("citation_confidence")
+    if raw in (None, ""):
+        return False
+    try:
+        float(raw)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def citation_has_retrieval_metadata(record: Dict[str, Any]) -> bool:
+    return (
+        citation_has_doc_id(record)
+        and citation_has_retrieval_rank(record)
+        and citation_has_retrieval_confidence(record)
+    )
+
+
 def _citation_key(record: Dict[str, Any]) -> tuple[Any, ...]:
     return (
         record.get("stage"),

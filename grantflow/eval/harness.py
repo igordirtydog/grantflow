@@ -10,6 +10,10 @@ from typing import Any
 from grantflow.core.config import config
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.swarm.citations import (
+    citation_has_doc_id,
+    citation_has_retrieval_confidence,
+    citation_has_retrieval_metadata,
+    citation_has_retrieval_rank,
     citation_traceability_status,
     is_fallback_namespace_citation_type,
     is_non_retrieval_citation_type,
@@ -43,6 +47,8 @@ LOWER_IS_BETTER_METRICS = (
     "low_confidence_citation_count",
     "rag_low_confidence_citation_count",
     "fallback_namespace_citation_count",
+    "non_retrieval_citation_rate",
+    "traceability_gap_citation_rate",
     "architect_fallback_claim_ratio",
     "traceability_gap_citation_count",
     "traceability_partial_citation_count",
@@ -70,6 +76,8 @@ REGRESSION_PRIORITY_WEIGHTS: dict[str, int] = {
     "low_confidence_citation_count": 2,
     "rag_low_confidence_citation_count": 2,
     "fallback_namespace_citation_count": 1,
+    "non_retrieval_citation_rate": 2,
+    "traceability_gap_citation_rate": 3,
     "architect_fallback_claim_ratio": 3,
 }
 GROUNDING_RISK_MIN_CITATIONS = 5
@@ -298,6 +306,10 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     strategy_reference_count = 0
     retrieval_grounded_count = 0
     non_retrieval_count = 0
+    doc_id_present_count = 0
+    retrieval_rank_present_count = 0
+    retrieval_confidence_present_count = 0
+    retrieval_metadata_complete_count = 0
     traceability_complete_count = 0
     traceability_partial_count = 0
     traceability_missing_count = 0
@@ -341,6 +353,14 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
             retrieval_grounded_count += 1
         if is_non_retrieval_citation_type(citation_type):
             non_retrieval_count += 1
+        if citation_has_doc_id(citation):
+            doc_id_present_count += 1
+        if citation_has_retrieval_rank(citation):
+            retrieval_rank_present_count += 1
+        if citation_has_retrieval_confidence(citation):
+            retrieval_confidence_present_count += 1
+        if citation_has_retrieval_metadata(citation):
+            retrieval_metadata_complete_count += 1
         traceability_status = citation_traceability_status(citation)
         if traceability_status == "complete":
             traceability_complete_count += 1
@@ -370,7 +390,9 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
     raw_architect_fallback_claim_ratio = claim_coverage_meta.get("fallback_claim_ratio")
     if raw_architect_fallback_claim_ratio is None:
         architect_fallback_claim_ratio = (
-            round(architect_claim_fallback_count / architect_claim_citation_count, 4) if architect_claim_citation_count else 0.0
+            round(architect_claim_fallback_count / architect_claim_citation_count, 4)
+            if architect_claim_citation_count
+            else 0.0
         )
     else:
         architect_fallback_claim_ratio = _to_float(raw_architect_fallback_claim_ratio, default=0.0)
@@ -408,11 +430,21 @@ def compute_state_metrics(state: dict[str, Any]) -> dict[str, Any]:
         "strategy_reference_citation_count": strategy_reference_count,
         "retrieval_grounded_citation_count": retrieval_grounded_count,
         "non_retrieval_citation_count": non_retrieval_count,
-        "non_retrieval_citation_rate": (
-            round(non_retrieval_count / len(citations), 4) if citations else 0.0
+        "non_retrieval_citation_rate": (round(non_retrieval_count / len(citations), 4) if citations else 0.0),
+        "retrieval_grounded_citation_rate": (round(retrieval_grounded_count / len(citations), 4) if citations else 0.0),
+        "doc_id_present_citation_count": doc_id_present_count,
+        "doc_id_present_citation_rate": (round(doc_id_present_count / len(citations), 4) if citations else 0.0),
+        "retrieval_rank_present_citation_count": retrieval_rank_present_count,
+        "retrieval_rank_present_citation_rate": (
+            round(retrieval_rank_present_count / len(citations), 4) if citations else 0.0
         ),
-        "retrieval_grounded_citation_rate": (
-            round(retrieval_grounded_count / len(citations), 4) if citations else 0.0
+        "retrieval_confidence_present_citation_count": retrieval_confidence_present_count,
+        "retrieval_confidence_present_citation_rate": (
+            round(retrieval_confidence_present_count / len(citations), 4) if citations else 0.0
+        ),
+        "retrieval_metadata_complete_citation_count": retrieval_metadata_complete_count,
+        "retrieval_metadata_complete_citation_rate": (
+            round(retrieval_metadata_complete_count / len(citations), 4) if citations else 0.0
         ),
         "traceability_complete_citation_count": traceability_complete_count,
         "traceability_partial_citation_count": traceability_partial_count,
@@ -455,6 +487,10 @@ def evaluate_expectations(metrics: dict[str, Any], expectations: dict[str, Any])
         ("min_architect_threshold_hit_rate", "architect_threshold_hit_rate"),
         ("min_architect_key_claim_coverage_ratio", "architect_key_claim_coverage_ratio"),
         ("min_citation_confidence_avg", "citation_confidence_avg"),
+        ("min_doc_id_present_citation_rate", "doc_id_present_citation_rate"),
+        ("min_retrieval_rank_present_citation_rate", "retrieval_rank_present_citation_rate"),
+        ("min_retrieval_confidence_present_citation_rate", "retrieval_confidence_present_citation_rate"),
+        ("min_retrieval_metadata_complete_citation_rate", "retrieval_metadata_complete_citation_rate"),
         ("min_draft_versions", "draft_version_count"),
     ):
         if key in expectations:
@@ -470,6 +506,8 @@ def evaluate_expectations(metrics: dict[str, Any], expectations: dict[str, Any])
         ("max_low_confidence_citations", "low_confidence_citation_count"),
         ("max_rag_low_confidence_citations", "rag_low_confidence_citation_count"),
         ("max_fallback_namespace_citations", "fallback_namespace_citation_count"),
+        ("max_non_retrieval_citation_rate", "non_retrieval_citation_rate"),
+        ("max_traceability_gap_citation_rate", "traceability_gap_citation_rate"),
         ("max_architect_fallback_claim_ratio", "architect_fallback_claim_ratio"),
         ("max_errors", "error_count"),
     ):
@@ -768,7 +806,9 @@ def format_eval_suite_report(suite: dict[str, Any]) -> str:
         if non_retrieval_risky_donors:
             lines.append("")
             lines.append("Grounding risk summary (non-retrieval dominance)")
-            non_retrieval_risky_donors.sort(key=lambda item: (-item[2], -int(item[1].get("citation_total") or 0), item[0]))
+            non_retrieval_risky_donors.sort(
+                key=lambda item: (-item[2], -int(item[1].get("citation_total") or 0), item[0])
+            )
             for donor_id, row, ratio, label in non_retrieval_risky_donors:
                 lines.append(
                     (
