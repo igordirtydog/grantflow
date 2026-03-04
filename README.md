@@ -386,6 +386,13 @@ python scripts/eval_ab_diff.py \
   --min-a-retrieval-grounded-improvement-vs-b 0.25 \
   --text-out eval-artifacts/grounded-ab-diff.txt \
   --json-out eval-artifacts/grounded-ab-diff.json
+
+python scripts/build_grounded_gate_summary.py \
+  --grounded-json eval-artifacts/grounded-eval-report.json \
+  --ab-diff-json eval-artifacts/grounded-ab-diff.json \
+  --expected-donors usaid,eu,worldbank,state_department \
+  --min-seeded-total 1 \
+  --out eval-artifacts/grounded-gate-summary.md
 ```
 
 One-command variant:
@@ -410,7 +417,7 @@ Tune guard via environment variables if needed:
 GROUNDED_GUARD_DONORS=usaid,worldbank GROUNDED_MAX_NON_RETRIEVAL=0.25 GROUNDED_MIN_RETRIEVAL_GROUNDED=0.75 GROUNDED_MAX_TRACEABILITY_GAP=0.10 GROUNDED_MIN_NON_RETRIEVAL_IMPROVEMENT=0.25 GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT=0.25 make eval-grounded-ab
 ```
 
-CI uploads the same files as the `eval-report` artifact.
+CI uploads the same files as the `eval-report` artifact, including `grounded-gate-summary.md`.
 
 ## Deployment
 

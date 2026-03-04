@@ -181,6 +181,15 @@ jobs:
             --text-out eval-artifacts/grounded-ab-diff.txt \
             --json-out eval-artifacts/grounded-ab-diff.json
 
+      - name: Build grounded gate markdown summary
+        run: |
+          python scripts/build_grounded_gate_summary.py \
+            --grounded-json eval-artifacts/grounded-eval-report.json \
+            --ab-diff-json eval-artifacts/grounded-ab-diff.json \
+            --expected-donors usaid,eu,worldbank,state_department \
+            --min-seeded-total 1 \
+            --out eval-artifacts/grounded-gate-summary.md
+
       - name: Upload evaluation report
         uses: actions/upload-artifact@v4
         if: always()

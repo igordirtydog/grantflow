@@ -18,6 +18,17 @@ eval-grounded-ab:
 	$(PYTHON) -m grantflow.eval.harness \
 		--cases-file $(GROUNDED_CASES_FILE) \
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
+		--suite-label grounded-eval \
+		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json
+	$(PYTHON) scripts/check_seeded_corpus.py \
+		--json $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json \
+		--label grounded-eval-seed \
+		--expected-donors $(GROUNDED_EXPECTED_DONORS) \
+		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL)
+	$(PYTHON) -m grantflow.eval.harness \
+		--cases-file $(GROUNDED_CASES_FILE) \
+		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--suite-label grounded-ab-a \
 		--skip-expectations \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.txt \
@@ -53,3 +64,9 @@ eval-grounded-ab:
 		--min-a-retrieval-grounded-improvement-vs-b $(GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT) \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json
+	$(PYTHON) scripts/build_grounded_gate_summary.py \
+		--grounded-json $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json \
+		--ab-diff-json $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json \
+		--expected-donors $(GROUNDED_EXPECTED_DONORS) \
+		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL) \
+		--out $(EVAL_ARTIFACTS_DIR)/grounded-gate-summary.md
