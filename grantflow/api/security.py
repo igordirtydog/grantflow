@@ -56,6 +56,8 @@ PROTECTED_OPERATIONS = {
     ("get", "/portfolio/review-workflow/export"),
     ("get", "/portfolio/review-workflow/sla"),
     ("get", "/portfolio/review-workflow/sla/export"),
+    ("get", "/portfolio/review-workflow/sla/hotspots"),
+    ("get", "/portfolio/review-workflow/sla/hotspots/export"),
     ("get", "/portfolio/review-workflow/trends"),
     ("get", "/portfolio/review-workflow/trends/export"),
     ("get", "/portfolio/review-workflow/sla/trends"),

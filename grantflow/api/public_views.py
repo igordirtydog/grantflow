@@ -4232,6 +4232,195 @@ def public_portfolio_review_workflow_sla_payload(
     }
 
 
+def public_portfolio_review_workflow_sla_hotspots_payload(
+    jobs_by_id: Dict[str, Dict[str, Any]],
+    *,
+    donor_id: Optional[str] = None,
+    status: Optional[str] = None,
+    hitl_enabled: Optional[bool] = None,
+    warning_level: Optional[str] = None,
+    grounding_risk_level: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    top_limit: int = 10,
+    hotspot_kind: Optional[str] = None,
+    hotspot_severity: Optional[str] = None,
+    min_overdue_hours: Optional[float] = None,
+) -> Dict[str, Any]:
+    warning_level_filter = _normalize_warning_level_filter(warning_level)
+    grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
+    toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
+    workflow_state_filter = _normalize_review_workflow_state_filter(workflow_state)
+    finding_id_filter = str(finding_id or "").strip() or None
+    finding_code_filter = str(finding_code or "").strip() or None
+    finding_section_filter = str(finding_section or "").strip().lower() or None
+    comment_status_filter = str(comment_status or "").strip().lower() or None
+    overdue_after_hours_value = (
+        int(overdue_after_hours)
+        if isinstance(overdue_after_hours, int) and overdue_after_hours > 0
+        else REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS
+    )
+    top_n = max(1, int(top_limit or 1))
+    hotspot_kind_filter = str(hotspot_kind or "").strip().lower() or None
+    if hotspot_kind_filter not in {None, "finding", "comment"}:
+        hotspot_kind_filter = None
+    hotspot_severity_filter = str(hotspot_severity or "").strip().lower() or None
+    if hotspot_severity_filter not in {None, "high", "medium", "low", "unknown"}:
+        hotspot_severity_filter = None
+    min_overdue_hours_value: Optional[float] = None
+    if isinstance(min_overdue_hours, (int, float)):
+        min_overdue_hours_value = max(0.0, float(min_overdue_hours))
+
+    filtered: list[tuple[str, Dict[str, Any]]] = []
+    for job_id, job in jobs_by_id.items():
+        if not isinstance(job, dict):
+            continue
+        job_status = str(job.get("status") or "")
+        job_donor = _job_donor_id(job)
+        job_hitl = bool(job.get("hitl_enabled"))
+        if donor_id and job_donor != donor_id:
+            continue
+        if status and job_status != status:
+            continue
+        if hitl_enabled is not None and job_hitl != hitl_enabled:
+            continue
+        if warning_level_filter is not None and _job_warning_level(job) != warning_level_filter:
+            continue
+        if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
+            continue
+        if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
+            continue
+        filtered.append((str(job_id), job))
+
+    overdue_rows_all: list[Dict[str, Any]] = []
+    donor_hotspot_counts: Dict[str, int] = {}
+    job_hotspot_counts: Dict[str, int] = {}
+    jobs_with_overdue = 0
+
+    for job_id, job in filtered:
+        snapshot = _review_workflow_sla_snapshot(
+            job_id,
+            job,
+            finding_id=finding_id_filter,
+            finding_code=finding_code_filter,
+            finding_section=finding_section_filter,
+            comment_status=comment_status_filter,
+            workflow_state=workflow_state_filter,
+            overdue_after_hours=overdue_after_hours_value,
+        )
+        overdue_rows = snapshot.get("overdue_rows")
+        overdue_rows_list = (
+            [item for item in overdue_rows if isinstance(item, dict)] if isinstance(overdue_rows, list) else []
+        )
+        donor_token = _job_donor_id(job, default="unknown")
+        job_matches = 0
+        for row in overdue_rows_list:
+            current = dict(row)
+            row_kind = str(current.get("kind") or "").strip().lower() or None
+            row_severity = str(current.get("severity") or "").strip().lower() or "unknown"
+            row_overdue_hours_raw = current.get("overdue_hours")
+            row_overdue_hours: Optional[float] = None
+            if isinstance(row_overdue_hours_raw, (int, float, str)):
+                try:
+                    row_overdue_hours = float(row_overdue_hours_raw)
+                except (TypeError, ValueError):
+                    row_overdue_hours = None
+
+            if hotspot_kind_filter and row_kind != hotspot_kind_filter:
+                continue
+            if hotspot_severity_filter and row_severity != hotspot_severity_filter:
+                continue
+            if min_overdue_hours_value is not None and (
+                row_overdue_hours is None or row_overdue_hours < min_overdue_hours_value
+            ):
+                continue
+
+            current["job_id"] = str(job_id)
+            current["donor_id"] = donor_token
+            overdue_rows_all.append(current)
+            job_matches += 1
+
+        job_hotspot_counts[str(job_id)] = job_matches
+        if job_matches > 0:
+            jobs_with_overdue += 1
+        donor_hotspot_counts[donor_token] = int(donor_hotspot_counts.get(donor_token) or 0) + job_matches
+
+    def _sort_key(item: Dict[str, Any]) -> tuple[float, str]:
+        overdue_hours = item.get("overdue_hours")
+        overdue_hours_value = -1.0
+        if isinstance(overdue_hours, (int, float, str)):
+            try:
+                overdue_hours_value = float(overdue_hours)
+            except (TypeError, ValueError):
+                overdue_hours_value = -1.0
+        due_at = str(item.get("due_at") or "")
+        return overdue_hours_value, due_at
+
+    overdue_rows_all.sort(key=_sort_key, reverse=True)
+    top_overdue = overdue_rows_all[:top_n]
+    oldest_overdue = top_overdue[0] if top_overdue else None
+    total_overdue_items = len(overdue_rows_all)
+    overdue_hours_values: list[float] = []
+    for item in overdue_rows_all:
+        raw_value = item.get("overdue_hours")
+        if isinstance(raw_value, (int, float)):
+            overdue_hours_values.append(float(raw_value))
+    max_overdue_hours = max(overdue_hours_values) if overdue_hours_values else None
+    avg_overdue_hours = (sum(overdue_hours_values) / len(overdue_hours_values)) if overdue_hours_values else None
+
+    top_donor_id = None
+    top_donor_overdue_count = -1
+    for key, total in donor_hotspot_counts.items():
+        if int(total) > top_donor_overdue_count:
+            top_donor_id = key
+            top_donor_overdue_count = int(total)
+
+    job_count = len(filtered)
+    jobs_without_overdue = max(0, job_count - jobs_with_overdue)
+
+    return {
+        "job_count": job_count,
+        "jobs_with_overdue": jobs_with_overdue,
+        "jobs_without_overdue": jobs_without_overdue,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": {
+            "donor_id": donor_id,
+            "status": status,
+            "hitl_enabled": hitl_enabled,
+            "warning_level": warning_level_filter,
+            "grounding_risk_level": grounding_risk_filter,
+            "toc_text_risk_level": toc_text_risk_filter,
+            "finding_id": finding_id_filter,
+            "finding_code": finding_code_filter,
+            "finding_section": finding_section_filter,
+            "comment_status": comment_status_filter,
+            "workflow_state": workflow_state_filter,
+            "overdue_after_hours": overdue_after_hours_value,
+            "top_limit": top_n,
+            "hotspot_kind": hotspot_kind_filter,
+            "hotspot_severity": hotspot_severity_filter,
+            "min_overdue_hours": min_overdue_hours_value,
+        },
+        "overdue_after_hours": overdue_after_hours_value,
+        "top_limit": top_n,
+        "hotspot_count": len(top_overdue),
+        "total_overdue_items": total_overdue_items,
+        "max_overdue_hours": (round(max_overdue_hours, 3) if max_overdue_hours is not None else None),
+        "avg_overdue_hours": (round(avg_overdue_hours, 3) if avg_overdue_hours is not None else None),
+        "oldest_overdue": oldest_overdue,
+        "top_overdue": top_overdue,
+        "top_donor_id": top_donor_id,
+        "top_donor_overdue_count": top_donor_overdue_count if top_donor_id is not None else None,
+        "donor_hotspot_counts": dict(sorted(donor_hotspot_counts.items())),
+        "job_hotspot_counts": dict(sorted(job_hotspot_counts.items())),
+    }
+
+
 def public_portfolio_review_workflow_trends_payload(
     jobs_by_id: Dict[str, Dict[str, Any]],
     *,
@@ -4673,6 +4862,10 @@ def public_portfolio_review_workflow_csv_text(payload: Dict[str, Any]) -> str:
 
 
 def public_portfolio_review_workflow_sla_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_portfolio_review_workflow_sla_hotspots_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 

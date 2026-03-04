@@ -817,6 +817,49 @@ class PortfolioReviewWorkflowSLAPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class PortfolioReviewWorkflowSLAHotspotsFiltersPublicResponse(BaseModel):
+    donor_id: Optional[str] = None
+    status: Optional[str] = None
+    hitl_enabled: Optional[bool] = None
+    warning_level: Optional[str] = None
+    grounding_risk_level: Optional[str] = None
+    toc_text_risk_level: Optional[str] = None
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+    top_limit: Optional[int] = None
+    hotspot_kind: Optional[str] = None
+    hotspot_severity: Optional[str] = None
+    min_overdue_hours: Optional[float] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PortfolioReviewWorkflowSLAHotspotsPublicResponse(BaseModel):
+    job_count: int
+    jobs_with_overdue: int
+    jobs_without_overdue: int
+    generated_at: str
+    filters: PortfolioReviewWorkflowSLAHotspotsFiltersPublicResponse
+    overdue_after_hours: int
+    top_limit: int
+    hotspot_count: int
+    total_overdue_items: int
+    max_overdue_hours: Optional[float] = None
+    avg_overdue_hours: Optional[float] = None
+    oldest_overdue: Optional[PortfolioReviewWorkflowSLAItemPublicResponse] = None
+    top_overdue: list[PortfolioReviewWorkflowSLAItemPublicResponse]
+    top_donor_id: Optional[str] = None
+    top_donor_overdue_count: Optional[int] = None
+    donor_hotspot_counts: Dict[str, int]
+    job_hotspot_counts: Dict[str, int]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PortfolioReviewWorkflowTrendsFiltersPublicResponse(BaseModel):
     donor_id: Optional[str] = None
     status: Optional[str] = None

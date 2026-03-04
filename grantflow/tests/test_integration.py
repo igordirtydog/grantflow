@@ -246,6 +246,10 @@ def test_demo_console_page_loads():
     assert "grantflow_demo_portfolio_finding_status" in body
     assert "grantflow_demo_portfolio_finding_severity" in body
     assert "grantflow_demo_portfolio_toc_text_risk_level" in body
+    assert "grantflow_demo_portfolio_sla_hotspot_kind" in body
+    assert "grantflow_demo_portfolio_sla_hotspot_severity" in body
+    assert "grantflow_demo_portfolio_sla_min_overdue_hours" in body
+    assert "grantflow_demo_portfolio_sla_top_limit" in body
     assert "grantflow_demo_export_gzip_enabled" in body
     assert "grantflow_demo_production_export_mode" in body
     assert "grantflow_demo_allow_unsafe_export" in body
@@ -267,6 +271,8 @@ def test_demo_console_page_loads():
     assert "/portfolio/review-workflow/export" in body
     assert "/portfolio/review-workflow/sla" in body
     assert "/portfolio/review-workflow/sla/export" in body
+    assert "/portfolio/review-workflow/sla/hotspots" in body
+    assert "/portfolio/review-workflow/sla/hotspots/export" in body
     assert "/portfolio/review-workflow/trends" in body
     assert "/portfolio/review-workflow/trends/export" in body
     assert "/portfolio/review-workflow/sla/trends" in body
@@ -286,11 +292,24 @@ def test_demo_console_page_loads():
     assert "portfolioReviewWorkflowSlaSummaryLine" in body
     assert "portfolioReviewWorkflowSlaList" in body
     assert "portfolioReviewWorkflowSlaJson" in body
+    assert "portfolioSlaHotspotKindFilter" in body
+    assert "portfolioSlaHotspotSeverityFilter" in body
+    assert "portfolioSlaMinOverdueHoursFilter" in body
+    assert "portfolioSlaTopLimitFilter" in body
+    assert "portfolioReviewWorkflowSlaHotspotsBtn" in body
+    assert "portfolioReviewWorkflowSlaHotspotsSummaryLine" in body
+    assert "portfolioReviewWorkflowSlaHotspotsList" in body
+    assert "portfolioReviewWorkflowSlaHotspotsJson" in body
     assert "copyPortfolioReviewWorkflowSlaJsonBtn" in body
     assert "downloadPortfolioReviewWorkflowSlaJsonBtn" in body
     assert "downloadPortfolioReviewWorkflowSlaCsvBtn" in body
+    assert "copyPortfolioReviewWorkflowSlaHotspotsJsonBtn" in body
+    assert "downloadPortfolioReviewWorkflowSlaHotspotsJsonBtn" in body
+    assert "downloadPortfolioReviewWorkflowSlaHotspotsCsvBtn" in body
     assert "exportPortfolioReviewWorkflowSlaJsonBtn" in body
     assert "exportPortfolioReviewWorkflowSlaCsvBtn" in body
+    assert "exportPortfolioReviewWorkflowSlaHotspotsJsonBtn" in body
+    assert "exportPortfolioReviewWorkflowSlaHotspotsCsvBtn" in body
     assert "portfolioReviewWorkflowTrendsBtn" in body
     assert "portfolioReviewWorkflowTrendsSummaryLine" in body
     assert "portfolioReviewWorkflowTrendSparkline" in body
@@ -7228,7 +7247,7 @@ def test_portfolio_review_workflow_sla_endpoint_aggregates_jobs_and_filters():
                             "severity": "high",
                             "section": "toc",
                             "status": "open",
-                            "updated_at": "2026-02-27T10:00:00+00:00",
+                            "updated_at": "2026-02-20T10:00:00+00:00",
                             "due_at": "2026-02-25T10:00:00+00:00",
                             "sla_hours": 24,
                         }
@@ -7450,6 +7469,241 @@ def test_portfolio_review_workflow_sla_export_supports_csv_json_and_gzip():
     gzip_payload = json.loads(gzip.decompress(gzip_resp.content).decode("utf-8"))
     assert gzip_payload["filters"]["donor_id"] == donor
     assert gzip_payload["overdue_total"] == 1
+
+
+def test_portfolio_review_workflow_sla_hotspots_endpoint_aggregates_jobs_and_filters():
+    donor = "portfolio_review_workflow_sla_hotspots_test_donor"
+    api_app_module.JOB_STORE.set(
+        "portfolio-review-workflow-sla-hotspots-job-1",
+        {
+            "status": "done",
+            "hitl_enabled": True,
+            "generate_preflight": {"warning_level": "medium", "risk_level": "medium"},
+            "state": {
+                "donor_id": donor,
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "prwh-1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "updated_at": "2026-02-27T10:00:00+00:00",
+                            "due_at": "2026-02-25T10:00:00+00:00",
+                            "sla_hours": 24,
+                        }
+                    ]
+                },
+            },
+            "review_comments": [
+                {
+                    "comment_id": "prwh-comment-1",
+                    "ts": "2026-02-27T10:05:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Need stronger assumptions.",
+                    "linked_finding_id": "prwh-1",
+                    "due_at": "2026-02-25T11:00:00+00:00",
+                    "sla_hours": 24,
+                }
+            ],
+            "job_events": [
+                {
+                    "event_id": "prwh-evt-1",
+                    "ts": "2026-02-27T10:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "prwh-1",
+                    "status": "open",
+                    "section": "toc",
+                    "severity": "high",
+                }
+            ],
+        },
+    )
+    api_app_module.JOB_STORE.set(
+        "portfolio-review-workflow-sla-hotspots-job-2",
+        {
+            "status": "done",
+            "hitl_enabled": True,
+            "generate_preflight": {"warning_level": "low", "risk_level": "low"},
+            "state": {
+                "donor_id": donor,
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "prwh-2",
+                            "code": "MEL_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "toc",
+                            "status": "acknowledged",
+                            "updated_at": "2026-02-20T11:00:00+00:00",
+                            "due_at": "2026-02-26T10:00:00+00:00",
+                            "sla_hours": 72,
+                        }
+                    ]
+                },
+            },
+            "review_comments": [
+                {
+                    "comment_id": "prwh-comment-2",
+                    "ts": "2026-02-27T11:05:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Need indicator source.",
+                    "linked_finding_id": "prwh-2",
+                    "due_at": "2026-02-26T12:00:00+00:00",
+                    "sla_hours": 72,
+                }
+            ],
+            "job_events": [
+                {
+                    "event_id": "prwh-evt-2",
+                    "ts": "2026-02-27T11:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "prwh-2",
+                    "status": "acknowledged",
+                    "section": "toc",
+                    "severity": "medium",
+                }
+            ],
+        },
+    )
+
+    response = client.get(
+        "/portfolio/review-workflow/sla/hotspots",
+        params={
+            "donor_id": donor,
+            "status": "done",
+            "hitl_enabled": "true",
+            "finding_section": "toc",
+            "overdue_after_hours": 12,
+            "hotspot_kind": "comment",
+            "min_overdue_hours": 24,
+            "top_limit": 5,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["filters"]["donor_id"] == donor
+    assert body["filters"]["hotspot_kind"] == "comment"
+    assert "hotspot_severity" not in body["filters"]
+    assert body["filters"]["min_overdue_hours"] == 24.0
+    assert body["filters"]["top_limit"] == 5
+    assert body["job_count"] == 2
+    assert body["jobs_with_overdue"] == 1
+    assert body["jobs_without_overdue"] == 1
+    assert body["total_overdue_items"] == 1
+    assert body["hotspot_count"] == 1
+    assert body["top_donor_id"] == donor
+    assert body["top_donor_overdue_count"] == 1
+    assert body["donor_hotspot_counts"][donor] == 1
+    assert body["job_hotspot_counts"]["portfolio-review-workflow-sla-hotspots-job-1"] == 1
+    assert body["job_hotspot_counts"]["portfolio-review-workflow-sla-hotspots-job-2"] == 0
+    assert len(body["top_overdue"]) == 1
+    assert body["top_overdue"][0]["kind"] == "comment"
+    assert body["top_overdue"][0]["job_id"] == "portfolio-review-workflow-sla-hotspots-job-1"
+    assert body["top_overdue"][0]["donor_id"] == donor
+
+
+def test_portfolio_review_workflow_sla_hotspots_export_supports_csv_json_and_gzip():
+    donor = "portfolio_review_workflow_sla_hotspots_export_test_donor"
+    api_app_module.JOB_STORE.set(
+        "portfolio-review-workflow-sla-hotspots-export-job-1",
+        {
+            "status": "done",
+            "hitl_enabled": True,
+            "state": {
+                "donor_id": donor,
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "prwh-exp-1",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "updated_at": "2026-02-20T10:00:00+00:00",
+                            "due_at": "2026-02-25T10:00:00+00:00",
+                            "sla_hours": 24,
+                        }
+                    ]
+                },
+            },
+            "review_comments": [
+                {
+                    "comment_id": "prwh-exp-comment-1",
+                    "ts": "2026-02-27T10:05:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Review needed.",
+                    "linked_finding_id": "prwh-exp-1",
+                    "due_at": "2026-02-25T11:00:00+00:00",
+                    "sla_hours": 24,
+                }
+            ],
+            "job_events": [
+                {
+                    "event_id": "prwh-exp-evt-1",
+                    "ts": "2026-02-27T10:05:00+00:00",
+                    "type": "review_comment_added",
+                    "comment_id": "prwh-exp-comment-1",
+                    "section": "toc",
+                }
+            ],
+        },
+    )
+
+    csv_resp = client.get(
+        "/portfolio/review-workflow/sla/hotspots/export",
+        params={
+            "donor_id": donor,
+            "status": "done",
+            "hitl_enabled": "true",
+            "overdue_after_hours": 12,
+            "hotspot_kind": "comment",
+            "min_overdue_hours": 1,
+            "top_limit": 3,
+            "format": "csv",
+        },
+    )
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"].startswith("text/csv")
+    csv_disposition = csv_resp.headers.get("content-disposition", "")
+    assert f"grantflow_portfolio_review_workflow_sla_hotspots_{donor}_done_hitl_true.csv" in csv_disposition
+    csv_text = csv_resp.text
+    assert csv_text.startswith("field,value\n")
+    assert f"filters.donor_id,{donor}" in csv_text
+    assert "filters.hotspot_kind,comment" in csv_text
+    assert "filters.top_limit,3" in csv_text
+
+    json_resp = client.get(
+        "/portfolio/review-workflow/sla/hotspots/export",
+        params={
+            "donor_id": donor,
+            "overdue_after_hours": 12,
+            "hotspot_kind": "comment",
+            "format": "json",
+        },
+    )
+    assert json_resp.status_code == 200
+    assert json_resp.headers["content-type"].startswith("application/json")
+    json_payload = json_resp.json()
+    assert json_payload["filters"]["donor_id"] == donor
+    assert json_payload["filters"]["hotspot_kind"] == "comment"
+    assert json_payload["filters"]["hotspot_severity"] is None
+    assert json_payload["hotspot_count"] == 1
+
+    gzip_resp = client.get(
+        "/portfolio/review-workflow/sla/hotspots/export",
+        params={"donor_id": donor, "overdue_after_hours": 12, "format": "json", "gzip": "true"},
+    )
+    assert gzip_resp.status_code == 200
+    assert gzip_resp.headers["content-type"].startswith("application/gzip")
+    gzip_disposition = gzip_resp.headers.get("content-disposition", "")
+    assert f"grantflow_portfolio_review_workflow_sla_hotspots_{donor}.json.gz" in gzip_disposition
+    gzip_payload = json.loads(gzip.decompress(gzip_resp.content).decode("utf-8"))
+    assert gzip_payload["filters"]["donor_id"] == donor
+    assert gzip_payload["hotspot_count"] == 1
 
 
 def test_portfolio_review_workflow_sla_trends_endpoint_aggregates_jobs_and_filters():
@@ -8139,6 +8393,24 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     )
     assert portfolio_review_workflow_sla_export_auth.status_code == 200
 
+    portfolio_review_workflow_sla_hotspots_unauth = client.get("/portfolio/review-workflow/sla/hotspots")
+    assert portfolio_review_workflow_sla_hotspots_unauth.status_code == 401
+
+    portfolio_review_workflow_sla_hotspots_auth = client.get(
+        "/portfolio/review-workflow/sla/hotspots",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert portfolio_review_workflow_sla_hotspots_auth.status_code == 200
+
+    portfolio_review_workflow_sla_hotspots_export_unauth = client.get("/portfolio/review-workflow/sla/hotspots/export")
+    assert portfolio_review_workflow_sla_hotspots_export_unauth.status_code == 401
+
+    portfolio_review_workflow_sla_hotspots_export_auth = client.get(
+        "/portfolio/review-workflow/sla/hotspots/export",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert portfolio_review_workflow_sla_hotspots_export_auth.status_code == 200
+
     portfolio_review_workflow_trends_unauth = client.get("/portfolio/review-workflow/trends")
     assert portfolio_review_workflow_trends_unauth.status_code == 401
 
@@ -8351,6 +8623,12 @@ def test_openapi_declares_api_key_security_scheme():
     ).get("security")
     portfolio_review_workflow_sla_export_security = (
         ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/export") or {}).get("get") or {}
+    ).get("security")
+    portfolio_review_workflow_sla_hotspots_security = (
+        ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/hotspots") or {}).get("get") or {}
+    ).get("security")
+    portfolio_review_workflow_sla_hotspots_export_security = (
+        ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/hotspots/export") or {}).get("get") or {}
     ).get("security")
     portfolio_review_workflow_trends_security = (
         ((spec.get("paths") or {}).get("/portfolio/review-workflow/trends") or {}).get("get") or {}
@@ -8656,6 +8934,18 @@ def test_openapi_declares_api_key_security_scheme():
         .get("application/json", {})
         .get("schema")
     )
+    portfolio_review_workflow_sla_hotspots_response_schema = (
+        (
+            (((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/hotspots") or {}).get("get") or {}).get(
+                "responses"
+            )
+            or {}
+        )
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     portfolio_review_workflow_trends_response_schema = (
         (
             (((spec.get("paths") or {}).get("/portfolio/review-workflow/trends") or {}).get("get") or {}).get(
@@ -8747,6 +9037,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert portfolio_review_workflow_export_security == [{"ApiKeyAuth": []}]
     assert portfolio_review_workflow_sla_security == [{"ApiKeyAuth": []}]
     assert portfolio_review_workflow_sla_export_security == [{"ApiKeyAuth": []}]
+    assert portfolio_review_workflow_sla_hotspots_security == [{"ApiKeyAuth": []}]
+    assert portfolio_review_workflow_sla_hotspots_export_security == [{"ApiKeyAuth": []}]
     assert portfolio_review_workflow_trends_security == [{"ApiKeyAuth": []}]
     assert portfolio_review_workflow_trends_export_security == [{"ApiKeyAuth": []}]
     assert portfolio_review_workflow_sla_trends_security == [{"ApiKeyAuth": []}]
@@ -8807,6 +9099,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert portfolio_review_workflow_sla_response_schema == {
         "$ref": "#/components/schemas/PortfolioReviewWorkflowSLAPublicResponse"
     }
+    assert portfolio_review_workflow_sla_hotspots_response_schema == {
+        "$ref": "#/components/schemas/PortfolioReviewWorkflowSLAHotspotsPublicResponse"
+    }
     assert portfolio_review_workflow_trends_response_schema == {
         "$ref": "#/components/schemas/PortfolioReviewWorkflowTrendsPublicResponse"
     }
@@ -8862,6 +9157,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert "PortfolioReviewWorkflowSLAPublicResponse" in schemas
     assert "PortfolioReviewWorkflowSLAFiltersPublicResponse" in schemas
     assert "PortfolioReviewWorkflowSLAItemPublicResponse" in schemas
+    assert "PortfolioReviewWorkflowSLAHotspotsPublicResponse" in schemas
+    assert "PortfolioReviewWorkflowSLAHotspotsFiltersPublicResponse" in schemas
     assert "PortfolioReviewWorkflowTrendsPublicResponse" in schemas
     assert "PortfolioReviewWorkflowTrendsFiltersPublicResponse" in schemas
     assert "PortfolioReviewWorkflowSLATrendsPublicResponse" in schemas
@@ -8904,6 +9201,12 @@ def test_openapi_declares_api_key_security_scheme():
     ).get("parameters") or []
     portfolio_review_workflow_sla_export_params = (
         ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/export") or {}).get("get") or {}
+    ).get("parameters") or []
+    portfolio_review_workflow_sla_hotspots_params = (
+        ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/hotspots") or {}).get("get") or {}
+    ).get("parameters") or []
+    portfolio_review_workflow_sla_hotspots_export_params = (
+        ((spec.get("paths") or {}).get("/portfolio/review-workflow/sla/hotspots/export") or {}).get("get") or {}
     ).get("parameters") or []
     portfolio_review_workflow_trends_params = (
         ((spec.get("paths") or {}).get("/portfolio/review-workflow/trends") or {}).get("get") or {}
@@ -8959,6 +9262,12 @@ def test_openapi_declares_api_key_security_scheme():
         str(p.get("name") or "") for p in portfolio_review_workflow_sla_export_params if isinstance(p, dict)
     ]
     assert "toc_text_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_review_workflow_sla_hotspots_params if isinstance(p, dict)
+    ]
+    assert "toc_text_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_review_workflow_sla_hotspots_export_params if isinstance(p, dict)
+    ]
+    assert "toc_text_risk_level" in [
         str(p.get("name") or "") for p in portfolio_review_workflow_trends_params if isinstance(p, dict)
     ]
     assert "toc_text_risk_level" in [
@@ -9007,6 +9316,12 @@ def test_openapi_declares_api_key_security_scheme():
     portfolio_review_workflow_sla_export_param_names = [
         str(p.get("name") or "") for p in portfolio_review_workflow_sla_export_params if isinstance(p, dict)
     ]
+    portfolio_review_workflow_sla_hotspots_param_names = [
+        str(p.get("name") or "") for p in portfolio_review_workflow_sla_hotspots_params if isinstance(p, dict)
+    ]
+    portfolio_review_workflow_sla_hotspots_export_param_names = [
+        str(p.get("name") or "") for p in portfolio_review_workflow_sla_hotspots_export_params if isinstance(p, dict)
+    ]
     assert "event_type" in review_workflow_param_names
     assert "event_type" in review_workflow_trends_param_names
     assert "event_type" in review_workflow_trends_export_param_names
@@ -9033,6 +9348,8 @@ def test_openapi_declares_api_key_security_scheme():
     ):
         assert name in portfolio_review_workflow_sla_param_names
         assert name in portfolio_review_workflow_sla_export_param_names
+        assert name in portfolio_review_workflow_sla_hotspots_param_names
+        assert name in portfolio_review_workflow_sla_hotspots_export_param_names
         assert name in portfolio_review_workflow_sla_trends_param_names
         assert name in portfolio_review_workflow_sla_trends_export_param_names
     for name in (
@@ -9047,6 +9364,8 @@ def test_openapi_declares_api_key_security_scheme():
         assert name in portfolio_review_workflow_export_param_names
         assert name in portfolio_review_workflow_sla_param_names
         assert name in portfolio_review_workflow_sla_export_param_names
+        assert name in portfolio_review_workflow_sla_hotspots_param_names
+        assert name in portfolio_review_workflow_sla_hotspots_export_param_names
         assert name in portfolio_review_workflow_trends_param_names
         assert name in portfolio_review_workflow_trends_export_param_names
         assert name in review_workflow_param_names
@@ -9060,12 +9379,22 @@ def test_openapi_declares_api_key_security_scheme():
         assert name in portfolio_review_workflow_sla_trends_export_param_names
     assert "top_limit" in portfolio_review_workflow_sla_param_names
     assert "top_limit" in portfolio_review_workflow_sla_export_param_names
+    assert "top_limit" in portfolio_review_workflow_sla_hotspots_param_names
+    assert "top_limit" in portfolio_review_workflow_sla_hotspots_export_param_names
+    assert "hotspot_kind" in portfolio_review_workflow_sla_hotspots_param_names
+    assert "hotspot_kind" in portfolio_review_workflow_sla_hotspots_export_param_names
+    assert "hotspot_severity" in portfolio_review_workflow_sla_hotspots_param_names
+    assert "hotspot_severity" in portfolio_review_workflow_sla_hotspots_export_param_names
+    assert "min_overdue_hours" in portfolio_review_workflow_sla_hotspots_param_names
+    assert "min_overdue_hours" in portfolio_review_workflow_sla_hotspots_export_param_names
     assert "format" in portfolio_review_workflow_trends_export_param_names
     assert "gzip" in portfolio_review_workflow_trends_export_param_names
     assert "format" in portfolio_review_workflow_export_param_names
     assert "gzip" in portfolio_review_workflow_export_param_names
     assert "format" in portfolio_review_workflow_sla_export_param_names
     assert "gzip" in portfolio_review_workflow_sla_export_param_names
+    assert "format" in portfolio_review_workflow_sla_hotspots_export_param_names
+    assert "gzip" in portfolio_review_workflow_sla_hotspots_export_param_names
     assert "format" in portfolio_review_workflow_sla_trends_export_param_names
     assert "gzip" in portfolio_review_workflow_sla_trends_export_param_names
     assert "format" in review_workflow_trends_export_param_names
@@ -9092,6 +9421,11 @@ def test_openapi_declares_api_key_security_scheme():
     portfolio_review_workflow_sla_filters_schema_props = (
         ((schemas.get("PortfolioReviewWorkflowSLAFiltersPublicResponse") or {}).get("properties") or {})
         if isinstance(schemas.get("PortfolioReviewWorkflowSLAFiltersPublicResponse"), dict)
+        else {}
+    )
+    portfolio_review_workflow_sla_hotspots_filters_schema_props = (
+        ((schemas.get("PortfolioReviewWorkflowSLAHotspotsFiltersPublicResponse") or {}).get("properties") or {})
+        if isinstance(schemas.get("PortfolioReviewWorkflowSLAHotspotsFiltersPublicResponse"), dict)
         else {}
     )
     portfolio_review_workflow_sla_trends_filters_schema_props = (
@@ -9151,8 +9485,13 @@ def test_openapi_declares_api_key_security_scheme():
         "workflow_state",
         "overdue_after_hours",
     ):
+        assert name in portfolio_review_workflow_sla_hotspots_filters_schema_props
         assert name in portfolio_review_workflow_sla_filters_schema_props
         assert name in portfolio_review_workflow_sla_trends_filters_schema_props
+    assert "top_limit" in portfolio_review_workflow_sla_hotspots_filters_schema_props
+    assert "hotspot_kind" in portfolio_review_workflow_sla_hotspots_filters_schema_props
+    assert "hotspot_severity" in portfolio_review_workflow_sla_hotspots_filters_schema_props
+    assert "min_overdue_hours" in portfolio_review_workflow_sla_hotspots_filters_schema_props
     assert "top_limit" in portfolio_review_workflow_sla_filters_schema_props
     for name in (
         "finding_id",
