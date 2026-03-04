@@ -3798,11 +3798,224 @@ def public_portfolio_quality_payload(
     }
 
 
+def public_portfolio_review_workflow_trends_payload(
+    jobs_by_id: Dict[str, Dict[str, Any]],
+    *,
+    donor_id: Optional[str] = None,
+    status: Optional[str] = None,
+    hitl_enabled: Optional[bool] = None,
+    warning_level: Optional[str] = None,
+    grounding_risk_level: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
+    event_type: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+) -> Dict[str, Any]:
+    warning_level_filter = _normalize_warning_level_filter(warning_level)
+    grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
+    toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
+    workflow_state_filter = _normalize_review_workflow_state_filter(workflow_state)
+    event_type_filter = str(event_type or "").strip() or None
+    finding_id_filter = str(finding_id or "").strip() or None
+    finding_code_filter = str(finding_code or "").strip() or None
+    finding_section_filter = str(finding_section or "").strip().lower() or None
+    comment_status_filter = str(comment_status or "").strip().lower() or None
+    overdue_after_hours_value = (
+        int(overdue_after_hours)
+        if isinstance(overdue_after_hours, int) and overdue_after_hours > 0
+        else REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS
+    )
+
+    filtered: list[tuple[str, Dict[str, Any]]] = []
+    for job_id, job in jobs_by_id.items():
+        if not isinstance(job, dict):
+            continue
+        job_status = str(job.get("status") or "")
+        job_donor = _job_donor_id(job)
+        job_hitl = bool(job.get("hitl_enabled"))
+        if donor_id and job_donor != donor_id:
+            continue
+        if status and job_status != status:
+            continue
+        if hitl_enabled is not None and job_hitl != hitl_enabled:
+            continue
+        if warning_level_filter is not None and _job_warning_level(job) != warning_level_filter:
+            continue
+        if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
+            continue
+        if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
+            continue
+        filtered.append((str(job_id), job))
+
+    total_bucket_counts: Dict[str, int] = {}
+    event_type_bucket_counts: Dict[str, Dict[str, int]] = {}
+    kind_bucket_counts: Dict[str, Dict[str, int]] = {}
+    section_bucket_counts: Dict[str, Dict[str, int]] = {}
+    status_bucket_counts: Dict[str, Dict[str, int]] = {}
+    donor_bucket_counts: Dict[str, Dict[str, int]] = {}
+    donor_event_counts: Dict[str, int] = {}
+    job_event_counts: Dict[str, int] = {}
+    jobs_with_events = 0
+
+    def _merge_series(target: Dict[str, Dict[str, int]], source: Any) -> None:
+        if not isinstance(source, dict):
+            return
+        for key, rows in source.items():
+            key_token = str(key or "").strip().lower() or "unknown"
+            if not isinstance(rows, list):
+                continue
+            key_buckets = target.setdefault(key_token, {})
+            for point in rows:
+                if not isinstance(point, dict):
+                    continue
+                bucket = str(point.get("bucket") or "").strip()
+                if not bucket:
+                    continue
+                count = _coerce_int(point.get("count"), default=0)
+                key_buckets[bucket] = int(key_buckets.get(bucket) or 0) + count
+
+    for job_id, job in filtered:
+        trends_payload = public_job_review_workflow_trends_payload(
+            job_id,
+            job,
+            event_type=event_type_filter,
+            finding_id=finding_id_filter,
+            finding_code=finding_code_filter,
+            finding_section=finding_section_filter,
+            comment_status=comment_status_filter,
+            workflow_state=workflow_state_filter,
+            overdue_after_hours=overdue_after_hours_value,
+        )
+        total_series = trends_payload.get("total_series")
+        total_rows = [row for row in total_series if isinstance(row, dict)] if isinstance(total_series, list) else []
+        timeline_event_count = _coerce_int(
+            trends_payload.get("timeline_event_count"),
+            default=sum(_coerce_int(row.get("count"), default=0) for row in total_rows),
+        )
+        if timeline_event_count > 0:
+            jobs_with_events += 1
+        job_event_counts[str(job_id)] = timeline_event_count
+
+        donor_token = _job_donor_id(job, default="unknown")
+        donor_event_counts[donor_token] = int(donor_event_counts.get(donor_token) or 0) + timeline_event_count
+        donor_buckets = donor_bucket_counts.setdefault(donor_token, {})
+
+        for point in total_rows:
+            bucket = str(point.get("bucket") or "").strip()
+            if not bucket:
+                continue
+            count = _coerce_int(point.get("count"), default=0)
+            total_bucket_counts[bucket] = int(total_bucket_counts.get(bucket) or 0) + count
+            donor_buckets[bucket] = int(donor_buckets.get(bucket) or 0) + count
+
+        _merge_series(event_type_bucket_counts, trends_payload.get("event_type_series"))
+        _merge_series(kind_bucket_counts, trends_payload.get("kind_series"))
+        _merge_series(section_bucket_counts, trends_payload.get("section_series"))
+        _merge_series(status_bucket_counts, trends_payload.get("status_series"))
+
+    def _series_rows(counts: Dict[str, int]) -> list[Dict[str, Any]]:
+        return [{"bucket": bucket, "count": int(counts.get(bucket) or 0)} for bucket in sorted(counts.keys())]
+
+    total_series = _series_rows(total_bucket_counts)
+    event_type_series = {
+        key: _series_rows(event_type_bucket_counts.get(key, {})) for key in sorted(event_type_bucket_counts.keys())
+    }
+    kind_series = {key: _series_rows(kind_bucket_counts.get(key, {})) for key in sorted(kind_bucket_counts.keys())}
+    section_series = {
+        key: _series_rows(section_bucket_counts.get(key, {})) for key in sorted(section_bucket_counts.keys())
+    }
+    status_series = {
+        key: _series_rows(status_bucket_counts.get(key, {})) for key in sorted(status_bucket_counts.keys())
+    }
+    donor_series = {key: _series_rows(donor_bucket_counts.get(key, {})) for key in sorted(donor_bucket_counts.keys())}
+
+    dated_buckets = []
+    for point in total_series:
+        bucket = str(point.get("bucket") or "").strip()
+        try:
+            datetime.strptime(bucket, "%Y-%m-%d")
+            dated_buckets.append(bucket)
+        except ValueError:
+            continue
+    time_window_start = dated_buckets[0] if dated_buckets else None
+    time_window_end = dated_buckets[-1] if dated_buckets else None
+
+    top_event_type = None
+    top_event_type_count = -1
+    for key, rows in event_type_series.items():
+        total = sum(int(row.get("count") or 0) for row in rows if isinstance(row, dict))
+        if total > top_event_type_count:
+            top_event_type = key
+            top_event_type_count = total
+
+    top_donor_id = None
+    top_donor_event_count = -1
+    for key, total in donor_event_counts.items():
+        if int(total) > top_donor_event_count:
+            top_donor_id = key
+            top_donor_event_count = int(total)
+
+    timeline_event_count_total = sum(int(point.get("count") or 0) for point in total_series if isinstance(point, dict))
+    job_count = len(filtered)
+    jobs_without_events = max(0, job_count - jobs_with_events)
+
+    return {
+        "job_count": job_count,
+        "jobs_with_events": jobs_with_events,
+        "jobs_without_events": jobs_without_events,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": {
+            "donor_id": donor_id,
+            "status": status,
+            "hitl_enabled": hitl_enabled,
+            "warning_level": warning_level_filter,
+            "grounding_risk_level": grounding_risk_filter,
+            "toc_text_risk_level": toc_text_risk_filter,
+            "event_type": event_type_filter,
+            "finding_id": finding_id_filter,
+            "finding_code": finding_code_filter,
+            "finding_section": finding_section_filter,
+            "comment_status": comment_status_filter,
+            "workflow_state": workflow_state_filter,
+            "overdue_after_hours": overdue_after_hours_value,
+        },
+        "bucket_granularity": "day",
+        "bucket_count": len(total_series),
+        "time_window_start": time_window_start,
+        "time_window_end": time_window_end,
+        "timeline_event_count_total": timeline_event_count_total,
+        "avg_events_per_job": (round(timeline_event_count_total / job_count, 3) if job_count else None),
+        "avg_events_per_active_job": (
+            round(timeline_event_count_total / jobs_with_events, 3) if jobs_with_events else None
+        ),
+        "top_event_type": top_event_type,
+        "top_event_type_count": top_event_type_count if top_event_type is not None else None,
+        "top_donor_id": top_donor_id,
+        "top_donor_event_count": top_donor_event_count if top_donor_id is not None else None,
+        "donor_event_counts": dict(sorted(donor_event_counts.items())),
+        "job_event_counts": dict(sorted(job_event_counts.items())),
+        "total_series": total_series,
+        "event_type_series": event_type_series,
+        "kind_series": kind_series,
+        "section_series": section_series,
+        "status_series": status_series,
+        "donor_series": donor_series,
+    }
+
+
 def public_portfolio_quality_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 
 def public_portfolio_metrics_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_portfolio_review_workflow_trends_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 

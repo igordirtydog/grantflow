@@ -713,6 +713,53 @@ class JobGroundingGatePublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class PortfolioReviewWorkflowTrendsFiltersPublicResponse(BaseModel):
+    donor_id: Optional[str] = None
+    status: Optional[str] = None
+    hitl_enabled: Optional[bool] = None
+    warning_level: Optional[str] = None
+    grounding_risk_level: Optional[str] = None
+    toc_text_risk_level: Optional[str] = None
+    event_type: Optional[str] = None
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PortfolioReviewWorkflowTrendsPublicResponse(BaseModel):
+    job_count: int
+    jobs_with_events: int
+    jobs_without_events: int
+    generated_at: str
+    filters: PortfolioReviewWorkflowTrendsFiltersPublicResponse
+    bucket_granularity: str = "day"
+    bucket_count: int = 0
+    time_window_start: Optional[str] = None
+    time_window_end: Optional[str] = None
+    timeline_event_count_total: int = 0
+    avg_events_per_job: Optional[float] = None
+    avg_events_per_active_job: Optional[float] = None
+    top_event_type: Optional[str] = None
+    top_event_type_count: Optional[int] = None
+    top_donor_id: Optional[str] = None
+    top_donor_event_count: Optional[int] = None
+    donor_event_counts: Dict[str, int]
+    job_event_counts: Dict[str, int]
+    total_series: list[JobReviewWorkflowTrendPointPublicResponse]
+    event_type_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    kind_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    section_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    status_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    donor_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PortfolioMetricsFiltersPublicResponse(BaseModel):
     donor_id: Optional[str] = None
     status: Optional[str] = None
