@@ -1,3 +1,4 @@
+import json
 import threading
 import time
 
@@ -315,5 +316,74 @@ def test_redis_job_runner_purges_dead_letters():
         assert purge["affected_count"] == 1
         listed_after = runner.list_dead_letters(limit=10)
         assert listed_after["dead_letter_queue_size"] == 1
+    finally:
+        runner.stop()
+
+
+def test_redis_job_runner_dead_letter_includes_dispatch_and_metadata():
+    fake_client = _FakeRedisClient()
+
+    def _always_fail_job(job_id: str) -> None:
+        raise RuntimeError(f"boom for {job_id}")
+
+    runner = RedisJobRunner(
+        worker_count=1,
+        queue_maxsize=8,
+        redis_url="redis://local-test/0",
+        queue_name="grantflow:test:jobs:metadata",
+        pop_timeout_seconds=0.1,
+        max_attempts=1,
+        redis_client_factory=lambda _url: fake_client,
+    )
+    try:
+        assert runner.submit(_always_fail_job, "job-meta-1") is True
+        assert _wait_until(lambda: runner.diagnostics()["dead_lettered_count"] >= 1, timeout_s=2.0)
+        listed = runner.list_dead_letters(limit=5)
+        assert listed["items"]
+        item = listed["items"][0]
+        assert item.get("dispatch_id")
+        assert item.get("job_id") == "job-meta-1"
+        assert isinstance(item.get("metadata"), dict)
+        assert item["metadata"]["job_id"] == "job-meta-1"
+        assert item.get("failed_at") is not None
+        assert item.get("first_failed_at") is not None
+    finally:
+        runner.stop()
+
+
+def test_redis_job_runner_requeue_preserves_metadata_from_wrapped_dead_letter_payload():
+    fake_client = _FakeRedisClient()
+    runner = RedisJobRunner(
+        worker_count=1,
+        queue_maxsize=8,
+        redis_url="redis://local-test/0",
+        queue_name="grantflow:test:jobs:wrapped",
+        pop_timeout_seconds=0.1,
+        max_attempts=2,
+        redis_client_factory=lambda _url: fake_client,
+        consumer_enabled=False,
+    )
+    try:
+        wrapped = {
+            "task_name": "grantflow.tests.test_job_runner:_redis_test_task",
+            "reason": "task_execution_error",
+            "dispatch_id": "dispatch-123",
+            "metadata": {"job_id": "job-wrapped-1"},
+            "payload": {
+                "task_name": "grantflow.tests.test_job_runner:_redis_test_task",
+                "args": [99],
+                "kwargs": {},
+                "attempt": 1,
+                "max_attempts": 2,
+            },
+        }
+        fake_client.rpush(runner.dead_letter_queue_name, json.dumps(wrapped, ensure_ascii=True))
+        result = runner.requeue_dead_letters(limit=1)
+        assert result["affected_count"] == 1
+        queued = fake_client.queue_snapshot(runner.queue_name)
+        assert len(queued) == 1
+        payload = json.loads(queued[0])
+        assert payload["dispatch_id"] == "dispatch-123"
+        assert payload["metadata"]["job_id"] == "job-wrapped-1"
     finally:
         runner.stop()

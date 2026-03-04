@@ -44,6 +44,10 @@ def finding_primary_id(item: Mapping[str, Any]) -> str:
 
 def _coerce_section(value: Any, *, message: str = "") -> str:
     section = str(value or "").strip().lower()
+    if section in {"log_frame", "log-frame", "log frame", "mel", "indicator", "indicators"}:
+        return "logframe"
+    if section in {"theory_of_change", "theory-of-change", "theory of change"}:
+        return "toc"
     if section in _VALID_SECTIONS:
         return section
     lowered = message.lower()
@@ -56,11 +60,23 @@ def _coerce_section(value: Any, *, message: str = "") -> str:
 
 def _coerce_severity(value: Any) -> str:
     severity = str(value or "").strip().lower()
+    if severity in {"critical", "fatal", "blocker"}:
+        return "high"
+    if severity in {"warn", "warning"}:
+        return "medium"
+    if severity in {"info", "informational"}:
+        return "low"
     return severity if severity in _VALID_SEVERITIES else "medium"
 
 
 def _coerce_status(value: Any) -> str:
     status = str(value or "open").strip().lower()
+    if status in {"ack", "accepted"}:
+        return "acknowledged"
+    if status in {"done", "closed"}:
+        return "resolved"
+    if status in {"reopened", "pending"}:
+        return "open"
     return status if status in _VALID_STATUSES else "open"
 
 

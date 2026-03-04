@@ -291,3 +291,36 @@ def test_finding_messages_returns_unique_entries():
     ]
     out = finding_messages(findings, fallback="Minor improvements suggested")
     assert out == ["Fix logframe baseline.", "Add ToC assumptions."]
+
+
+def test_normalize_findings_coerces_common_section_status_and_severity_aliases():
+    rows = normalize_findings(
+        [
+            {
+                "id": "f-alias-1",
+                "code": "MEL_BASELINE_WEAK",
+                "section": "mel",
+                "severity": "critical",
+                "status": "ack",
+                "message": "Baseline values are missing for required indicators.",
+                "source": "llm",
+            },
+            {
+                "id": "f-alias-2",
+                "code": "TOC_CHAIN_WEAK",
+                "section": "theory_of_change",
+                "severity": "warning",
+                "status": "done",
+                "message": "Causal chain is underspecified.",
+                "source": "rules",
+            },
+        ],
+        default_source="rules",
+    )
+    assert len(rows) == 2
+    assert rows[0]["section"] == "logframe"
+    assert rows[0]["severity"] == "high"
+    assert rows[0]["status"] == "acknowledged"
+    assert rows[1]["section"] == "toc"
+    assert rows[1]["severity"] == "medium"
+    assert rows[1]["status"] == "resolved"

@@ -11421,6 +11421,64 @@ def test_resume_uses_redis_queue_dispatch_by_job_id(monkeypatch):
     assert captured["args"] == (job_id, "mel")
 
 
+def test_run_pipeline_to_completion_by_job_id_skips_non_runnable_statuses(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(api_app_module, "_run_pipeline_to_completion", lambda *_args, **_kwargs: calls.append("run"))
+
+    job_id_pending = "queue-skip-pending-hitl-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id_pending,
+        {
+            "status": "pending_hitl",
+            "state": {"donor_id": "usaid", "input_context": {"project": "Skip pending"}},
+            "hitl_enabled": True,
+        },
+    )
+    api_app_module._run_pipeline_to_completion_by_job_id(job_id_pending)
+
+    job_id_done = "queue-skip-done-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id_done,
+        {
+            "status": "done",
+            "state": {"donor_id": "usaid", "input_context": {"project": "Skip done"}},
+            "hitl_enabled": False,
+        },
+    )
+    api_app_module._run_pipeline_to_completion_by_job_id(job_id_done)
+
+    assert calls == []
+
+
+def test_run_hitl_pipeline_by_job_id_skips_non_runnable_statuses(monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(api_app_module, "_run_hitl_pipeline", lambda *_args, **_kwargs: calls.append("run"))
+
+    job_id_pending = "queue-hitl-skip-pending-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id_pending,
+        {
+            "status": "pending_hitl",
+            "state": {"donor_id": "usaid", "input_context": {"project": "Skip pending"}},
+            "hitl_enabled": True,
+        },
+    )
+    api_app_module._run_hitl_pipeline_by_job_id(job_id_pending, "start")
+
+    job_id_error = "queue-hitl-skip-error-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id_error,
+        {
+            "status": "error",
+            "state": {"donor_id": "usaid", "input_context": {"project": "Skip error"}},
+            "hitl_enabled": True,
+        },
+    )
+    api_app_module._run_hitl_pipeline_by_job_id(job_id_error, "start")
+
+    assert calls == []
+
+
 def test_generate_returns_503_when_redis_queue_is_unavailable(monkeypatch):
     monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
     monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", lambda *args, **kwargs: False)

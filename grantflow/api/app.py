@@ -3726,6 +3726,13 @@ def _run_pipeline_to_completion_by_job_id(job_id: str) -> None:
     job = _get_job(job_id)
     if not isinstance(job, dict):
         return
+    status = str(job.get("status") or "").strip().lower()
+    if status in TERMINAL_JOB_STATUSES:
+        return
+    if status == "pending_hitl":
+        return
+    if status not in {"accepted", "running"}:
+        return
     state = job.get("state")
     if not isinstance(state, dict):
         _set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False})
@@ -3842,6 +3849,13 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
 def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
     job = _get_job(job_id)
     if not isinstance(job, dict):
+        return
+    status = str(job.get("status") or "").strip().lower()
+    if status in TERMINAL_JOB_STATUSES:
+        return
+    if status == "pending_hitl":
+        return
+    if status not in {"accepted", "running"}:
         return
     state = job.get("state")
     if not isinstance(state, dict):
@@ -3997,12 +4011,17 @@ def _dead_letter_queue_csv_text(payload: Dict[str, Any]) -> str:
     rows = payload.get("items") if isinstance(payload.get("items"), list) else []
     header = [
         "index",
+        "dispatch_id",
         "task_name",
+        "job_id",
         "reason",
         "attempt",
         "max_attempts",
+        "queued_at",
+        "first_failed_at",
         "failed_at",
         "error",
+        "metadata_json",
         "payload_json",
         "raw_payload",
     ]
@@ -4011,17 +4030,24 @@ def _dead_letter_queue_csv_text(payload: Dict[str, Any]) -> str:
     writer.writerow(header)
     for row in rows:
         item = row if isinstance(row, dict) else {}
+        metadata_value = item.get("metadata")
+        metadata_json = json.dumps(metadata_value, ensure_ascii=False) if isinstance(metadata_value, dict) else ""
         payload_value = item.get("payload")
         payload_json = json.dumps(payload_value, ensure_ascii=False) if isinstance(payload_value, dict) else ""
         writer.writerow(
             [
                 item.get("index"),
+                item.get("dispatch_id"),
                 item.get("task_name"),
+                item.get("job_id"),
                 item.get("reason"),
                 item.get("attempt"),
                 item.get("max_attempts"),
+                item.get("queued_at"),
+                item.get("first_failed_at"),
                 item.get("failed_at"),
                 item.get("error"),
+                metadata_json,
                 payload_json,
                 item.get("raw_payload"),
             ]

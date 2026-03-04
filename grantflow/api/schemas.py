@@ -1509,12 +1509,17 @@ class GeneratePreflightPublicResponse(BaseModel):
 
 class DeadLetterQueueItemPublicResponse(BaseModel):
     index: int
+    dispatch_id: Optional[str] = None
     task_name: Optional[str] = None
+    job_id: Optional[str] = None
     reason: Optional[str] = None
     attempt: Optional[int] = None
     max_attempts: Optional[int] = None
+    queued_at: Optional[float] = None
+    first_failed_at: Optional[float] = None
     failed_at: Optional[float] = None
     error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
     payload: Optional[Dict[str, Any]] = None
     raw_payload: Optional[str] = None
 

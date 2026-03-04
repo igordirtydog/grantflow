@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 import json
 import queue
 import threading
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import quote, urlparse, urlunparse
@@ -76,6 +78,48 @@ def _coerce_int(value: Any, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return int(default)
+
+
+def _coerce_meta_scalar(value: Any, *, max_length: int = 200) -> Optional[str]:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        token = value.strip()
+        if not token:
+            return None
+        return token[:max_length]
+    return None
+
+
+def _extract_task_metadata(fn: TaskCallable, args: tuple[Any, ...], kwargs: dict[str, Any]) -> Optional[dict[str, str]]:
+    metadata: dict[str, str] = {}
+
+    # Prefer function signature-bound names when available.
+    bound_args: Dict[str, Any] = {}
+    try:
+        signature = inspect.signature(fn)
+        bound = signature.bind_partial(*args, **kwargs)
+        bound_args = dict(bound.arguments)
+    except Exception:
+        bound_args = {}
+
+    for key in ("job_id", "request_id", "start_at", "resume_from", "checkpoint_id", "donor_id", "tenant_id"):
+        value = _coerce_meta_scalar(bound_args.get(key))
+        if value:
+            metadata[key] = value
+
+    if "job_id" not in metadata:
+        value = _coerce_meta_scalar(kwargs.get("job_id"))
+        if value:
+            metadata["job_id"] = value
+        elif args and isinstance(args[0], str):
+            first_arg = _coerce_meta_scalar(args[0], max_length=120)
+            if first_arg:
+                metadata["job_id"] = first_arg
+
+    return metadata or None
 
 
 @dataclass
@@ -264,13 +308,18 @@ class RedisJobRunner:
             raise TypeError("Job runner task must be callable")
         self.start()
         task_name = task_name_for_callable(fn)
+        metadata = _extract_task_metadata(fn, tuple(args), dict(kwargs))
         payload: dict[str, Any] = {
+            "dispatch_id": str(uuid.uuid4()),
             "task_name": task_name,
             "args": list(args),
             "kwargs": dict(kwargs),
             "attempt": 0,
             "max_attempts": self.max_attempts,
+            "queued_at": time.time(),
         }
+        if metadata:
+            payload["metadata"] = metadata
         try:
             encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
         except (TypeError, ValueError) as exc:
@@ -435,6 +484,18 @@ class RedisJobRunner:
                     token = str(embedded.get("task_name") or "").strip()
                     if token:
                         item["task_name"] = token
+                    if "dispatch_id" not in item:
+                        dispatch_id = str(embedded.get("dispatch_id") or "").strip()
+                        if dispatch_id:
+                            item["dispatch_id"] = dispatch_id
+                    if "metadata" not in item and isinstance(embedded.get("metadata"), dict):
+                        item["metadata"] = dict(embedded.get("metadata") or {})
+            if "job_id" not in item:
+                metadata = item.get("metadata")
+                if isinstance(metadata, dict):
+                    job_id = str(metadata.get("job_id") or "").strip()
+                    if job_id:
+                        item["job_id"] = job_id
             item["index"] = idx
             items.append(item)
 
@@ -483,6 +544,13 @@ class RedisJobRunner:
                     candidate = dict(payload)
                 elif self._is_task_payload(parsed):
                     candidate = dict(parsed)
+                if candidate is not None:
+                    if "dispatch_id" not in candidate:
+                        dispatch_id = str(parsed.get("dispatch_id") or "").strip()
+                        if dispatch_id:
+                            candidate["dispatch_id"] = dispatch_id
+                    if "metadata" not in candidate and isinstance(parsed.get("metadata"), dict):
+                        candidate["metadata"] = dict(parsed.get("metadata") or {})
             if candidate is None:
                 skipped += 1
                 try:
@@ -575,12 +643,28 @@ class RedisJobRunner:
         task_name: str,
         reason: str,
         error: Optional[Exception] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> None:
         retry_payload = payload if isinstance(payload, dict) else None
         current_attempt = _coerce_int((retry_payload or {}).get("attempt"), 0)
         configured_max = _coerce_int((retry_payload or {}).get("max_attempts"), self.max_attempts)
         max_attempts = max(1, configured_max)
         next_attempt = current_attempt + 1
+        dispatch_id = str((retry_payload or {}).get("dispatch_id") or "").strip()
+        queued_at = (retry_payload or {}).get("queued_at")
+        first_failed_at = (retry_payload or {}).get("first_failed_at")
+        if first_failed_at is None:
+            first_failed_at = time.time()
+        payload_metadata = (
+            dict((retry_payload or {}).get("metadata") or {})
+            if isinstance((retry_payload or {}).get("metadata"), dict)
+            else {}
+        )
+        if isinstance(metadata, dict):
+            for key, value in metadata.items():
+                token = _coerce_meta_scalar(value)
+                if token:
+                    payload_metadata[str(key)] = token
         non_retry_reasons = {
             "invalid_payload_json",
             "invalid_payload_shape",
@@ -593,6 +677,13 @@ class RedisJobRunner:
             retried_payload = dict(retry_payload)
             retried_payload["attempt"] = next_attempt
             retried_payload["max_attempts"] = max_attempts
+            if dispatch_id:
+                retried_payload["dispatch_id"] = dispatch_id
+            if queued_at is not None:
+                retried_payload["queued_at"] = queued_at
+            retried_payload["first_failed_at"] = first_failed_at
+            if payload_metadata:
+                retried_payload["metadata"] = payload_metadata
             if error is not None:
                 retried_payload["last_error"] = str(error)
                 retried_payload["last_error_at"] = time.time()
@@ -614,6 +705,17 @@ class RedisJobRunner:
             "max_attempts": max_attempts,
             "failed_at": time.time(),
         }
+        if dispatch_id:
+            dead_letter_payload["dispatch_id"] = dispatch_id
+        if queued_at is not None:
+            dead_letter_payload["queued_at"] = queued_at
+        if first_failed_at is not None:
+            dead_letter_payload["first_failed_at"] = first_failed_at
+        if payload_metadata:
+            dead_letter_payload["metadata"] = payload_metadata
+            job_id = str(payload_metadata.get("job_id") or "").strip()
+            if job_id:
+                dead_letter_payload["job_id"] = job_id
         if retry_payload is not None:
             dead_letter_payload["payload"] = retry_payload
         else:
@@ -666,6 +768,7 @@ class RedisJobRunner:
                     task_name="",
                     reason="invalid_payload_json",
                     error=exc,
+                    metadata=None,
                 )
                 continue
             if not isinstance(payload, dict):
@@ -676,11 +779,13 @@ class RedisJobRunner:
                     task_name="",
                     reason="invalid_payload_shape",
                     error=None,
+                    metadata=None,
                 )
                 continue
             task_name = str(payload.get("task_name") or "").strip()
             args = payload.get("args", [])
             kwargs = payload.get("kwargs", {})
+            payload_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None
             if not task_name or not isinstance(args, list) or not isinstance(kwargs, dict):
                 self._retry_or_dead_letter(
                     client=client,
@@ -689,6 +794,7 @@ class RedisJobRunner:
                     task_name=task_name,
                     reason="invalid_task_envelope",
                     error=None,
+                    metadata=payload_metadata,
                 )
                 continue
             fn = self._resolve_task_callable(task_name)
@@ -700,6 +806,7 @@ class RedisJobRunner:
                     task_name=task_name,
                     reason="task_not_resolved",
                     error=None,
+                    metadata=payload_metadata,
                 )
                 continue
             try:
@@ -712,6 +819,7 @@ class RedisJobRunner:
                     task_name=task_name,
                     reason="task_execution_error",
                     error=exc,
+                    metadata=payload_metadata,
                 )
             else:
                 with self._lock:
