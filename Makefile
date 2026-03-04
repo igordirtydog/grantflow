@@ -1,6 +1,6 @@
-.PHONY: eval-grounded-ab
+.PHONY: eval-grounded-ab refresh-grounded-baseline
 
-PYTHON ?= python3
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
 GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
@@ -75,3 +75,9 @@ eval-grounded-ab:
 		--expected-donors $(GROUNDED_EXPECTED_DONORS) \
 		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL) \
 		--out $(EVAL_ARTIFACTS_DIR)/grounded-gate-summary.md
+
+refresh-grounded-baseline:
+	PYTHONPATH=. $(PYTHON) scripts/refresh_grounded_baseline.py \
+		--cases-file $(GROUNDED_CASES_FILE) \
+		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
+		--out $(GROUNDED_BASELINE)

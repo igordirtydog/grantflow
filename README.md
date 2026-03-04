@@ -424,6 +424,12 @@ GROUNDED_GUARD_DONORS=usaid,worldbank GROUNDED_MAX_NON_RETRIEVAL=0.25 GROUNDED_M
 
 CI uploads the same files as the `eval-report` artifact, including `grounded-gate-summary.md`.
 
+Refresh grounded trend baseline intentionally after expected quality changes:
+
+```bash
+make refresh-grounded-baseline
+```
+
 ## Deployment
 
 ```bash
