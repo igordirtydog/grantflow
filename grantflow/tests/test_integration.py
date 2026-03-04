@@ -5367,6 +5367,20 @@ def test_openapi_declares_api_key_security_scheme():
     portfolio_quality_export_security = (
         ((spec.get("paths") or {}).get("/portfolio/quality/export") or {}).get("get") or {}
     ).get("security")
+    generate_preflight_response_schema = (
+        ((((spec.get("paths") or {}).get("/generate/preflight") or {}).get("post") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    ingest_readiness_response_schema = (
+        ((((spec.get("paths") or {}).get("/ingest/readiness") or {}).get("post") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     status_response_schema = (
         ((((spec.get("paths") or {}).get("/status/{job_id}") or {}).get("get") or {}).get("responses") or {})
         .get("200", {})
@@ -5660,6 +5674,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert portfolio_metrics_export_security == [{"ApiKeyAuth": []}]
     assert portfolio_quality_security == [{"ApiKeyAuth": []}]
     assert portfolio_quality_export_security == [{"ApiKeyAuth": []}]
+    assert generate_preflight_response_schema == {"$ref": "#/components/schemas/GeneratePreflightPublicResponse"}
+    assert ingest_readiness_response_schema == {"$ref": "#/components/schemas/GeneratePreflightPublicResponse"}
     assert status_response_schema == {"$ref": "#/components/schemas/JobStatusPublicResponse"}
     assert status_citations_response_schema == {"$ref": "#/components/schemas/JobCitationsPublicResponse"}
     assert status_export_payload_response_schema == {"$ref": "#/components/schemas/JobExportPayloadPublicResponse"}
@@ -5746,6 +5762,10 @@ def test_openapi_declares_api_key_security_scheme():
     assert "IngestRecentRecordPublicResponse" in schemas
     assert "IngestInventoryPublicResponse" in schemas
     assert "IngestInventoryDocFamilyPublicResponse" in schemas
+    assert "GeneratePreflightPublicResponse" in schemas
+    assert "GeneratePreflightWarningPublicResponse" in schemas
+    assert "GeneratePreflightArchitectClaimsPublicResponse" in schemas
+    assert "GeneratePreflightGroundingPolicyPublicResponse" in schemas
 
 
 def test_ingest_endpoint_uploads_to_donor_namespace(monkeypatch):

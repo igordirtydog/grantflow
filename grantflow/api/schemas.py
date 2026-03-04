@@ -841,3 +841,74 @@ class IngestInventoryPublicResponse(BaseModel):
     doc_families: list[IngestInventoryDocFamilyPublicResponse]
 
     model_config = ConfigDict(extra="allow")
+
+
+class GeneratePreflightWarningPublicResponse(BaseModel):
+    code: str
+    severity: str
+    message: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GeneratePreflightArchitectClaimsPublicResponse(BaseModel):
+    available: bool
+    reason: Optional[str] = None
+    claim_citation_count: Optional[int] = None
+    key_claim_coverage_ratio: Optional[float] = None
+    fallback_claim_ratio: Optional[float] = None
+    threshold_hit_rate: Optional[float] = None
+    traceability_complete_citation_count: Optional[int] = None
+    traceability_partial_citation_count: Optional[int] = None
+    traceability_missing_citation_count: Optional[int] = None
+    traceability_gap_citation_count: Optional[int] = None
+    traceability_gap_rate: Optional[float] = None
+    retrieval_hits_count: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GeneratePreflightGroundingPolicyPublicResponse(BaseModel):
+    mode: str
+    risk_level: str
+    reasons: list[str]
+    summary: str
+    blocking: bool
+    go_ahead: bool
+    thresholds: Dict[str, Any]
+    architect_claims: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GeneratePreflightPublicResponse(BaseModel):
+    donor_id: str
+    tenant_id: Optional[str] = None
+    retrieval_namespace: Optional[str] = None
+    retrieval_namespace_normalized: Optional[str] = None
+    retrieval_query_terms: Optional[Any] = None
+    expected_doc_families: list[str]
+    present_doc_families: list[str]
+    missing_doc_families: list[str]
+    doc_family_min_uploads: Dict[str, int]
+    depth_ready_doc_families: list[str]
+    depth_gap_doc_families: list[str]
+    expected_count: int
+    loaded_count: int
+    coverage_rate: Optional[float] = None
+    depth_ready_count: int
+    depth_gap_count: int
+    depth_coverage_rate: Optional[float] = None
+    inventory_total_uploads: int
+    inventory_family_count: int
+    namespace_empty: bool
+    warning_count: int
+    warning_level: str
+    risk_level: str
+    grounding_risk_level: str
+    grounding_policy: Optional[GeneratePreflightGroundingPolicyPublicResponse] = None
+    architect_claims: Optional[GeneratePreflightArchitectClaimsPublicResponse] = None
+    go_ahead: bool
+    warnings: list[GeneratePreflightWarningPublicResponse]
+
+    model_config = ConfigDict(extra="allow")

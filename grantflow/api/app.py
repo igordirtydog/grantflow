@@ -48,6 +48,7 @@ from grantflow.api.schemas import (
     CriticFindingsListPublicResponse,
     CriticFatalFlawPublicResponse,
     CriticFatalFlawStatusUpdatePublicResponse,
+    GeneratePreflightPublicResponse,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
     IngestRecentListPublicResponse,
@@ -3534,7 +3535,11 @@ def export_portfolio_quality(
     )
 
 
-@app.post("/generate/preflight")
+@app.post(
+    "/generate/preflight",
+    response_model=GeneratePreflightPublicResponse,
+    response_model_exclude_none=True,
+)
 def generate_preflight(req: GeneratePreflightRequest, request: Request):
     require_api_key_if_configured(request)
     donor, strategy, client_metadata = _resolve_preflight_request_context(
@@ -3595,7 +3600,11 @@ def _resolve_preflight_request_context(
     return donor, strategy, (metadata or None)
 
 
-@app.post("/ingest/readiness")
+@app.post(
+    "/ingest/readiness",
+    response_model=GeneratePreflightPublicResponse,
+    response_model_exclude_none=True,
+)
 def ingest_readiness(req: IngestReadinessRequest, request: Request):
     require_api_key_if_configured(request, for_read=True)
     donor, strategy, client_metadata = _resolve_preflight_request_context(
