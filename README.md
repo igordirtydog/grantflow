@@ -378,6 +378,7 @@ python scripts/eval_ab_diff.py \
   --guard-donors usaid,eu,worldbank,state_department \
   --max-a-non-retrieval-rate 0.25 \
   --min-a-retrieval-grounded-rate 0.75 \
+  --max-a-traceability-gap-rate 0.10 \
   --text-out eval-artifacts/grounded-ab-diff.txt \
   --json-out eval-artifacts/grounded-ab-diff.json
 ```
@@ -393,7 +394,7 @@ make eval-grounded-ab
 Tune guard via environment variables if needed:
 
 ```bash
-GROUNDED_GUARD_DONORS=usaid,worldbank GROUNDED_MAX_NON_RETRIEVAL=0.25 GROUNDED_MIN_RETRIEVAL_GROUNDED=0.75 make eval-grounded-ab
+GROUNDED_GUARD_DONORS=usaid,worldbank GROUNDED_MAX_NON_RETRIEVAL=0.25 GROUNDED_MIN_RETRIEVAL_GROUNDED=0.75 GROUNDED_MAX_TRACEABILITY_GAP=0.10 make eval-grounded-ab
 ```
 
 CI uploads the same files as the `eval-report` artifact.

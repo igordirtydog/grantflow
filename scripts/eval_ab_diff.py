@@ -154,6 +154,8 @@ def _build_diff_payload(
                 "b_non_retrieval_rate": [],
                 "a_retrieval_grounded_rate": [],
                 "b_retrieval_grounded_rate": [],
+                "a_traceability_gap_rate": [],
+                "b_traceability_gap_rate": [],
             },
         )
         metrics_a = case_a.get("metrics") if isinstance(case_a.get("metrics"), dict) else {}
@@ -162,6 +164,8 @@ def _build_diff_payload(
         b_non_retrieval = _as_float(metrics_b.get("non_retrieval_citation_rate"))
         a_retrieval_grounded = _as_float(metrics_a.get("retrieval_grounded_citation_rate"))
         b_retrieval_grounded = _as_float(metrics_b.get("retrieval_grounded_citation_rate"))
+        a_traceability_gap = _as_float(metrics_a.get("traceability_gap_citation_rate"))
+        b_traceability_gap = _as_float(metrics_b.get("traceability_gap_citation_rate"))
         if a_non_retrieval is not None:
             donor_row["a_non_retrieval_rate"].append(a_non_retrieval)
         if b_non_retrieval is not None:
@@ -170,6 +174,10 @@ def _build_diff_payload(
             donor_row["a_retrieval_grounded_rate"].append(a_retrieval_grounded)
         if b_retrieval_grounded is not None:
             donor_row["b_retrieval_grounded_rate"].append(b_retrieval_grounded)
+        if a_traceability_gap is not None:
+            donor_row["a_traceability_gap_rate"].append(a_traceability_gap)
+        if b_traceability_gap is not None:
+            donor_row["b_traceability_gap_rate"].append(b_traceability_gap)
 
     donor_summary: Dict[str, Dict[str, Any]] = {}
     for donor_id, row in sorted(donor_rows.items()):
@@ -177,6 +185,8 @@ def _build_diff_payload(
         b_non_retrieval_avg = _avg(row["b_non_retrieval_rate"])
         a_retrieval_grounded_avg = _avg(row["a_retrieval_grounded_rate"])
         b_retrieval_grounded_avg = _avg(row["b_retrieval_grounded_rate"])
+        a_traceability_gap_avg = _avg(row["a_traceability_gap_rate"])
+        b_traceability_gap_avg = _avg(row["b_traceability_gap_rate"])
         donor_summary[donor_id] = {
             "a_non_retrieval_rate_avg": a_non_retrieval_avg,
             "b_non_retrieval_rate_avg": b_non_retrieval_avg,
@@ -190,6 +200,13 @@ def _build_diff_payload(
             "delta_retrieval_grounded_rate_b_minus_a": (
                 round(b_retrieval_grounded_avg - a_retrieval_grounded_avg, 4)
                 if a_retrieval_grounded_avg is not None and b_retrieval_grounded_avg is not None
+                else None
+            ),
+            "a_traceability_gap_rate_avg": a_traceability_gap_avg,
+            "b_traceability_gap_rate_avg": b_traceability_gap_avg,
+            "delta_traceability_gap_rate_b_minus_a": (
+                round(b_traceability_gap_avg - a_traceability_gap_avg, 4)
+                if a_traceability_gap_avg is not None and b_traceability_gap_avg is not None
                 else None
             ),
         }
@@ -283,7 +300,8 @@ def _format_text(payload: dict[str, Any]) -> str:
             lines.append(
                 (
                     f"- {donor_id}: non_retrieval_delta={row.get('delta_non_retrieval_rate_b_minus_a')} "
-                    f"retrieval_grounded_delta={row.get('delta_retrieval_grounded_rate_b_minus_a')}"
+                    f"retrieval_grounded_delta={row.get('delta_retrieval_grounded_rate_b_minus_a')} "
+                    f"traceability_gap_delta={row.get('delta_traceability_gap_rate_b_minus_a')}"
                 )
             )
 
@@ -316,6 +334,14 @@ def _format_text(payload: dict[str, Any]) -> str:
                                 f"min_required={item.get('threshold')}"
                             )
                         )
+                    elif kind == "max_a_traceability_gap_rate":
+                        lines.append(
+                            (
+                                f"- FAIL {donor_id}: "
+                                f"a_traceability_gap_rate_avg={item.get('observed')} "
+                                f"max_allowed={item.get('threshold')}"
+                            )
+                        )
                     else:
                         lines.append(f"- FAIL {donor_id}: {item}")
         missing_donors = guard.get("missing_donors")
@@ -345,8 +371,13 @@ def _evaluate_guard(
     guard_donors: list[str],
     max_a_non_retrieval_rate: float | None,
     min_a_retrieval_grounded_rate: float | None,
+    max_a_traceability_gap_rate: float | None,
 ) -> dict[str, Any]:
-    if not guard_donors or (max_a_non_retrieval_rate is None and min_a_retrieval_grounded_rate is None):
+    if not guard_donors or (
+        max_a_non_retrieval_rate is None
+        and min_a_retrieval_grounded_rate is None
+        and max_a_traceability_gap_rate is None
+    ):
         return {"status": "not_configured", "guard_donors": guard_donors}
 
     donor_summary = payload.get("donor_summary")
@@ -386,6 +417,20 @@ def _evaluate_guard(
                         "threshold": round(min_a_retrieval_grounded_rate, 4),
                     }
                 )
+        if max_a_traceability_gap_rate is not None:
+            rate = _as_float(row.get("a_traceability_gap_rate_avg"))
+            if rate is None:
+                missing.append(donor_id)
+                continue
+            if rate > max_a_traceability_gap_rate + EPSILON:
+                failures.append(
+                    {
+                        "donor_id": donor_id,
+                        "kind": "max_a_traceability_gap_rate",
+                        "observed": round(rate, 4),
+                        "threshold": round(max_a_traceability_gap_rate, 4),
+                    }
+                )
 
     status = "failed" if failures else "passed"
     return {
@@ -396,6 +441,9 @@ def _evaluate_guard(
         ),
         "min_a_retrieval_grounded_rate": (
             round(min_a_retrieval_grounded_rate, 4) if min_a_retrieval_grounded_rate is not None else None
+        ),
+        "max_a_traceability_gap_rate": (
+            round(max_a_traceability_gap_rate, 4) if max_a_traceability_gap_rate is not None else None
         ),
         "checked_donors": len(guard_donors) - len(missing),
         "missing_donors": missing,
@@ -429,6 +477,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Fail when donor A avg retrieval_grounded_citation_rate drops below this threshold (0..1).",
     )
+    parser.add_argument(
+        "--max-a-traceability-gap-rate",
+        type=float,
+        default=None,
+        help="Fail when donor A avg traceability_gap_citation_rate exceeds this threshold (0..1).",
+    )
     return parser.parse_args(argv)
 
 
@@ -447,6 +501,7 @@ def main(argv: list[str] | None = None) -> int:
         guard_donors=_parse_guard_donors(args.guard_donors),
         max_a_non_retrieval_rate=args.max_a_non_retrieval_rate,
         min_a_retrieval_grounded_rate=args.min_a_retrieval_grounded_rate,
+        max_a_traceability_gap_rate=args.max_a_traceability_gap_rate,
     )
     payload["guard"] = guard_payload
     text_report = _format_text(payload)

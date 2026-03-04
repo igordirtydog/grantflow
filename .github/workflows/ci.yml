@@ -151,6 +151,7 @@ jobs:
             --guard-donors usaid,eu,worldbank,state_department \
             --max-a-non-retrieval-rate 0.25 \
             --min-a-retrieval-grounded-rate 0.75 \
+            --max-a-traceability-gap-rate 0.10 \
             --text-out eval-artifacts/grounded-ab-diff.txt \
             --json-out eval-artifacts/grounded-ab-diff.json
 
