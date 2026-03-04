@@ -25,6 +25,31 @@ def _wait_for_terminal_status(job_id: str, timeout_s: float = 3.0):
     raise AssertionError("Timed out waiting for job completion")
 
 
+def _drain_hitl_to_done(job_id: str, *, initial_status: dict | None = None, max_cycles: int = 6) -> dict:
+    status = initial_status or _wait_for_terminal_status(job_id)
+    for _ in range(max_cycles):
+        if status.get("status") == "done":
+            return status
+        assert status.get("status") == "pending_hitl"
+        checkpoint_id = str(status.get("checkpoint_id") or "").strip()
+        checkpoint_stage = str(status.get("checkpoint_stage") or "").strip().lower()
+        assert checkpoint_id
+        assert checkpoint_stage in {"toc", "logframe"}
+
+        approve = client.post(
+            "/hitl/approve",
+            json={"checkpoint_id": checkpoint_id, "approved": True, "feedback": f"Auto approve {checkpoint_stage}"},
+        )
+        assert approve.status_code == 200
+
+        resume = client.post(f"/resume/{job_id}", json={})
+        assert resume.status_code == 200
+        expected_resume_from = "mel" if checkpoint_stage == "toc" else "critic"
+        assert resume.json()["resuming_from"] == expected_resume_from
+        status = _wait_for_terminal_status(job_id)
+    raise AssertionError("HITL pipeline did not reach done within max_cycles")
+
+
 def test_health_endpoint():
     response = client.get("/health")
     assert response.status_code == 200
@@ -7377,6 +7402,8 @@ def test_hitl_pause_resume_flow():
     assert resume.json()["resuming_from"] == "critic"
 
     status = _wait_for_terminal_status(job_id)
+    if status["status"] != "done":
+        status = _drain_hitl_to_done(job_id, initial_status=status)
     assert status["status"] == "done"
     state = status["state"]
     assert state["hitl_pending"] is False
@@ -7419,6 +7446,8 @@ def test_hitl_checkpoint_selection_logframe_only_flow():
     assert resume.json()["resuming_from"] == "critic"
 
     status = _wait_for_terminal_status(job_id)
+    if status["status"] != "done":
+        status = _drain_hitl_to_done(job_id, initial_status=status)
     assert status["status"] == "done"
     assert status["state"]["hitl_pending"] is False
 
