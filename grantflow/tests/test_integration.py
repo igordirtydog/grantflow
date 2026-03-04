@@ -4335,6 +4335,296 @@ def test_status_review_workflow_sla_trends_endpoint_returns_bucketed_series():
     assert code_payload["total_series"] == [{"bucket": "2026-02-27", "count": 2}]
 
 
+def test_status_review_workflow_sla_hotspots_endpoints_filter_and_aggregate():
+    job_id = "review-workflow-sla-hotspots-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "finding-h1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC mismatch.",
+                            "updated_at": "2026-02-27T14:00:00+00:00",
+                            "due_at": "2026-02-27T08:00:00+00:00",
+                            "sla_hours": 24,
+                        },
+                        {
+                            "finding_id": "finding-h2",
+                            "code": "MEL_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "message": "Baseline missing.",
+                            "updated_at": "2026-02-27T14:30:00+00:00",
+                            "due_at": "2026-02-26T08:00:00+00:00",
+                            "sla_hours": 72,
+                        },
+                        {
+                            "finding_id": "finding-h3",
+                            "code": "CITATION_GAP",
+                            "severity": "low",
+                            "section": "general",
+                            "status": "resolved",
+                            "message": "Citation fixed.",
+                            "updated_at": "2026-02-27T10:00:00+00:00",
+                            "due_at": "2026-02-26T10:00:00+00:00",
+                            "sla_hours": 72,
+                        },
+                    ]
+                }
+            },
+            "review_comments": [
+                {
+                    "comment_id": "comment-h1",
+                    "ts": "2026-02-27T13:00:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Need stronger assumptions.",
+                    "linked_finding_id": "finding-h1",
+                    "due_at": "2026-02-27T09:00:00+00:00",
+                    "sla_hours": 24,
+                },
+                {
+                    "comment_id": "comment-h2",
+                    "ts": "2026-02-27T13:05:00+00:00",
+                    "section": "logframe",
+                    "status": "open",
+                    "message": "Indicator wording update pending.",
+                    "linked_finding_id": "finding-h2",
+                    "due_at": "2026-02-26T09:00:00+00:00",
+                    "sla_hours": 72,
+                },
+                {
+                    "comment_id": "comment-h3",
+                    "ts": "2026-02-27T13:06:00+00:00",
+                    "section": "general",
+                    "status": "resolved",
+                    "message": "Resolved by reviewer.",
+                    "linked_finding_id": "finding-h3",
+                    "due_at": "2026-02-26T11:00:00+00:00",
+                    "sla_hours": 72,
+                },
+            ],
+            "job_events": [
+                {
+                    "event_id": "rwf-sla-hotspots-1",
+                    "ts": "2026-02-27T15:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-h2",
+                    "status": "acknowledged",
+                    "section": "logframe",
+                    "severity": "medium",
+                }
+            ],
+        },
+    )
+
+    hotspots_resp = client.get(f"/status/{job_id}/review/workflow/sla/hotspots", params={"overdue_after_hours": 2})
+    assert hotspots_resp.status_code == 200
+    hotspots = hotspots_resp.json()
+    assert hotspots["job_id"] == job_id
+    assert hotspots["status"] == "done"
+    assert hotspots["filters"]["overdue_after_hours"] == 2
+    assert hotspots["filters"]["top_limit"] == 10
+    assert hotspots["total_overdue_items"] == 4
+    assert hotspots["hotspot_count"] == 4
+    assert hotspots["top_overdue"][0]["id"] == "finding-h2"
+    assert hotspots["hotspot_kind_counts"]["finding"] == 2
+    assert hotspots["hotspot_kind_counts"]["comment"] == 2
+    assert hotspots["hotspot_severity_counts"]["high"] == 2
+    assert hotspots["hotspot_severity_counts"]["medium"] == 2
+
+    kind_filtered = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots",
+        params={"hotspot_kind": "comment", "overdue_after_hours": 2},
+    )
+    assert kind_filtered.status_code == 200
+    kind_payload = kind_filtered.json()
+    assert kind_payload["filters"]["hotspot_kind"] == "comment"
+    assert kind_payload["total_overdue_items"] == 2
+    assert kind_payload["hotspot_kind_counts"]["comment"] == 2
+
+    severity_filtered = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots",
+        params={"hotspot_severity": "high", "overdue_after_hours": 2},
+    )
+    assert severity_filtered.status_code == 200
+    severity_payload = severity_filtered.json()
+    assert severity_payload["filters"]["hotspot_severity"] == "high"
+    assert severity_payload["total_overdue_items"] == 2
+    assert all(str(item.get("severity") or "") == "high" for item in severity_payload["top_overdue"])
+
+    min_overdue_filtered = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots",
+        params={"min_overdue_hours": 31, "overdue_after_hours": 2},
+    )
+    assert min_overdue_filtered.status_code == 200
+    min_overdue_payload = min_overdue_filtered.json()
+    assert min_overdue_payload["filters"]["min_overdue_hours"] == 31.0
+    assert min_overdue_payload["total_overdue_items"] == 1
+    assert min_overdue_payload["top_overdue"][0]["id"] == "finding-h2"
+
+    invalid_kind = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots",
+        params={"hotspot_kind": "timeline", "overdue_after_hours": 2},
+    )
+    assert invalid_kind.status_code == 400
+
+    trends_resp = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends",
+        params={"overdue_after_hours": 2},
+    )
+    assert trends_resp.status_code == 200
+    trends = trends_resp.json()
+    assert trends["job_id"] == job_id
+    assert trends["status"] == "done"
+    assert trends["hotspot_count_total"] == 4
+    assert trends["bucket_count"] == 2
+    assert trends["time_window_start"] == "2026-02-26"
+    assert trends["time_window_end"] == "2026-02-27"
+    assert trends["total_series"] == [
+        {"bucket": "2026-02-26", "count": 2},
+        {"bucket": "2026-02-27", "count": 2},
+    ]
+    assert trends["kind_series"]["finding"] == [
+        {"bucket": "2026-02-26", "count": 1},
+        {"bucket": "2026-02-27", "count": 1},
+    ]
+    assert trends["kind_series"]["comment"] == [
+        {"bucket": "2026-02-26", "count": 1},
+        {"bucket": "2026-02-27", "count": 1},
+    ]
+
+    trends_filtered = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends",
+        params={"hotspot_kind": "finding", "overdue_after_hours": 2},
+    )
+    assert trends_filtered.status_code == 200
+    trends_filtered_payload = trends_filtered.json()
+    assert trends_filtered_payload["filters"]["hotspot_kind"] == "finding"
+    assert trends_filtered_payload["hotspot_count_total"] == 2
+    assert trends_filtered_payload["bucket_count"] == 2
+    assert trends_filtered_payload["total_series"] == [
+        {"bucket": "2026-02-26", "count": 1},
+        {"bucket": "2026-02-27", "count": 1},
+    ]
+
+
+def test_status_review_workflow_sla_hotspots_export_supports_csv_json_and_gzip():
+    job_id = "review-workflow-sla-hotspots-export-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "finding-h-exp-1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC mismatch.",
+                            "updated_at": "2026-02-27T14:00:00+00:00",
+                            "due_at": "2026-02-27T08:00:00+00:00",
+                            "sla_hours": 24,
+                        },
+                        {
+                            "finding_id": "finding-h-exp-2",
+                            "code": "MEL_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "message": "Baseline missing.",
+                            "updated_at": "2026-02-27T14:30:00+00:00",
+                            "due_at": "2026-02-26T08:00:00+00:00",
+                            "sla_hours": 72,
+                        },
+                    ]
+                }
+            },
+            "review_comments": [
+                {
+                    "comment_id": "comment-h-exp-1",
+                    "ts": "2026-02-27T13:00:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Need stronger assumptions.",
+                    "linked_finding_id": "finding-h-exp-1",
+                    "due_at": "2026-02-27T09:00:00+00:00",
+                    "sla_hours": 24,
+                },
+                {
+                    "comment_id": "comment-h-exp-2",
+                    "ts": "2026-02-27T13:05:00+00:00",
+                    "section": "logframe",
+                    "status": "open",
+                    "message": "Indicator wording update pending.",
+                    "linked_finding_id": "finding-h-exp-2",
+                    "due_at": "2026-02-26T09:00:00+00:00",
+                    "sla_hours": 72,
+                },
+            ],
+            "job_events": [
+                {
+                    "event_id": "rwf-sla-hotspots-exp-1",
+                    "ts": "2026-02-27T15:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-h-exp-2",
+                    "status": "acknowledged",
+                    "section": "logframe",
+                    "severity": "medium",
+                }
+            ],
+        },
+    )
+
+    csv_resp = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/export",
+        params={"hotspot_kind": "finding", "overdue_after_hours": 2, "format": "csv"},
+    )
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"].startswith("text/csv")
+    csv_disposition = csv_resp.headers.get("content-disposition", "")
+    assert f"grantflow_review_workflow_sla_hotspots_{job_id}.csv" in csv_disposition
+    csv_text = csv_resp.text
+    assert csv_text.startswith("field,value\n")
+    assert "filters.hotspot_kind,finding" in csv_text
+    assert "filters.overdue_after_hours,2" in csv_text
+    assert "total_overdue_items,2" in csv_text
+
+    json_resp = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends/export",
+        params={"hotspot_severity": "high", "overdue_after_hours": 2, "format": "json"},
+    )
+    assert json_resp.status_code == 200
+    assert json_resp.headers["content-type"].startswith("application/json")
+    json_payload = json_resp.json()
+    assert json_payload["filters"]["hotspot_severity"] == "high"
+    assert json_payload["hotspot_count_total"] == 2
+    assert json_payload["bucket_count"] == 1
+
+    gzip_resp = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends/export",
+        params={"overdue_after_hours": 2, "format": "json", "gzip": "true"},
+    )
+    assert gzip_resp.status_code == 200
+    assert gzip_resp.headers["content-type"].startswith("application/gzip")
+    gzip_disposition = gzip_resp.headers.get("content-disposition", "")
+    assert f"grantflow_review_workflow_sla_hotspots_trends_{job_id}.json.gz" in gzip_disposition
+    gzip_payload = json.loads(gzip.decompress(gzip_resp.content).decode("utf-8"))
+    assert gzip_payload["bucket_count"] == 2
+    assert gzip_payload["hotspot_count_total"] == 4
+
+
 def test_status_review_workflow_sla_trends_export_supports_csv_json_and_gzip():
     job_id = "review-workflow-sla-trends-export-job-1"
     api_app_module.JOB_STORE.set(
@@ -8435,6 +8725,44 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     )
     assert review_workflow_sla_auth.status_code == 200
 
+    review_workflow_sla_hotspots_unauth = client.get(f"/status/{job_id}/review/workflow/sla/hotspots")
+    assert review_workflow_sla_hotspots_unauth.status_code == 401
+
+    review_workflow_sla_hotspots_auth = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_sla_hotspots_auth.status_code == 200
+
+    review_workflow_sla_hotspots_export_unauth = client.get(f"/status/{job_id}/review/workflow/sla/hotspots/export")
+    assert review_workflow_sla_hotspots_export_unauth.status_code == 401
+
+    review_workflow_sla_hotspots_export_auth = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/export",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_sla_hotspots_export_auth.status_code == 200
+
+    review_workflow_sla_hotspots_trends_unauth = client.get(f"/status/{job_id}/review/workflow/sla/hotspots/trends")
+    assert review_workflow_sla_hotspots_trends_unauth.status_code == 401
+
+    review_workflow_sla_hotspots_trends_auth = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_sla_hotspots_trends_auth.status_code == 200
+
+    review_workflow_sla_hotspots_trends_export_unauth = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends/export"
+    )
+    assert review_workflow_sla_hotspots_trends_export_unauth.status_code == 401
+
+    review_workflow_sla_hotspots_trends_export_auth = client.get(
+        f"/status/{job_id}/review/workflow/sla/hotspots/trends/export",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_sla_hotspots_trends_export_auth.status_code == 200
+
     review_workflow_sla_trends_unauth = client.get(f"/status/{job_id}/review/workflow/sla/trends")
     assert review_workflow_sla_trends_unauth.status_code == 401
 
@@ -8787,6 +9115,19 @@ def test_openapi_declares_api_key_security_scheme():
     status_review_workflow_sla_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla") or {}).get("get") or {}
     ).get("security")
+    status_review_workflow_sla_hotspots_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots") or {}).get("get") or {}
+    ).get("security")
+    status_review_workflow_sla_hotspots_trends_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/trends") or {}).get("get") or {}
+    ).get("security")
+    status_review_workflow_sla_hotspots_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/export") or {}).get("get") or {}
+    ).get("security")
+    status_review_workflow_sla_hotspots_trends_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/trends/export") or {}).get("get")
+        or {}
+    ).get("security")
     status_review_workflow_sla_trends_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/trends") or {}).get("get") or {}
     ).get("security")
@@ -9065,8 +9406,24 @@ def test_openapi_declares_api_key_security_scheme():
         .get("application/json", {})
         .get("schema")
     )
+    status_review_workflow_sla_hotspots_response_schema = (
+        (((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots") or {}).get("get") or {})
+        .get("responses", {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     status_review_workflow_sla_trends_response_schema = (
         (((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/trends") or {}).get("get") or {})
+        .get("responses", {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    status_review_workflow_sla_hotspots_trends_response_schema = (
+        (((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/trends") or {}).get("get") or {})
         .get("responses", {})
         .get("200", {})
         .get("content", {})
@@ -9254,6 +9611,10 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_review_workflow_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_trends_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_sla_hotspots_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_sla_hotspots_trends_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_sla_hotspots_export_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_sla_hotspots_trends_export_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_trends_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_trends_export_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_export_security == [{"ApiKeyAuth": []}]
@@ -9316,8 +9677,14 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_review_workflow_sla_response_schema == {
         "$ref": "#/components/schemas/JobReviewWorkflowSLAPublicResponse"
     }
+    assert status_review_workflow_sla_hotspots_response_schema == {
+        "$ref": "#/components/schemas/JobReviewWorkflowSLAHotspotsPublicResponse"
+    }
     assert status_review_workflow_sla_trends_response_schema == {
         "$ref": "#/components/schemas/JobReviewWorkflowSLATrendsPublicResponse"
+    }
+    assert status_review_workflow_sla_hotspots_trends_response_schema == {
+        "$ref": "#/components/schemas/JobReviewWorkflowSLAHotspotsTrendsPublicResponse"
     }
     assert status_review_workflow_sla_profile_response_schema == {
         "$ref": "#/components/schemas/JobReviewWorkflowSLAProfilePublicResponse"
@@ -9373,6 +9740,10 @@ def test_openapi_declares_api_key_security_scheme():
     assert "JobReviewWorkflowTrendsPublicResponse" in schemas
     assert "JobReviewWorkflowTrendPointPublicResponse" in schemas
     assert "JobReviewWorkflowSLAPublicResponse" in schemas
+    assert "JobReviewWorkflowSLAHotspotsPublicResponse" in schemas
+    assert "JobReviewWorkflowSLAHotspotsFiltersPublicResponse" in schemas
+    assert "JobReviewWorkflowSLAHotspotsTrendsPublicResponse" in schemas
+    assert "JobReviewWorkflowSLAHotspotsTrendsFiltersPublicResponse" in schemas
     assert "JobReviewWorkflowSLATrendsPublicResponse" in schemas
     assert "JobReviewWorkflowSLATrendPointPublicResponse" in schemas
     assert "JobReviewWorkflowSLAFiltersPublicResponse" in schemas
@@ -9480,6 +9851,19 @@ def test_openapi_declares_api_key_security_scheme():
     review_workflow_sla_params = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla") or {}).get("get") or {}
     ).get("parameters") or []
+    review_workflow_sla_hotspots_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots") or {}).get("get") or {}
+    ).get("parameters") or []
+    review_workflow_sla_hotspots_export_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/export") or {}).get("get") or {}
+    ).get("parameters") or []
+    review_workflow_sla_hotspots_trends_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/trends") or {}).get("get") or {}
+    ).get("parameters") or []
+    review_workflow_sla_hotspots_trends_export_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/hotspots/trends/export") or {}).get("get")
+        or {}
+    ).get("parameters") or []
     review_workflow_sla_trends_params = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/trends") or {}).get("get") or {}
     ).get("parameters") or []
@@ -9538,6 +9922,18 @@ def test_openapi_declares_api_key_security_scheme():
     ]
     review_workflow_sla_param_names = [
         str(p.get("name") or "") for p in review_workflow_sla_params if isinstance(p, dict)
+    ]
+    review_workflow_sla_hotspots_param_names = [
+        str(p.get("name") or "") for p in review_workflow_sla_hotspots_params if isinstance(p, dict)
+    ]
+    review_workflow_sla_hotspots_export_param_names = [
+        str(p.get("name") or "") for p in review_workflow_sla_hotspots_export_params if isinstance(p, dict)
+    ]
+    review_workflow_sla_hotspots_trends_param_names = [
+        str(p.get("name") or "") for p in review_workflow_sla_hotspots_trends_params if isinstance(p, dict)
+    ]
+    review_workflow_sla_hotspots_trends_export_param_names = [
+        str(p.get("name") or "") for p in review_workflow_sla_hotspots_trends_export_params if isinstance(p, dict)
     ]
     review_workflow_sla_trends_param_names = [
         str(p.get("name") or "") for p in review_workflow_sla_trends_params if isinstance(p, dict)
@@ -9640,11 +10036,31 @@ def test_openapi_declares_api_key_security_scheme():
         assert name in review_workflow_trends_param_names
         assert name in review_workflow_trends_export_param_names
         assert name in review_workflow_sla_param_names
+        assert name in review_workflow_sla_hotspots_param_names
+        assert name in review_workflow_sla_hotspots_export_param_names
+        assert name in review_workflow_sla_hotspots_trends_param_names
+        assert name in review_workflow_sla_hotspots_trends_export_param_names
         assert name in review_workflow_sla_trends_param_names
         assert name in review_workflow_sla_trends_export_param_names
         assert name in review_workflow_sla_export_param_names
         assert name in portfolio_review_workflow_sla_trends_param_names
         assert name in portfolio_review_workflow_sla_trends_export_param_names
+    assert "top_limit" in review_workflow_sla_hotspots_param_names
+    assert "top_limit" in review_workflow_sla_hotspots_export_param_names
+    assert "top_limit" in review_workflow_sla_hotspots_trends_param_names
+    assert "top_limit" in review_workflow_sla_hotspots_trends_export_param_names
+    assert "hotspot_kind" in review_workflow_sla_hotspots_param_names
+    assert "hotspot_kind" in review_workflow_sla_hotspots_export_param_names
+    assert "hotspot_kind" in review_workflow_sla_hotspots_trends_param_names
+    assert "hotspot_kind" in review_workflow_sla_hotspots_trends_export_param_names
+    assert "hotspot_severity" in review_workflow_sla_hotspots_param_names
+    assert "hotspot_severity" in review_workflow_sla_hotspots_export_param_names
+    assert "hotspot_severity" in review_workflow_sla_hotspots_trends_param_names
+    assert "hotspot_severity" in review_workflow_sla_hotspots_trends_export_param_names
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_param_names
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_export_param_names
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_trends_param_names
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_trends_export_param_names
     assert "top_limit" in portfolio_review_workflow_sla_param_names
     assert "top_limit" in portfolio_review_workflow_sla_export_param_names
     assert "top_limit" in portfolio_review_workflow_sla_hotspots_param_names
@@ -9681,6 +10097,10 @@ def test_openapi_declares_api_key_security_scheme():
     assert "gzip" in review_workflow_sla_trends_export_param_names
     assert "format" in review_workflow_sla_export_param_names
     assert "gzip" in review_workflow_sla_export_param_names
+    assert "format" in review_workflow_sla_hotspots_export_param_names
+    assert "gzip" in review_workflow_sla_hotspots_export_param_names
+    assert "format" in review_workflow_sla_hotspots_trends_export_param_names
+    assert "gzip" in review_workflow_sla_hotspots_trends_export_param_names
     portfolio_filters_schema_props = (
         ((schemas.get("PortfolioMetricsFiltersPublicResponse") or {}).get("properties") or {})
         if isinstance(schemas.get("PortfolioMetricsFiltersPublicResponse"), dict)
@@ -9719,6 +10139,16 @@ def test_openapi_declares_api_key_security_scheme():
     review_workflow_sla_filters_schema_props = (
         ((schemas.get("JobReviewWorkflowSLAFiltersPublicResponse") or {}).get("properties") or {})
         if isinstance(schemas.get("JobReviewWorkflowSLAFiltersPublicResponse"), dict)
+        else {}
+    )
+    review_workflow_sla_hotspots_filters_schema_props = (
+        ((schemas.get("JobReviewWorkflowSLAHotspotsFiltersPublicResponse") or {}).get("properties") or {})
+        if isinstance(schemas.get("JobReviewWorkflowSLAHotspotsFiltersPublicResponse"), dict)
+        else {}
+    )
+    review_workflow_sla_hotspots_trends_filters_schema_props = (
+        ((schemas.get("JobReviewWorkflowSLAHotspotsTrendsFiltersPublicResponse") or {}).get("properties") or {})
+        if isinstance(schemas.get("JobReviewWorkflowSLAHotspotsTrendsFiltersPublicResponse"), dict)
         else {}
     )
     assert "toc_text_risk_level" in portfolio_filters_schema_props
@@ -9790,6 +10220,16 @@ def test_openapi_declares_api_key_security_scheme():
         "overdue_after_hours",
     ):
         assert name in review_workflow_sla_filters_schema_props
+        assert name in review_workflow_sla_hotspots_filters_schema_props
+        assert name in review_workflow_sla_hotspots_trends_filters_schema_props
+    assert "top_limit" in review_workflow_sla_hotspots_filters_schema_props
+    assert "hotspot_kind" in review_workflow_sla_hotspots_filters_schema_props
+    assert "hotspot_severity" in review_workflow_sla_hotspots_filters_schema_props
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_filters_schema_props
+    assert "top_limit" in review_workflow_sla_hotspots_trends_filters_schema_props
+    assert "hotspot_kind" in review_workflow_sla_hotspots_trends_filters_schema_props
+    assert "hotspot_severity" in review_workflow_sla_hotspots_trends_filters_schema_props
+    assert "min_overdue_hours" in review_workflow_sla_hotspots_trends_filters_schema_props
 
 
 def test_ingest_endpoint_uploads_to_donor_namespace(monkeypatch):

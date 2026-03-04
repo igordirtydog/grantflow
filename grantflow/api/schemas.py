@@ -314,6 +314,85 @@ class JobReviewWorkflowSLATrendsPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobReviewWorkflowSLAHotspotsFiltersPublicResponse(BaseModel):
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+    top_limit: Optional[int] = None
+    hotspot_kind: Optional[str] = None
+    hotspot_severity: Optional[str] = None
+    min_overdue_hours: Optional[float] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class JobReviewWorkflowSLAHotspotsPublicResponse(BaseModel):
+    job_id: str
+    status: str
+    generated_at: str
+    filters: JobReviewWorkflowSLAHotspotsFiltersPublicResponse
+    overdue_after_hours: int
+    top_limit: int
+    hotspot_count: int
+    total_overdue_items: int
+    max_overdue_hours: Optional[float] = None
+    avg_overdue_hours: Optional[float] = None
+    hotspot_kind_counts: Dict[str, int]
+    hotspot_severity_counts: Dict[str, int]
+    hotspot_section_counts: Dict[str, int]
+    oldest_overdue: Optional[JobReviewWorkflowSLAItemPublicResponse] = None
+    top_overdue: list[JobReviewWorkflowSLAItemPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class JobReviewWorkflowSLAHotspotsTrendsFiltersPublicResponse(BaseModel):
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+    top_limit: Optional[int] = None
+    hotspot_kind: Optional[str] = None
+    hotspot_severity: Optional[str] = None
+    min_overdue_hours: Optional[float] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class JobReviewWorkflowSLAHotspotsTrendsPublicResponse(BaseModel):
+    job_id: str
+    status: str
+    generated_at: str
+    filters: JobReviewWorkflowSLAHotspotsTrendsFiltersPublicResponse
+    overdue_after_hours: int
+    top_limit: int
+    bucket_granularity: str = "day"
+    bucket_count: int = 0
+    time_window_start: Optional[str] = None
+    time_window_end: Optional[str] = None
+    hotspot_count_total: int = 0
+    avg_hotspots_per_bucket: Optional[float] = None
+    top_kind: Optional[str] = None
+    top_kind_count: Optional[int] = None
+    top_severity: Optional[str] = None
+    top_severity_count: Optional[int] = None
+    top_section: Optional[str] = None
+    top_section_count: Optional[int] = None
+    oldest_overdue: Optional[JobReviewWorkflowSLAItemPublicResponse] = None
+    top_overdue: list[JobReviewWorkflowSLAItemPublicResponse]
+    total_series: list[JobReviewWorkflowSLATrendPointPublicResponse]
+    severity_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+    section_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+    kind_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobReviewWorkflowSLAPublicResponse(BaseModel):
     job_id: str
     status: str

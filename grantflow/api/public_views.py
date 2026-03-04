@@ -1245,6 +1245,302 @@ def public_job_review_workflow_sla_trends_payload(
     }
 
 
+def public_job_review_workflow_sla_hotspots_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    top_limit: int = 10,
+    hotspot_kind: Optional[str] = None,
+    hotspot_severity: Optional[str] = None,
+    min_overdue_hours: Optional[float] = None,
+) -> Dict[str, Any]:
+    snapshot = _review_workflow_sla_snapshot(
+        job_id,
+        job,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    overdue_rows = snapshot.pop("overdue_rows", [])
+    overdue_rows_list = (
+        [item for item in overdue_rows if isinstance(item, dict)] if isinstance(overdue_rows, list) else []
+    )
+    hotspot_kind_filter = str(hotspot_kind or "").strip().lower() or None
+    if hotspot_kind_filter not in {None, "finding", "comment"}:
+        hotspot_kind_filter = None
+    hotspot_severity_filter = str(hotspot_severity or "").strip().lower() or None
+    if hotspot_severity_filter not in {None, "high", "medium", "low", "unknown"}:
+        hotspot_severity_filter = None
+    min_overdue_filter = None
+    if isinstance(min_overdue_hours, (int, float)):
+        min_overdue_filter = max(0.0, float(min_overdue_hours))
+
+    filtered_rows: list[Dict[str, Any]] = []
+    hotspot_kind_counts: Dict[str, int] = {}
+    hotspot_severity_counts: Dict[str, int] = {}
+    hotspot_section_counts: Dict[str, int] = {}
+    overdue_values: list[float] = []
+
+    for row in overdue_rows_list:
+        row_kind = str(row.get("kind") or "").strip().lower()
+        row_severity = str(row.get("severity") or "").strip().lower() or "unknown"
+        row_section = str(row.get("section") or "").strip().lower() or "unknown"
+        overdue_value_raw = row.get("overdue_hours")
+        try:
+            overdue_value = float(overdue_value_raw) if overdue_value_raw is not None else None
+        except (TypeError, ValueError):
+            overdue_value = None
+
+        if hotspot_kind_filter and row_kind != hotspot_kind_filter:
+            continue
+        if hotspot_severity_filter and row_severity != hotspot_severity_filter:
+            continue
+        if min_overdue_filter is not None and (overdue_value is None or overdue_value < min_overdue_filter):
+            continue
+
+        current = dict(row)
+        current["kind"] = row_kind
+        current["severity"] = row_severity
+        current["section"] = row_section
+        if overdue_value is not None:
+            current["overdue_hours"] = round(overdue_value, 3)
+            overdue_values.append(overdue_value)
+        else:
+            current["overdue_hours"] = None
+        filtered_rows.append(current)
+        hotspot_kind_counts[row_kind or "unknown"] = int(hotspot_kind_counts.get(row_kind or "unknown") or 0) + 1
+        hotspot_severity_counts[row_severity] = int(hotspot_severity_counts.get(row_severity) or 0) + 1
+        hotspot_section_counts[row_section] = int(hotspot_section_counts.get(row_section) or 0) + 1
+
+    filtered_rows.sort(
+        key=lambda item: (
+            float(item.get("overdue_hours") or -1.0),
+            str(item.get("due_at") or ""),
+            str(item.get("id") or ""),
+        ),
+        reverse=True,
+    )
+
+    top_n = max(1, int(top_limit))
+    top_overdue = filtered_rows[:top_n]
+    oldest_overdue = top_overdue[0] if top_overdue else None
+    filters = snapshot.get("filters")
+    filters_dict = dict(filters) if isinstance(filters, dict) else {}
+    filters_dict.update(
+        {
+            "top_limit": top_n,
+            "hotspot_kind": hotspot_kind_filter,
+            "hotspot_severity": hotspot_severity_filter,
+            "min_overdue_hours": min_overdue_filter,
+        }
+    )
+    return {
+        **snapshot,
+        "filters": filters_dict,
+        "top_limit": top_n,
+        "hotspot_count": len(top_overdue),
+        "total_overdue_items": len(filtered_rows),
+        "max_overdue_hours": round(max(overdue_values), 3) if overdue_values else None,
+        "avg_overdue_hours": (round(sum(overdue_values) / len(overdue_values), 3) if overdue_values else None),
+        "hotspot_kind_counts": dict(sorted(hotspot_kind_counts.items())),
+        "hotspot_severity_counts": dict(sorted(hotspot_severity_counts.items())),
+        "hotspot_section_counts": dict(sorted(hotspot_section_counts.items())),
+        "oldest_overdue": oldest_overdue,
+        "top_overdue": top_overdue,
+    }
+
+
+def public_job_review_workflow_sla_hotspots_trends_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    top_limit: int = 10,
+    hotspot_kind: Optional[str] = None,
+    hotspot_severity: Optional[str] = None,
+    min_overdue_hours: Optional[float] = None,
+) -> Dict[str, Any]:
+    hotspots_payload = public_job_review_workflow_sla_hotspots_payload(
+        job_id,
+        job,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+        top_limit=top_limit,
+        hotspot_kind=hotspot_kind,
+        hotspot_severity=hotspot_severity,
+        min_overdue_hours=min_overdue_hours,
+    )
+    rows = hotspots_payload.get("top_overdue")
+    filtered_top_rows = [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
+    source_total = hotspots_payload.get("total_overdue_items")
+    total_hotspots = _coerce_int(source_total, default=len(filtered_top_rows))
+    snapshot = _review_workflow_sla_snapshot(
+        job_id,
+        job,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    all_rows = snapshot.pop("overdue_rows", [])
+    all_rows_list = [item for item in all_rows if isinstance(item, dict)] if isinstance(all_rows, list) else []
+
+    hotspot_kind_filter = str(hotspot_kind or "").strip().lower() or None
+    if hotspot_kind_filter not in {None, "finding", "comment"}:
+        hotspot_kind_filter = None
+    hotspot_severity_filter = str(hotspot_severity or "").strip().lower() or None
+    if hotspot_severity_filter not in {None, "high", "medium", "low", "unknown"}:
+        hotspot_severity_filter = None
+    min_overdue_filter = None
+    if isinstance(min_overdue_hours, (int, float)):
+        min_overdue_filter = max(0.0, float(min_overdue_hours))
+
+    filtered_rows: list[Dict[str, Any]] = []
+    for row in all_rows_list:
+        row_kind = str(row.get("kind") or "").strip().lower()
+        row_severity = str(row.get("severity") or "").strip().lower() or "unknown"
+        overdue_value_raw = row.get("overdue_hours")
+        try:
+            overdue_value = float(overdue_value_raw) if overdue_value_raw is not None else None
+        except (TypeError, ValueError):
+            overdue_value = None
+        if hotspot_kind_filter and row_kind != hotspot_kind_filter:
+            continue
+        if hotspot_severity_filter and row_severity != hotspot_severity_filter:
+            continue
+        if min_overdue_filter is not None and (overdue_value is None or overdue_value < min_overdue_filter):
+            continue
+        filtered_rows.append(dict(row))
+
+    def _series_rows(counts: Dict[str, int]) -> list[Dict[str, Any]]:
+        return [{"bucket": bucket, "count": int(counts.get(bucket) or 0)} for bucket in sorted(counts.keys())]
+
+    total_bucket_counts: Dict[str, int] = {}
+    severity_bucket_counts: Dict[str, Dict[str, int]] = {}
+    section_bucket_counts: Dict[str, Dict[str, int]] = {}
+    kind_bucket_counts: Dict[str, Dict[str, int]] = {}
+    kind_totals: Dict[str, int] = {}
+    severity_totals: Dict[str, int] = {}
+    section_totals: Dict[str, int] = {}
+
+    for row in filtered_rows:
+        due_dt = _parse_event_ts(row.get("due_at"))
+        bucket = due_dt.date().isoformat() if due_dt is not None else "unknown"
+        row_kind = str(row.get("kind") or "").strip().lower() or "unknown"
+        row_severity = str(row.get("severity") or "").strip().lower() or "unknown"
+        row_section = str(row.get("section") or "").strip().lower() or "unknown"
+        total_bucket_counts[bucket] = int(total_bucket_counts.get(bucket) or 0) + 1
+
+        severity_bucket = severity_bucket_counts.setdefault(row_severity, {})
+        severity_bucket[bucket] = int(severity_bucket.get(bucket) or 0) + 1
+        section_bucket = section_bucket_counts.setdefault(row_section, {})
+        section_bucket[bucket] = int(section_bucket.get(bucket) or 0) + 1
+        kind_bucket = kind_bucket_counts.setdefault(row_kind, {})
+        kind_bucket[bucket] = int(kind_bucket.get(bucket) or 0) + 1
+
+        kind_totals[row_kind] = int(kind_totals.get(row_kind) or 0) + 1
+        severity_totals[row_severity] = int(severity_totals.get(row_severity) or 0) + 1
+        section_totals[row_section] = int(section_totals.get(row_section) or 0) + 1
+
+    total_series = _series_rows(total_bucket_counts)
+    severity_series: Dict[str, list[Dict[str, Any]]] = {}
+    for level in ("high", "medium", "low", "unknown"):
+        severity_series[level] = _series_rows(severity_bucket_counts.get(level, {}))
+    for level in sorted(severity_bucket_counts.keys()):
+        if level in severity_series:
+            continue
+        severity_series[level] = _series_rows(severity_bucket_counts.get(level, {}))
+
+    section_series: Dict[str, list[Dict[str, Any]]] = {}
+    for section in sorted(section_bucket_counts.keys()):
+        section_series[section] = _series_rows(section_bucket_counts.get(section, {}))
+
+    kind_series: Dict[str, list[Dict[str, Any]]] = {}
+    for kind in ("finding", "comment", "unknown"):
+        kind_series[kind] = _series_rows(kind_bucket_counts.get(kind, {}))
+    for kind in sorted(kind_bucket_counts.keys()):
+        if kind in kind_series:
+            continue
+        kind_series[kind] = _series_rows(kind_bucket_counts.get(kind, {}))
+
+    dated_buckets = []
+    for point in total_series:
+        bucket = str(point.get("bucket") or "").strip()
+        try:
+            datetime.strptime(bucket, "%Y-%m-%d")
+            dated_buckets.append(bucket)
+        except ValueError:
+            continue
+    time_window_start = dated_buckets[0] if dated_buckets else None
+    time_window_end = dated_buckets[-1] if dated_buckets else None
+
+    def _max_key_value(counts: Dict[str, int]) -> tuple[Optional[str], Optional[int]]:
+        key: Optional[str] = None
+        value = -1
+        for item_key, item_total in counts.items():
+            current = int(item_total or 0)
+            if current > value:
+                value = current
+                key = item_key
+        if key is None:
+            return None, None
+        return key, value
+
+    top_kind, top_kind_count = _max_key_value(kind_totals)
+    top_severity, top_severity_count = _max_key_value(severity_totals)
+    top_section, top_section_count = _max_key_value(section_totals)
+    filters = hotspots_payload.get("filters")
+    filters_dict = dict(filters) if isinstance(filters, dict) else {}
+    return {
+        "job_id": str(job_id),
+        "status": str(job.get("status") or ""),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": filters_dict,
+        "bucket_granularity": "day",
+        "bucket_count": len(total_series),
+        "time_window_start": time_window_start,
+        "time_window_end": time_window_end,
+        "overdue_after_hours": _coerce_int(filters_dict.get("overdue_after_hours"), default=overdue_after_hours),
+        "top_limit": _coerce_int(filters_dict.get("top_limit"), default=max(1, int(top_limit))),
+        "hotspot_count_total": total_hotspots,
+        "avg_hotspots_per_bucket": (round(total_hotspots / len(total_series), 3) if total_series else None),
+        "top_kind": top_kind,
+        "top_kind_count": top_kind_count,
+        "top_severity": top_severity,
+        "top_severity_count": top_severity_count,
+        "top_section": top_section,
+        "top_section_count": top_section_count,
+        "oldest_overdue": hotspots_payload.get("oldest_overdue"),
+        "top_overdue": (
+            hotspots_payload.get("top_overdue") if isinstance(hotspots_payload.get("top_overdue"), list) else []
+        ),
+        "total_series": total_series,
+        "severity_series": severity_series,
+        "section_series": section_series,
+        "kind_series": kind_series,
+    }
+
+
 def public_job_critic_payload(job_id: str, job: Dict[str, Any]) -> Dict[str, Any]:
     state = job.get("state")
     critic_notes = (state or {}).get("critic_notes") if isinstance(state, dict) else {}
@@ -5162,6 +5458,14 @@ def public_job_review_workflow_sla_csv_text(payload: Dict[str, Any]) -> str:
 
 
 def public_job_review_workflow_sla_trends_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_job_review_workflow_sla_hotspots_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_job_review_workflow_sla_hotspots_trends_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 

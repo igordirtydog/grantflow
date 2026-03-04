@@ -40,6 +40,10 @@ from grantflow.api.public_views import (
     public_job_review_workflow_trends_csv_text,
     public_job_review_workflow_trends_payload,
     public_job_review_workflow_sla_csv_text,
+    public_job_review_workflow_sla_hotspots_csv_text,
+    public_job_review_workflow_sla_hotspots_payload,
+    public_job_review_workflow_sla_hotspots_trends_csv_text,
+    public_job_review_workflow_sla_hotspots_trends_payload,
     public_job_review_workflow_sla_payload,
     public_job_review_workflow_sla_trends_csv_text,
     public_job_review_workflow_sla_trends_payload,
@@ -85,6 +89,8 @@ from grantflow.api.schemas import (
     JobReviewWorkflowSLAProfilePublicResponse,
     JobReviewWorkflowSLARecomputePublicResponse,
     JobReviewWorkflowSLAPublicResponse,
+    JobReviewWorkflowSLAHotspotsPublicResponse,
+    JobReviewWorkflowSLAHotspotsTrendsPublicResponse,
     JobReviewWorkflowSLATrendsPublicResponse,
     JobStatusPublicResponse,
     JobVersionsPublicResponse,
@@ -5991,6 +5997,282 @@ def get_status_review_workflow_sla_trends(
         comment_status=(comment_status or None),
         workflow_state=workflow_state_filter,
         overdue_after_hours=overdue_after_hours,
+    )
+
+
+@app.get(
+    "/status/{job_id}/review/workflow/sla/hotspots",
+    response_model=JobReviewWorkflowSLAHotspotsPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_status_review_workflow_sla_hotspots(
+    job_id: str,
+    request: Request,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+    top_limit: int = Query(default=10, ge=1, le=200, alias="top_limit"),
+    hotspot_kind: Optional[str] = Query(default=None, alias="hotspot_kind"),
+    hotspot_severity: Optional[str] = Query(default=None, alias="hotspot_severity"),
+    min_overdue_hours: Optional[float] = Query(default=None, ge=0.0, le=24 * 365, alias="min_overdue_hours"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    hotspot_kind_filter = _validated_filter_token(
+        hotspot_kind,
+        allowed={"finding", "comment"},
+        detail="Unsupported hotspot_kind filter",
+    )
+    hotspot_severity_filter = _validated_filter_token(
+        hotspot_severity,
+        allowed={"high", "medium", "low", "unknown"},
+        detail="Unsupported hotspot_severity filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    return public_job_review_workflow_sla_hotspots_payload(
+        job_id,
+        job,
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+        top_limit=top_limit,
+        hotspot_kind=hotspot_kind_filter,
+        hotspot_severity=hotspot_severity_filter,
+        min_overdue_hours=min_overdue_hours,
+    )
+
+
+@app.get(
+    "/status/{job_id}/review/workflow/sla/hotspots/trends",
+    response_model=JobReviewWorkflowSLAHotspotsTrendsPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_status_review_workflow_sla_hotspots_trends(
+    job_id: str,
+    request: Request,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+    top_limit: int = Query(default=10, ge=1, le=200, alias="top_limit"),
+    hotspot_kind: Optional[str] = Query(default=None, alias="hotspot_kind"),
+    hotspot_severity: Optional[str] = Query(default=None, alias="hotspot_severity"),
+    min_overdue_hours: Optional[float] = Query(default=None, ge=0.0, le=24 * 365, alias="min_overdue_hours"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    hotspot_kind_filter = _validated_filter_token(
+        hotspot_kind,
+        allowed={"finding", "comment"},
+        detail="Unsupported hotspot_kind filter",
+    )
+    hotspot_severity_filter = _validated_filter_token(
+        hotspot_severity,
+        allowed={"high", "medium", "low", "unknown"},
+        detail="Unsupported hotspot_severity filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    return public_job_review_workflow_sla_hotspots_trends_payload(
+        job_id,
+        job,
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+        top_limit=top_limit,
+        hotspot_kind=hotspot_kind_filter,
+        hotspot_severity=hotspot_severity_filter,
+        min_overdue_hours=min_overdue_hours,
+    )
+
+
+@app.get("/status/{job_id}/review/workflow/sla/hotspots/export")
+def export_status_review_workflow_sla_hotspots(
+    job_id: str,
+    request: Request,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+    top_limit: int = Query(default=10, ge=1, le=200, alias="top_limit"),
+    hotspot_kind: Optional[str] = Query(default=None, alias="hotspot_kind"),
+    hotspot_severity: Optional[str] = Query(default=None, alias="hotspot_severity"),
+    min_overdue_hours: Optional[float] = Query(default=None, ge=0.0, le=24 * 365, alias="min_overdue_hours"),
+    format: Literal["csv", "json"] = Query(default="csv"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    hotspot_kind_filter = _validated_filter_token(
+        hotspot_kind,
+        allowed={"finding", "comment"},
+        detail="Unsupported hotspot_kind filter",
+    )
+    hotspot_severity_filter = _validated_filter_token(
+        hotspot_severity,
+        allowed={"high", "medium", "low", "unknown"},
+        detail="Unsupported hotspot_severity filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    payload = public_job_review_workflow_sla_hotspots_payload(
+        job_id,
+        job,
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+        top_limit=top_limit,
+        hotspot_kind=hotspot_kind_filter,
+        hotspot_severity=hotspot_severity_filter,
+        min_overdue_hours=min_overdue_hours,
+    )
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix=f"grantflow_review_workflow_sla_hotspots_{job_id}",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=public_job_review_workflow_sla_hotspots_csv_text,
+    )
+
+
+@app.get("/status/{job_id}/review/workflow/sla/hotspots/trends/export")
+def export_status_review_workflow_sla_hotspots_trends(
+    job_id: str,
+    request: Request,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+    top_limit: int = Query(default=10, ge=1, le=200, alias="top_limit"),
+    hotspot_kind: Optional[str] = Query(default=None, alias="hotspot_kind"),
+    hotspot_severity: Optional[str] = Query(default=None, alias="hotspot_severity"),
+    min_overdue_hours: Optional[float] = Query(default=None, ge=0.0, le=24 * 365, alias="min_overdue_hours"),
+    format: Literal["csv", "json"] = Query(default="csv"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    hotspot_kind_filter = _validated_filter_token(
+        hotspot_kind,
+        allowed={"finding", "comment"},
+        detail="Unsupported hotspot_kind filter",
+    )
+    hotspot_severity_filter = _validated_filter_token(
+        hotspot_severity,
+        allowed={"high", "medium", "low", "unknown"},
+        detail="Unsupported hotspot_severity filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    payload = public_job_review_workflow_sla_hotspots_trends_payload(
+        job_id,
+        job,
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+        top_limit=top_limit,
+        hotspot_kind=hotspot_kind_filter,
+        hotspot_severity=hotspot_severity_filter,
+        min_overdue_hours=min_overdue_hours,
+    )
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix=f"grantflow_review_workflow_sla_hotspots_trends_{job_id}",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=public_job_review_workflow_sla_hotspots_trends_csv_text,
     )
 
 
