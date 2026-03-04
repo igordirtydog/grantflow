@@ -6,7 +6,22 @@ import re
 import unicodedata
 from typing import Any, Dict, Optional
 
-import chromadb
+_CHROMADB_IMPORT_ERROR: Optional[str] = None
+_chromadb_value: Any
+try:
+    import chromadb as _chromadb_imported
+except Exception as exc:  # pragma: no cover - exercised in runtime-specific environments
+    _CHROMADB_IMPORT_ERROR = str(exc)
+
+    class _ChromaStub:
+        HttpClient = None
+        PersistentClient = None
+
+    _chromadb_value = _ChromaStub()
+else:
+    _chromadb_value = _chromadb_imported
+
+chromadb: Any = _chromadb_value
 
 
 class VectorStore:
@@ -30,6 +45,11 @@ class VectorStore:
             or "./chroma_db"
         )
         self.client: Any = None
+
+        if _CHROMADB_IMPORT_ERROR:
+            self._client_init_error = f"chromadb import failed: {_CHROMADB_IMPORT_ERROR}"
+            self.client = None
+            return
 
         try:
             if self._chroma_host:

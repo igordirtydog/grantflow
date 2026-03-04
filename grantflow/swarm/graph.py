@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from langgraph.graph import END, StateGraph
+from typing import Optional
 
 from grantflow.swarm.nodes.architect import draft_toc
 from grantflow.swarm.nodes.critic import red_team_critic
 from grantflow.swarm.nodes.discovery import validate_input_richness
 from grantflow.swarm.nodes.mel_specialist import mel_assign_indicators
 from grantflow.swarm.state_contract import normalize_state_contract
+
+_LANGGRAPH_IMPORT_ERROR: Optional[str] = None
+try:
+    from langgraph.graph import END as _LANGGRAPH_END_IMPORTED, StateGraph as _LANGGRAPH_STATE_GRAPH_IMPORTED
+except Exception as exc:  # pragma: no cover - runtime/environment dependent
+    _LANGGRAPH_IMPORT_ERROR = str(exc)
+    _LANGGRAPH_END_IMPORTED = "__end__"
+    _LANGGRAPH_STATE_GRAPH_IMPORTED = None
+
+END = _LANGGRAPH_END_IMPORTED
+StateGraph = _LANGGRAPH_STATE_GRAPH_IMPORTED
 
 
 def _start_node(state: dict) -> dict:
@@ -104,7 +115,66 @@ def _route_after_logframe_gate(state: dict):
     return "critic"
 
 
+def _route_after_critic(state: dict):
+    if state.get("needs_revision"):
+        return "architect"
+    return END
+
+
+class _FallbackCompiledGraph:
+    """Minimal sequential fallback when langgraph is unavailable at import/runtime."""
+
+    def __init__(self, *, import_error: Optional[str] = None) -> None:
+        self.import_error = import_error
+
+    def invoke(self, state: dict) -> dict:
+        if not isinstance(state, dict):
+            return {}
+
+        current = _resolve_start_node(state)
+        state["graph_backend"] = "fallback_sequential"
+        if self.import_error:
+            state["graph_backend_reason"] = self.import_error
+
+        while True:
+            if current == "discovery":
+                state = validate_input_richness(state)
+                current = "architect"
+                continue
+
+            if current == "architect":
+                state = draft_toc(state)
+                state = _toc_hitl_gate(state)
+                route = _route_after_toc_gate(state)
+                if route == END:
+                    return state
+                current = "mel"
+                continue
+
+            if current == "mel":
+                state = mel_assign_indicators(state)
+                state = _logframe_hitl_gate(state)
+                route = _route_after_logframe_gate(state)
+                if route == END:
+                    return state
+                current = "critic"
+                continue
+
+            if current == "critic":
+                state = red_team_critic(state)
+                route = _route_after_critic(state)
+                if route == END:
+                    return state
+                current = "architect"
+                continue
+
+            return state
+
+
 def build_graph():
+    if StateGraph is None:
+        return _FallbackCompiledGraph(import_error=_LANGGRAPH_IMPORT_ERROR)
+
     g = StateGraph(dict)
 
     g.add_node("start", _start_node)
@@ -148,14 +218,9 @@ def build_graph():
         },
     )
 
-    def route_after_critic(state: dict):
-        if state.get("needs_revision"):
-            return "architect"
-        return END
-
     g.add_conditional_edges(
         "critic",
-        route_after_critic,
+        _route_after_critic,
         {
             "architect": "architect",
             END: END,

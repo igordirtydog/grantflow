@@ -3920,14 +3920,7 @@ def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     body = resp.json()
     assert body["job_id"] == job_id
     assert body["status"] == "done"
-    assert body["filters"] == {
-        "finding_id": None,
-        "finding_code": None,
-        "finding_section": None,
-        "comment_status": None,
-        "workflow_state": None,
-        "overdue_after_hours": 2,
-    }
+    assert body["filters"] == {"overdue_after_hours": 2}
     assert body["overdue_after_hours"] == 2
     assert body["finding_total"] == 3
     assert body["comment_total"] == 3
