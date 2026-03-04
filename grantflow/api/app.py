@@ -99,7 +99,11 @@ from grantflow.swarm.hitl import HITLStatus, hitl_manager
 from grantflow.swarm.nodes.architect_generation import generate_toc_under_contract
 from grantflow.swarm.nodes.architect_retrieval import retrieve_architect_evidence
 from grantflow.swarm.retrieval_query import donor_query_preset_list
-from grantflow.swarm.citations import citation_traceability_status
+from grantflow.swarm.citations import (
+    citation_traceability_status,
+    is_non_retrieval_citation_type,
+    is_retrieval_grounded_citation_type,
+)
 from grantflow.swarm.state_contract import (
     build_graph_state,
     normalize_rag_namespace,
@@ -764,6 +768,131 @@ def _configured_preflight_grounding_policy_mode() -> str:
     if str(preflight_mode or "").strip():
         return _normalize_grounding_policy_mode(preflight_mode)
     return _normalize_grounding_policy_mode(getattr(config.graph, "grounding_gate_mode", "warn"))
+
+
+def _configured_runtime_grounded_quality_gate_mode() -> str:
+    runtime_mode = getattr(config.graph, "runtime_grounded_quality_gate_mode", None)
+    if str(runtime_mode or "").strip():
+        return _normalize_grounding_policy_mode(runtime_mode)
+    return "strict"
+
+
+def _runtime_grounded_quality_gate_thresholds() -> Dict[str, Any]:
+    min_citations_raw = getattr(config.graph, "runtime_grounded_quality_gate_min_citations", 5)
+    max_non_retrieval_rate_raw = getattr(
+        config.graph,
+        "runtime_grounded_quality_gate_max_non_retrieval_citation_rate",
+        0.35,
+    )
+    min_retrieval_grounded_citations_raw = getattr(
+        config.graph,
+        "runtime_grounded_quality_gate_min_retrieval_grounded_citations",
+        2,
+    )
+
+    try:
+        min_citations = int(min_citations_raw)
+    except (TypeError, ValueError):
+        min_citations = 5
+    try:
+        max_non_retrieval_rate = float(max_non_retrieval_rate_raw)
+    except (TypeError, ValueError):
+        max_non_retrieval_rate = 0.35
+    try:
+        min_retrieval_grounded_citations = int(min_retrieval_grounded_citations_raw)
+    except (TypeError, ValueError):
+        min_retrieval_grounded_citations = 2
+
+    min_citations = max(0, min(min_citations, 10000))
+    max_non_retrieval_rate = max(0.0, min(max_non_retrieval_rate, 1.0))
+    min_retrieval_grounded_citations = max(0, min(min_retrieval_grounded_citations, 10000))
+    return {
+        "min_citations_for_gate": min_citations,
+        "max_non_retrieval_citation_rate": round(max_non_retrieval_rate, 4),
+        "min_retrieval_grounded_citations": min_retrieval_grounded_citations,
+    }
+
+
+def _evaluate_runtime_grounded_quality_gate_from_state(state: Any) -> Dict[str, Any]:
+    mode = _configured_runtime_grounded_quality_gate_mode()
+    thresholds = _runtime_grounded_quality_gate_thresholds()
+    min_citations_for_gate = int(thresholds["min_citations_for_gate"])
+    max_non_retrieval_citation_rate = float(thresholds["max_non_retrieval_citation_rate"])
+    min_retrieval_grounded_citations = int(thresholds["min_retrieval_grounded_citations"])
+
+    state_dict = state if isinstance(state, dict) else {}
+    llm_mode = bool(state_dict.get("llm_mode"))
+    architect_rag_enabled = bool(state_dict.get("architect_rag_enabled", True))
+    raw_architect_retrieval = state_dict.get("architect_retrieval")
+    architect_retrieval = raw_architect_retrieval if isinstance(raw_architect_retrieval, dict) else {}
+    retrieval_expected = (
+        bool(architect_retrieval.get("enabled"))
+        if isinstance(architect_retrieval.get("enabled"), bool)
+        else architect_rag_enabled
+    )
+    applicable = bool(llm_mode and architect_rag_enabled and retrieval_expected)
+
+    raw_citations = state_dict.get("citations")
+    citations = [item for item in raw_citations if isinstance(item, dict)] if isinstance(raw_citations, list) else []
+    citation_count = len(citations)
+    non_retrieval_citation_count = 0
+    retrieval_grounded_citation_count = 0
+    for citation in citations:
+        citation_type = citation.get("citation_type")
+        if is_non_retrieval_citation_type(citation_type):
+            non_retrieval_citation_count += 1
+        if is_retrieval_grounded_citation_type(citation_type):
+            retrieval_grounded_citation_count += 1
+
+    non_retrieval_citation_rate = round(non_retrieval_citation_count / citation_count, 4) if citation_count else None
+    retrieval_grounded_citation_rate = (
+        round(retrieval_grounded_citation_count / citation_count, 4) if citation_count else None
+    )
+
+    reasons: list[str] = []
+    if applicable and mode != "off":
+        if citation_count < min_citations_for_gate:
+            reasons.append("insufficient_citations_for_runtime_grounded_gate")
+        if non_retrieval_citation_rate is None or non_retrieval_citation_rate > max_non_retrieval_citation_rate:
+            reasons.append("non_retrieval_citation_rate_above_max")
+        if retrieval_grounded_citation_count < min_retrieval_grounded_citations:
+            reasons.append("retrieval_grounded_citation_count_below_min")
+
+    if not applicable:
+        passed = True
+        blocking = False
+        summary = "not_applicable_for_non_llm_or_retrieval_disabled"
+        risk_level = "none"
+    elif mode == "off":
+        passed = True
+        blocking = False
+        summary = "runtime_grounded_quality_gate_off"
+        risk_level = "none"
+    else:
+        passed = not reasons
+        blocking = mode == "strict" and not passed
+        summary = "runtime_grounded_signals_ok" if passed else ",".join(reasons)
+        risk_level = "low" if passed else "high"
+
+    return {
+        "mode": mode,
+        "applicable": applicable,
+        "passed": passed,
+        "blocking": blocking,
+        "go_ahead": not blocking,
+        "risk_level": risk_level,
+        "summary": summary,
+        "reasons": reasons,
+        "llm_mode": llm_mode,
+        "architect_rag_enabled": architect_rag_enabled,
+        "retrieval_expected": retrieval_expected,
+        "citation_count": citation_count,
+        "non_retrieval_citation_count": non_retrieval_citation_count,
+        "retrieval_grounded_citation_count": retrieval_grounded_citation_count,
+        "non_retrieval_citation_rate": non_retrieval_citation_rate,
+        "retrieval_grounded_citation_rate": retrieval_grounded_citation_rate,
+        "thresholds": thresholds,
+    }
 
 
 def _configured_mel_grounding_policy_mode() -> str:
@@ -1967,6 +2096,54 @@ def _state_grounding_gate(state: Any) -> Dict[str, Any]:
     return gate if isinstance(gate, dict) else {}
 
 
+def _state_runtime_grounded_quality_gate(state: Any) -> Dict[str, Any]:
+    if not isinstance(state, dict):
+        return {}
+    gate = state.get("grounded_quality_gate")
+    return gate if isinstance(gate, dict) else {}
+
+
+def _append_runtime_grounded_quality_gate_finding(state: dict, gate: Dict[str, Any]) -> None:
+    if not isinstance(state, dict):
+        return
+    reasons = gate.get("reasons") if isinstance(gate.get("reasons"), list) else []
+    thresholds = gate.get("thresholds") if isinstance(gate.get("thresholds"), dict) else {}
+    non_retrieval_rate = gate.get("non_retrieval_citation_rate")
+    retrieval_grounded_count = gate.get("retrieval_grounded_citation_count")
+    citation_count = gate.get("citation_count")
+    summary = str(gate.get("summary") or "").strip() or "runtime grounded quality gate failed"
+    rationale = (
+        f"{summary}; citation_count={citation_count}; "
+        f"non_retrieval_rate={non_retrieval_rate}; "
+        f"retrieval_grounded_count={retrieval_grounded_count}; "
+        f"thresholds={thresholds}; reasons={reasons}"
+    )
+    existing = state_critic_findings(state, default_source="rules")
+    existing_codes = {str(item.get("code") or "").strip().upper() for item in existing if isinstance(item, dict)}
+    if "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK" in existing_codes:
+        return
+    new_finding = {
+        "code": "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK",
+        "severity": "high",
+        "section": "general",
+        "version_id": None,
+        "message": "Grounded quality gate blocked finalization for LLM generation.",
+        "rationale": rationale,
+        "fix_suggestion": (
+            "Upload additional donor/country evidence and rerun generation to increase retrieval-grounded citations "
+            "and reduce non-retrieval citations."
+        ),
+        "fix_hint": "Use /ingest for relevant policy/context PDFs, then rerun /generate in grounded mode.",
+        "source": "rules",
+    }
+    write_state_critic_findings(
+        state,
+        list(existing) + [new_finding],
+        previous_items=existing,
+        default_source="rules",
+    )
+
+
 def _grounding_gate_block_reason(state: Any) -> Optional[str]:
     gate = _state_grounding_gate(state)
     if not gate:
@@ -1977,6 +2154,18 @@ def _grounding_gate_block_reason(state: Any) -> Optional[str]:
         return None
     summary = str(gate.get("summary") or "").strip() or "weak grounding signals"
     return f"Grounding gate (strict) blocked finalization: {summary}"
+
+
+def _runtime_grounded_quality_gate_block_reason(state: Any) -> Optional[str]:
+    gate = _state_runtime_grounded_quality_gate(state)
+    if not gate:
+        return None
+    if not bool(gate.get("blocking")):
+        return None
+    if str(gate.get("mode") or "").lower() != "strict":
+        return None
+    summary = str(gate.get("summary") or "").strip() or "runtime grounded signals not acceptable"
+    return f"Grounded quality gate (strict) blocked finalization: {summary}"
 
 
 def _mel_grounding_policy_block_reason(state: Any) -> Optional[str]:
@@ -3131,7 +3320,29 @@ def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
         final_state["hitl_pending"] = False
         normalize_state_contract(final_state)
         _attach_export_contract_gate(final_state)
+        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
+        final_state["grounded_quality_gate"] = runtime_grounded_gate
         if _job_is_canceled(job_id):
+            return
+        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
+        if runtime_grounded_block_reason:
+            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
+            _record_job_event(
+                job_id,
+                "runtime_grounded_quality_gate_blocked",
+                mode=str(runtime_grounded_gate.get("mode") or "strict"),
+                summary=str(runtime_grounded_gate.get("summary") or ""),
+                reasons=list(runtime_grounded_gate.get("reasons") or []),
+            )
+            _set_job(
+                job_id,
+                {
+                    "status": "error",
+                    "error": runtime_grounded_block_reason,
+                    "state": final_state,
+                    "hitl_enabled": False,
+                },
+            )
             return
         grounding_block_reason = _grounding_gate_block_reason(final_state)
         if grounding_block_reason:
@@ -3216,6 +3427,28 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
             final_state.pop(key, None)
         final_state["hitl_pending"] = False
         _attach_export_contract_gate(final_state)
+        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
+        final_state["grounded_quality_gate"] = runtime_grounded_gate
+        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
+        if runtime_grounded_block_reason:
+            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
+            _record_job_event(
+                job_id,
+                "runtime_grounded_quality_gate_blocked",
+                mode=str(runtime_grounded_gate.get("mode") or "strict"),
+                summary=str(runtime_grounded_gate.get("summary") or ""),
+                reasons=list(runtime_grounded_gate.get("reasons") or []),
+            )
+            _set_job(
+                job_id,
+                {
+                    "status": "error",
+                    "error": runtime_grounded_block_reason,
+                    "state": final_state,
+                    "hitl_enabled": True,
+                },
+            )
+            return
         grounding_block_reason = _grounding_gate_block_reason(final_state)
         if grounding_block_reason:
             _set_job(
@@ -3287,6 +3520,7 @@ def _health_diagnostics() -> dict[str, Any]:
 
     vector_backend = "chroma" if getattr(vector_store, "client", None) is not None else "memory"
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
+    runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
     diagnostics: dict[str, Any] = {
@@ -3311,6 +3545,10 @@ def _health_diagnostics() -> dict[str, Any]:
         "preflight_grounding_policy": {
             "mode": _configured_preflight_grounding_policy_mode(),
             "thresholds": preflight_grounding_thresholds,
+        },
+        "runtime_grounded_quality_gate": {
+            "mode": _configured_runtime_grounded_quality_gate_mode(),
+            "thresholds": runtime_grounded_quality_gate_thresholds,
         },
         "mel_grounding_policy": {
             "mode": _configured_mel_grounding_policy_mode(),
@@ -3413,6 +3651,7 @@ def readiness_check():
         job_runner_ready = bool(job_runner_diag.get("running"))
     ready = bool(vector_ready.get("ready")) and job_runner_ready
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
+    runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
     payload = {
@@ -3427,6 +3666,10 @@ def readiness_check():
             "preflight_grounding_policy": {
                 "mode": _configured_preflight_grounding_policy_mode(),
                 "thresholds": preflight_grounding_thresholds,
+            },
+            "runtime_grounded_quality_gate": {
+                "mode": _configured_runtime_grounded_quality_gate_mode(),
+                "thresholds": runtime_grounded_quality_gate_thresholds,
             },
             "mel_grounding_policy": {
                 "mode": _configured_mel_grounding_policy_mode(),

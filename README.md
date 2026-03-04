@@ -89,7 +89,7 @@ curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/ready
 ```
 
-`/ready` now includes `checks.preflight_grounding_policy` with active mode and thresholds.
+`/ready` now includes `checks.preflight_grounding_policy` and `checks.runtime_grounded_quality_gate` with active modes and thresholds.
 
 ### 4) (Optional) Configure preflight grounding thresholds
 
@@ -106,7 +106,21 @@ Notes:
 - If `GRANTFLOW_PREFLIGHT_GROUNDING_POLICY_MODE` is not set, it falls back to `GRANTFLOW_GROUNDING_GATE_MODE`.
 - `strict_preflight=true` blocks when either readiness risk or grounding risk is `high`.
 
-### 4.1) (Optional) Configure pipeline runner mode
+### 4.1) (Optional) Configure runtime grounded quality gate
+
+```bash
+export GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MODE=strict
+export GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MIN_CITATIONS=5
+export GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MAX_NON_RETRIEVAL_CITATION_RATE=0.35
+export GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MIN_RETRIEVAL_GROUNDED_CITATIONS=2
+```
+
+Notes:
+- Applies only to `llm_mode=true` with `architect_rag_enabled=true`.
+- In `strict` mode, job finalization is blocked when grounded signals are below threshold.
+- Gate outcome is exposed in `GET /status/{job_id}/quality` as `grounded_gate`.
+
+### 4.2) (Optional) Configure pipeline runner mode
 
 ```bash
 export GRANTFLOW_JOB_RUNNER_MODE=background_tasks   # or inmemory_queue

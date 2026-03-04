@@ -626,6 +626,7 @@ class JobQualitySummaryPublicResponse(BaseModel):
     architect_claims: Optional[JobQualityArchitectClaimsSummaryPublicResponse] = None
     mel: Optional[JobQualityMelSummaryPublicResponse] = None
     mel_grounding_policy: Optional[Dict[str, Any]] = None
+    grounded_gate: Optional[Dict[str, Any]] = None
     export_contract: Optional[JobQualityExportContractPublicResponse] = None
     readiness: Optional[JobQualityReadinessSummaryPublicResponse] = None
     toc_text_quality: Optional[JobQualityToCTextQualitySummaryPublicResponse] = None

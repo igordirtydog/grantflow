@@ -402,6 +402,7 @@ def render_demo_ui_html() -> str:
               <div class="kpi"><div class="label">MEL fallback</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Preflight risk</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Strict preflight</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Grounded gate</div><div class="value mono">-</div></div>
             </div>
             <div id="qualityPreflightMetaLine" class="footer-note mono">warning_count=- · coverage_rate=-</div>
             <div class="row" style="margin-top:10px;">
@@ -2642,6 +2643,10 @@ def render_demo_ui_html() -> str:
         const mel = summary?.mel || {};
         const readiness = summary?.readiness || {};
         const preflight = summary?.preflight || {};
+        const groundedGate =
+          summary?.grounded_gate && typeof summary.grounded_gate === "object" && !Array.isArray(summary.grounded_gate)
+            ? summary.grounded_gate
+            : {};
         renderGeneratePreflightAlert(preflight);
         const advisoryDiagnostics =
           critic && typeof critic.llm_advisory_diagnostics === "object" ? critic.llm_advisory_diagnostics : null;
@@ -2653,6 +2658,22 @@ def render_demo_ui_html() -> str:
           preflightRiskLevel === "-"
             ? "-"
             : `${preflightRiskLevel}${preflightWarningCount > 0 ? ` (${preflightWarningCount})` : ""}`;
+        const groundedGateMode = String(groundedGate?.mode || "-");
+        const groundedGatePassed = groundedGate?.passed;
+        const groundedGateBlocking = groundedGate?.blocking;
+        const groundedGateApplicable = groundedGate?.applicable;
+        const groundedGateReasons = Array.isArray(groundedGate?.reasons)
+          ? groundedGate.reasons.map((x) => String(x || "").trim()).filter(Boolean)
+          : [];
+        let groundedGateStatus = "-";
+        if (groundedGateApplicable === false) groundedGateStatus = "n/a";
+        else if (groundedGateBlocking === true) groundedGateStatus = "blocked";
+        else if (groundedGatePassed === true) groundedGateStatus = "pass";
+        else if (groundedGatePassed === false) groundedGateStatus = "warn";
+        const groundedGateValue =
+          groundedGateStatus === "-"
+            ? "-"
+            : `${groundedGateStatus} (${groundedGateMode}${groundedGateReasons.length ? `, ${groundedGateReasons.length} reasons` : ""})`;
         const values = [
           typeof summary?.quality_score === "number" ? Number(summary.quality_score).toFixed(2) : "-",
           typeof summary?.critic_score === "number" ? Number(summary.critic_score).toFixed(2) : "-",
@@ -2676,6 +2697,7 @@ def render_demo_ui_html() -> str:
             : "-",
           preflightRiskValue,
           strictPreflightValue,
+          groundedGateValue,
         ];
         const qualityValueNodes = [...els.qualityCards.querySelectorAll(".kpi .value")];
         qualityValueNodes.forEach((node, i) => {
@@ -2777,6 +2799,27 @@ def render_demo_ui_html() -> str:
                 ? "warning_count=- · coverage_rate=-"
                 : `warning_count=${warningCountLabel} · coverage_rate=${coverageRateLabel} · grounding=${groundingRiskLabel}`;
           }
+        }
+        const groundedGateNode = qualityValueNodes[12];
+        if (groundedGateNode) {
+          groundedGateNode.classList.remove("risk-high", "risk-medium", "risk-low", "risk-none");
+          if (groundedGateApplicable === false) {
+            groundedGateNode.classList.add("risk-none");
+          } else if (groundedGateBlocking === true) {
+            groundedGateNode.classList.add("risk-high");
+          } else if (groundedGatePassed === true) {
+            groundedGateNode.classList.add("risk-low");
+          } else if (groundedGatePassed === false) {
+            groundedGateNode.classList.add("risk-medium");
+          } else {
+            groundedGateNode.classList.add("risk-none");
+          }
+          const summaryText = String(groundedGate?.summary || "").trim();
+          groundedGateNode.title = summaryText
+            ? `${summaryText}${groundedGateReasons.length ? ` · reasons=${groundedGateReasons.join(", ")}` : ""}`
+            : groundedGateReasons.length
+              ? `reasons=${groundedGateReasons.join(", ")}`
+              : "No grounded gate summary";
         }
         renderKeyValueList(
           els.qualityMelSummaryList,

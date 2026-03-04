@@ -29,6 +29,10 @@ class GraphConfig(BaseModel):
     hitl_enabled: bool = True
     grounding_gate_mode: str = "warn"
     preflight_grounding_policy_mode: str = "warn"
+    runtime_grounded_quality_gate_mode: str = "strict"
+    runtime_grounded_quality_gate_min_citations: int = 5
+    runtime_grounded_quality_gate_max_non_retrieval_citation_rate: float = 0.35
+    runtime_grounded_quality_gate_min_retrieval_grounded_citations: int = 2
     grounding_min_citations_for_calibration: int = 5
     grounding_max_weak_rag_or_fallback_ratio: float = 0.6
     grounding_max_low_confidence_ratio: float = 0.75
@@ -111,6 +115,16 @@ class GrantFlowConfig(BaseModel):
                 hitl_enabled=_env("GRANTFLOW_HITL_ENABLED", "true").lower() == "true",
                 grounding_gate_mode=grounding_gate_mode,
                 preflight_grounding_policy_mode=preflight_grounding_policy_mode,
+                runtime_grounded_quality_gate_mode=_env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MODE", "strict"),
+                runtime_grounded_quality_gate_min_citations=int(
+                    _env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MIN_CITATIONS", "5")
+                ),
+                runtime_grounded_quality_gate_max_non_retrieval_citation_rate=float(
+                    _env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MAX_NON_RETRIEVAL_CITATION_RATE", "0.35")
+                ),
+                runtime_grounded_quality_gate_min_retrieval_grounded_citations=int(
+                    _env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MIN_RETRIEVAL_GROUNDED_CITATIONS", "2")
+                ),
                 grounding_min_citations_for_calibration=int(
                     _env("GRANTFLOW_GROUNDING_MIN_CITATIONS_FOR_CALIBRATION", "5")
                 ),

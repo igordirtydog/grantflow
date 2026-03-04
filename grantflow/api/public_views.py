@@ -1722,6 +1722,10 @@ def public_job_quality_payload(
     mel_grounding_policy: Dict[str, Any] = (
         cast(Dict[str, Any], raw_mel_grounding_policy) if isinstance(raw_mel_grounding_policy, dict) else {}
     )
+    raw_grounded_gate = state_dict.get("grounded_quality_gate")
+    grounded_gate: Dict[str, Any] = (
+        cast(Dict[str, Any], raw_grounded_gate) if isinstance(raw_grounded_gate, dict) else {}
+    )
     readiness_payload = _public_job_quality_readiness_payload(job, ingest_inventory_rows)
     preflight_payload = _public_job_preflight_payload(job)
     export_contract_gate = _state_export_contract_gate(state_dict)
@@ -1835,7 +1839,7 @@ def public_job_quality_payload(
         else None
     )
 
-    return {
+    payload: Dict[str, Any] = {
         "job_id": str(job_id),
         "status": str(job.get("status") or ""),
         "quality_score": sanitize_for_public_response(state_dict.get("quality_score")),
@@ -2184,6 +2188,9 @@ def public_job_quality_payload(
         "readiness": readiness_payload,
         "toc_text_quality": toc_text_quality,
     }
+    if grounded_gate:
+        payload["grounded_gate"] = sanitize_for_public_response(grounded_gate)
+    return payload
 
 
 def public_portfolio_metrics_payload(

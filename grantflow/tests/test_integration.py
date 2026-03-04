@@ -50,6 +50,12 @@ def test_health_endpoint():
     assert 0.0 <= float(thresholds["high_risk_depth_coverage_threshold"]) <= 1.0
     assert 0.0 <= float(thresholds["medium_risk_depth_coverage_threshold"]) <= 1.0
     assert int(thresholds["min_uploads"]) >= 1
+    runtime_gate = diagnostics["runtime_grounded_quality_gate"]
+    assert runtime_gate["mode"] in {"warn", "strict", "off"}
+    runtime_thresholds = runtime_gate["thresholds"]
+    assert int(runtime_thresholds["min_citations_for_gate"]) >= 0
+    assert 0.0 <= float(runtime_thresholds["max_non_retrieval_citation_rate"]) <= 1.0
+    assert int(runtime_thresholds["min_retrieval_grounded_citations"]) >= 0
     mel_policy = diagnostics["mel_grounding_policy"]
     assert mel_policy["mode"] in {"warn", "strict", "off"}
     mel_thresholds = mel_policy["thresholds"]
@@ -117,6 +123,7 @@ def test_demo_console_page_loads():
     assert "Strict Preflight" in body
     assert "Preflight risk" in body
     assert "Strict preflight" in body
+    assert "Grounded gate" in body
     assert "inputContextJson" in body
     assert "usaid_gov_ai_kazakhstan" in body
     assert "worldbank_public_sector_uzbekistan" in body
@@ -359,6 +366,12 @@ def test_ready_endpoint():
     assert 0.0 <= float(thresholds["high_risk_coverage_threshold"]) <= 1.0
     assert 0.0 <= float(thresholds["medium_risk_coverage_threshold"]) <= 1.0
     assert int(thresholds["min_uploads"]) >= 1
+    runtime_gate = checks["runtime_grounded_quality_gate"]
+    assert runtime_gate["mode"] in {"warn", "strict", "off"}
+    runtime_thresholds = runtime_gate["thresholds"]
+    assert int(runtime_thresholds["min_citations_for_gate"]) >= 0
+    assert 0.0 <= float(runtime_thresholds["max_non_retrieval_citation_rate"]) <= 1.0
+    assert int(runtime_thresholds["min_retrieval_grounded_citations"]) >= 0
     mel_policy = checks["mel_grounding_policy"]
     assert mel_policy["mode"] in {"warn", "strict", "off"}
     mel_thresholds = mel_policy["thresholds"]
@@ -393,6 +406,8 @@ def test_ready_endpoint_returns_503_when_vector_store_unavailable(monkeypatch):
     assert "chroma unavailable" in body["detail"]["checks"]["vector_store"]["error"]
     preflight_policy = body["detail"]["checks"]["preflight_grounding_policy"]
     assert preflight_policy["mode"] in {"warn", "strict", "off"}
+    runtime_gate = body["detail"]["checks"]["runtime_grounded_quality_gate"]
+    assert runtime_gate["mode"] in {"warn", "strict", "off"}
     mel_policy = body["detail"]["checks"]["mel_grounding_policy"]
     assert mel_policy["mode"] in {"warn", "strict", "off"}
     export_policy = body["detail"]["checks"]["export_grounding_policy"]
@@ -435,6 +450,31 @@ def test_ready_endpoint_preflight_policy_mode_can_differ_from_pipeline_mode(monk
     assert response.status_code == 200
     body = response.json()
     assert body["checks"]["preflight_grounding_policy"]["mode"] == "warn"
+
+
+def test_ready_endpoint_reflects_runtime_grounded_quality_gate_overrides(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_mode", "strict")
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_min_citations", 9)
+    monkeypatch.setattr(
+        api_app_module.config.graph,
+        "runtime_grounded_quality_gate_max_non_retrieval_citation_rate",
+        0.22,
+    )
+    monkeypatch.setattr(
+        api_app_module.config.graph,
+        "runtime_grounded_quality_gate_min_retrieval_grounded_citations",
+        4,
+    )
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    policy = body["checks"]["runtime_grounded_quality_gate"]
+    assert policy["mode"] == "strict"
+    thresholds = policy["thresholds"]
+    assert thresholds["min_citations_for_gate"] == 9
+    assert thresholds["max_non_retrieval_citation_rate"] == 0.22
+    assert thresholds["min_retrieval_grounded_citations"] == 4
 
 
 def test_ready_endpoint_reflects_mel_grounding_policy_overrides(monkeypatch):
@@ -1284,6 +1324,144 @@ def test_strict_grounding_gate_blocks_job_finalization(monkeypatch):
     assert gate.get("mode") == "strict"
     assert gate.get("blocking") is True
     assert gate.get("passed") is False
+
+
+def test_runtime_grounded_quality_gate_blocks_llm_when_non_retrieval_signals_dominate(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "grounding_gate_mode", "warn")
+    monkeypatch.setattr(api_app_module.config.graph, "mel_grounding_policy_mode", "warn")
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_mode", "strict")
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_min_citations", 1)
+    monkeypatch.setattr(
+        api_app_module.config.graph, "runtime_grounded_quality_gate_max_non_retrieval_citation_rate", 0.2
+    )
+    monkeypatch.setattr(
+        api_app_module.config.graph, "runtime_grounded_quality_gate_min_retrieval_grounded_citations", 1
+    )
+    monkeypatch.setattr(
+        api_app_module,
+        "_build_generate_preflight",
+        lambda donor_id, strategy, client_metadata, **kwargs: {
+            "donor_id": donor_id,
+            "risk_level": "low",
+            "grounding_risk_level": "low",
+            "go_ahead": True,
+            "warning_count": 0,
+            "warnings": [],
+            "retrieval_namespace": "usaid_ads201",
+            "namespace_empty": False,
+            "grounding_policy": {
+                "mode": "warn",
+                "risk_level": "low",
+                "blocking": False,
+                "go_ahead": True,
+                "summary": "readiness_signals_ok",
+                "reasons": ["sufficient_readiness_signals"],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        api_app_module.vector_store,
+        "query",
+        lambda namespace, query_texts, n_results=5, where=None, top_k=None: {
+            "documents": [[]],
+            "metadatas": [[]],
+            "ids": [[]],
+        },
+    )
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Gov workflow modernization", "country": "Kenya"},
+            "llm_mode": True,
+            "hitl_enabled": False,
+            "architect_rag_enabled": True,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    terminal = _wait_for_terminal_status(job_id)
+    assert terminal["status"] == "error"
+    assert "Grounded quality gate (strict) blocked finalization" in str(terminal.get("error") or "")
+    state = terminal.get("state") or {}
+    gate = state.get("grounded_quality_gate") or {}
+    assert gate.get("mode") == "strict"
+    assert gate.get("applicable") is True
+    assert gate.get("blocking") is True
+    assert gate.get("passed") is False
+    reasons = gate.get("reasons") if isinstance(gate.get("reasons"), list) else []
+    assert "non_retrieval_citation_rate_above_max" in reasons
+    flaws = (state.get("critic_notes") or {}).get("fatal_flaws") or []
+    flaw_codes = {str(item.get("code") or "") for item in flaws if isinstance(item, dict)}
+    assert "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK" in flaw_codes
+
+
+def test_runtime_grounded_quality_gate_skips_when_architect_rag_disabled(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "grounding_gate_mode", "warn")
+    monkeypatch.setattr(api_app_module.config.graph, "mel_grounding_policy_mode", "warn")
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_mode", "strict")
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_grounded_quality_gate_min_citations", 1)
+    monkeypatch.setattr(
+        api_app_module.config.graph, "runtime_grounded_quality_gate_max_non_retrieval_citation_rate", 0.0
+    )
+    monkeypatch.setattr(
+        api_app_module.config.graph, "runtime_grounded_quality_gate_min_retrieval_grounded_citations", 99
+    )
+    monkeypatch.setattr(
+        api_app_module,
+        "_build_generate_preflight",
+        lambda donor_id, strategy, client_metadata, **kwargs: {
+            "donor_id": donor_id,
+            "risk_level": "low",
+            "grounding_risk_level": "low",
+            "go_ahead": True,
+            "warning_count": 0,
+            "warnings": [],
+            "retrieval_namespace": "usaid_ads201",
+            "namespace_empty": False,
+            "grounding_policy": {
+                "mode": "warn",
+                "risk_level": "low",
+                "blocking": False,
+                "go_ahead": True,
+                "summary": "readiness_signals_ok",
+                "reasons": ["sufficient_readiness_signals"],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        api_app_module.vector_store,
+        "query",
+        lambda namespace, query_texts, n_results=5, where=None, top_k=None: {
+            "documents": [[]],
+            "metadatas": [[]],
+            "ids": [[]],
+        },
+    )
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Gov workflow modernization", "country": "Kenya"},
+            "llm_mode": True,
+            "hitl_enabled": False,
+            "architect_rag_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    terminal = _wait_for_terminal_status(job_id)
+    assert terminal["status"] == "done"
+    state = terminal.get("state") or {}
+    gate = state.get("grounded_quality_gate") or {}
+    assert gate.get("mode") == "strict"
+    assert gate.get("applicable") is False
+    assert gate.get("blocking") is False
+    assert gate.get("passed") is True
 
 
 def test_strict_mel_grounding_policy_blocks_job_finalization(monkeypatch):
@@ -3979,6 +4157,14 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
                     "citation_policy": {"threshold_mode": "donor_section"},
                 },
                 "architect_retrieval": {"enabled": True, "hits_count": 3, "namespace": "usaid_ads201"},
+                "grounded_quality_gate": {
+                    "mode": "strict",
+                    "applicable": True,
+                    "passed": True,
+                    "blocking": False,
+                    "summary": "runtime_grounded_signals_ok",
+                    "reasons": [],
+                },
                 "critic_notes": {
                     "engine": "rules",
                     "rule_score": 8.9,
@@ -4172,6 +4358,10 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert export_contract["template_key"] == "usaid"
     assert export_contract["status"] == "warning"
     assert "missing_required_toc_sections" in (export_contract.get("reasons") or [])
+    grounded_gate = body.get("grounded_gate") or {}
+    assert grounded_gate["mode"] == "strict"
+    assert grounded_gate["blocking"] is False
+    assert grounded_gate["passed"] is True
     assert body["preflight"]["risk_level"] == "medium"
     assert body["preflight"]["warning_count"] == 1
     assert body["preflight"]["warnings"][0]["code"] == "LOW_DOC_COVERAGE"
