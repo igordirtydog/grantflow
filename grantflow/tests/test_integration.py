@@ -3904,6 +3904,15 @@ def test_metrics_endpoint_derives_timeline_metrics_from_events():
     assert body["time_to_first_draft_seconds"] == 60.0
     assert body["time_to_terminal_seconds"] == 360.0
     assert body["time_in_pending_hitl_seconds"] == 245.0
+    assert body["retrieval_expected"] is True
+    assert body["grounding_risk_level"] == "unknown"
+    assert body["citation_count"] == 0
+    assert body["fallback_namespace_citation_count"] == 0
+    assert body["strategy_reference_citation_count"] == 0
+    assert body["retrieval_grounded_citation_count"] == 0
+    assert body["non_retrieval_citation_count"] == 0
+    assert body.get("retrieval_grounded_citation_rate") is None
+    assert body.get("non_retrieval_citation_rate") is None
 
 
 def test_quality_summary_endpoint_aggregates_quality_signals():

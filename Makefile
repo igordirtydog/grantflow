@@ -1,0 +1,32 @@
+.PHONY: eval-grounded-ab
+
+PYTHON ?= python3
+EVAL_ARTIFACTS_DIR ?= eval-artifacts
+GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
+GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
+GROUNDED_MAX_NON_RETRIEVAL ?= 0.35
+
+eval-grounded-ab:
+	mkdir -p $(EVAL_ARTIFACTS_DIR)
+	$(PYTHON) -m grantflow.eval.harness \
+		--cases-file $(GROUNDED_CASES_FILE) \
+		--suite-label grounded-ab-a \
+		--skip-expectations \
+		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.json
+	$(PYTHON) -m grantflow.eval.harness \
+		--cases-file $(GROUNDED_CASES_FILE) \
+		--suite-label grounded-ab-b \
+		--skip-expectations \
+		--force-no-architect-rag \
+		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-b-report.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-b-report.json
+	$(PYTHON) scripts/eval_ab_diff.py \
+		--a-json $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.json \
+		--b-json $(EVAL_ARTIFACTS_DIR)/grounded-ab-b-report.json \
+		--a-label architect_rag_on \
+		--b-label architect_rag_off \
+		--guard-donors $(GROUNDED_GUARD_DONORS) \
+		--max-a-non-retrieval-rate $(GROUNDED_MAX_NON_RETRIEVAL) \
+		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json

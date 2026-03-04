@@ -374,6 +374,7 @@ def render_demo_ui_html() -> str:
               <div class="kpi"><div class="label">Pauses</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Resumes</div><div class="value mono">-</div></div>
               <div class="kpi"><div class="label">Terminal status</div><div class="value mono">-</div></div>
+              <div class="kpi"><div class="label">Grounding risk</div><div class="value mono">-</div></div>
             </div>
             <div style="margin-top:10px;">
               <pre id="metricsJson">{}</pre>
@@ -2342,6 +2343,19 @@ def render_demo_ui_html() -> str:
       }
 
       function renderMetricsCards(metrics) {
+        const nonRetrievalRate = Number(metrics.non_retrieval_citation_rate ?? NaN);
+        const retrievalGroundedRate = Number(metrics.retrieval_grounded_citation_rate ?? NaN);
+        const citationCount = Number(metrics.citation_count ?? 0);
+        const fallbackCount = Number(metrics.fallback_namespace_citation_count ?? 0);
+        const strategyReferenceCount = Number(metrics.strategy_reference_citation_count ?? 0);
+        const nonRetrievalCount = Number(metrics.non_retrieval_citation_count ?? 0);
+        const retrievalGroundedCount = Number(metrics.retrieval_grounded_citation_count ?? 0);
+        const retrievalExpected =
+          typeof metrics.retrieval_expected === "boolean" ? String(metrics.retrieval_expected) : "-";
+        const groundingRisk = String(metrics.grounding_risk_level || "unknown").toLowerCase();
+        const groundingRiskValue = Number.isFinite(nonRetrievalRate)
+          ? `${groundingRisk} (${(nonRetrievalRate * 100).toFixed(1)}%)`
+          : groundingRisk;
         const values = [
           fmtSec(metrics.time_to_first_draft_seconds),
           fmtSec(metrics.time_to_terminal_seconds),
@@ -2349,10 +2363,22 @@ def render_demo_ui_html() -> str:
           String(metrics.pause_count ?? "-"),
           String(metrics.resume_count ?? "-"),
           String(metrics.terminal_status ?? metrics.status ?? "-"),
+          groundingRiskValue,
         ];
-        [...els.metricsCards.querySelectorAll(".kpi .value")].forEach((node, i) => {
+        const valueNodes = [...els.metricsCards.querySelectorAll(".kpi .value")];
+        valueNodes.forEach((node, i) => {
           node.textContent = values[i] ?? "-";
         });
+        const groundingRiskNode = valueNodes[6];
+        if (groundingRiskNode) {
+          setRiskClass(groundingRiskNode, groundingRisk);
+          groundingRiskNode.title =
+            citationCount > 0
+              ? `non_retrieval=${nonRetrievalCount}/${citationCount} (${Number.isFinite(nonRetrievalRate) ? (nonRetrievalRate * 100).toFixed(1) + "%" : "-"})` +
+                ` · retrieval_grounded=${retrievalGroundedCount}/${citationCount} (${Number.isFinite(retrievalGroundedRate) ? (retrievalGroundedRate * 100).toFixed(1) + "%" : "-"})` +
+                ` · fallback=${fallbackCount} · strategy_ref=${strategyReferenceCount} · retrieval_expected=${retrievalExpected}`
+              : `No citations · retrieval_expected=${retrievalExpected}`;
+        }
       }
 
       function renderQualityAdvisoryBadge(advisoryDiagnostics) {

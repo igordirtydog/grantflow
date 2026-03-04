@@ -287,7 +287,85 @@ def _format_text(payload: dict[str, Any]) -> str:
                 )
             )
 
+    guard = payload.get("guard")
+    if isinstance(guard, dict):
+        status = str(guard.get("status") or "not_configured")
+        lines.append("")
+        lines.append(f"Guard status: {status}")
+        if status == "failed":
+            failures = guard.get("failures")
+            if isinstance(failures, list):
+                for item in failures:
+                    if not isinstance(item, dict):
+                        continue
+                    lines.append(
+                        (
+                            f"- FAIL {item.get('donor_id')}: "
+                            f"a_non_retrieval_rate_avg={item.get('a_non_retrieval_rate_avg')} "
+                            f"threshold={item.get('max_allowed_non_retrieval_rate')}"
+                        )
+                    )
+        missing_donors = guard.get("missing_donors")
+        if isinstance(missing_donors, list) and missing_donors:
+            lines.append(f"- Missing donors in matched set: {', '.join(str(x) for x in missing_donors)}")
+
     return "\n".join(lines)
+
+
+def _parse_guard_donors(raw: str | None) -> list[str]:
+    if raw is None:
+        return []
+    rows: list[str] = []
+    seen: set[str] = set()
+    for item in raw.split(","):
+        token = str(item or "").strip().lower()
+        if not token or token in seen:
+            continue
+        seen.add(token)
+        rows.append(token)
+    return rows
+
+
+def _evaluate_guard(
+    *,
+    payload: dict[str, Any],
+    guard_donors: list[str],
+    max_a_non_retrieval_rate: float | None,
+) -> dict[str, Any]:
+    if not guard_donors or max_a_non_retrieval_rate is None:
+        return {"status": "not_configured", "guard_donors": guard_donors}
+
+    donor_summary = payload.get("donor_summary")
+    donor_rows = donor_summary if isinstance(donor_summary, dict) else {}
+    failures: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for donor_id in guard_donors:
+        row = donor_rows.get(donor_id)
+        if not isinstance(row, dict):
+            missing.append(donor_id)
+            continue
+        rate = _as_float(row.get("a_non_retrieval_rate_avg"))
+        if rate is None:
+            missing.append(donor_id)
+            continue
+        if rate > max_a_non_retrieval_rate + EPSILON:
+            failures.append(
+                {
+                    "donor_id": donor_id,
+                    "a_non_retrieval_rate_avg": round(rate, 4),
+                    "max_allowed_non_retrieval_rate": round(max_a_non_retrieval_rate, 4),
+                }
+            )
+
+    status = "failed" if failures else "passed"
+    return {
+        "status": status,
+        "guard_donors": guard_donors,
+        "max_a_non_retrieval_rate": round(max_a_non_retrieval_rate, 4),
+        "checked_donors": len(guard_donors) - len(missing),
+        "missing_donors": missing,
+        "failures": failures,
+    }
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -298,6 +376,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--b-label", type=str, default="B", help="Display label for suite B.")
     parser.add_argument("--json-out", type=Path, default=None, help="Write diff JSON report to this path.")
     parser.add_argument("--text-out", type=Path, default=None, help="Write diff text report to this path.")
+    parser.add_argument(
+        "--guard-donors",
+        type=str,
+        default="",
+        help="Comma-separated donor ids for non-retrieval guard in A suite (for example: usaid,worldbank).",
+    )
+    parser.add_argument(
+        "--max-a-non-retrieval-rate",
+        type=float,
+        default=None,
+        help="Fail when donor A avg non_retrieval_citation_rate exceeds this threshold (0..1).",
+    )
     return parser.parse_args(argv)
 
 
@@ -311,6 +401,12 @@ def main(argv: list[str] | None = None) -> int:
         a_label=str(args.a_label),
         b_label=str(args.b_label),
     )
+    guard_payload = _evaluate_guard(
+        payload=payload,
+        guard_donors=_parse_guard_donors(args.guard_donors),
+        max_a_non_retrieval_rate=args.max_a_non_retrieval_rate,
+    )
+    payload["guard"] = guard_payload
     text_report = _format_text(payload)
     print(text_report)
     if args.json_out is not None:
@@ -319,6 +415,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.text_out is not None:
         args.text_out.parent.mkdir(parents=True, exist_ok=True)
         args.text_out.write_text(text_report + "\n", encoding="utf-8")
+    if str(guard_payload.get("status") or "") == "failed":
+        return 2
     return 0
 
 

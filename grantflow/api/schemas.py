@@ -129,6 +129,15 @@ class JobMetricsPublicResponse(BaseModel):
     time_to_first_draft_seconds: Optional[float] = None
     time_to_terminal_seconds: Optional[float] = None
     time_in_pending_hitl_seconds: Optional[float] = None
+    retrieval_expected: Optional[bool] = None
+    grounding_risk_level: Optional[str] = None
+    citation_count: Optional[int] = None
+    fallback_namespace_citation_count: Optional[int] = None
+    strategy_reference_citation_count: Optional[int] = None
+    retrieval_grounded_citation_count: Optional[int] = None
+    non_retrieval_citation_count: Optional[int] = None
+    retrieval_grounded_citation_rate: Optional[float] = None
+    non_retrieval_citation_rate: Optional[float] = None
 
     model_config = ConfigDict(extra="allow")
 

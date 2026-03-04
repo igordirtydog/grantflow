@@ -1316,6 +1316,26 @@ def public_job_metrics_payload(job_id: str, job: Dict[str, Any]) -> Dict[str, An
         else None
     )
 
+    state_dict = _job_state_dict(job)
+    citations = state_dict.get("citations")
+    citations_list = [item for item in citations if isinstance(item, dict)] if isinstance(citations, list) else []
+    citation_count = len(citations_list)
+    grounding_counts = _citation_grounding_counts(citations_list)
+    fallback_count = int(grounding_counts.get("fallback_namespace_citation_count") or 0)
+    strategy_reference_count = int(grounding_counts.get("strategy_reference_citation_count") or 0)
+    retrieval_grounded_count = int(grounding_counts.get("retrieval_grounded_citation_count") or 0)
+    non_retrieval_count = int(grounding_counts.get("non_retrieval_citation_count") or 0)
+    retrieval_expected = _state_retrieval_expected(state_dict)
+    grounding_risk_level = _grounding_risk_level(
+        fallback_count=fallback_count,
+        strategy_reference_count=strategy_reference_count,
+        retrieval_grounded_count=retrieval_grounded_count,
+        citation_count=citation_count,
+        retrieval_expected=retrieval_expected,
+    )
+    non_retrieval_rate = round(non_retrieval_count / citation_count, 4) if citation_count else None
+    retrieval_grounded_rate = round(retrieval_grounded_count / citation_count, 4) if citation_count else None
+
     return {
         "job_id": str(job_id),
         "status": str(job.get("status") or ""),
@@ -1331,6 +1351,15 @@ def public_job_metrics_payload(job_id: str, job: Dict[str, Any]) -> Dict[str, An
         "time_to_first_draft_seconds": round(time_to_first_draft, 3) if time_to_first_draft is not None else None,
         "time_to_terminal_seconds": round(time_to_terminal, 3) if time_to_terminal is not None else None,
         "time_in_pending_hitl_seconds": round(total_pending_s, 3),
+        "retrieval_expected": retrieval_expected,
+        "grounding_risk_level": grounding_risk_level,
+        "citation_count": citation_count,
+        "fallback_namespace_citation_count": fallback_count,
+        "strategy_reference_citation_count": strategy_reference_count,
+        "retrieval_grounded_citation_count": retrieval_grounded_count,
+        "non_retrieval_citation_count": non_retrieval_count,
+        "retrieval_grounded_citation_rate": retrieval_grounded_rate,
+        "non_retrieval_citation_rate": non_retrieval_rate,
     }
 
 
