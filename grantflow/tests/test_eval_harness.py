@@ -726,3 +726,56 @@ def test_eval_harness_cli_can_write_baseline_and_comparison_reports(tmp_path):
     assert regenerated_baseline_out.exists()
     cmp_text = cmp_text_out.read_text(encoding="utf-8")
     assert "No regressions detected" in cmp_text
+
+
+def test_seed_rag_corpus_from_manifest_uses_strategy_rag_namespace(tmp_path, monkeypatch):
+    seed_pdf = tmp_path / "seed.pdf"
+    seed_pdf.write_bytes(b"%PDF-1.4\n%seed\n")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(
+        "\n".join(
+            [
+                json.dumps({"donor_id": "usaid", "file": str(seed_pdf)}),
+                json.dumps({"donor_id": "state_department", "file": str(seed_pdf)}),
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    calls: list[dict[str, str]] = []
+
+    def _fake_ingest(path: str, *, namespace: str, metadata=None):
+        calls.append({"path": path, "namespace": namespace})
+        return {"ok": True}
+
+    monkeypatch.setattr("grantflow.memory_bank.ingest.ingest_pdf_to_namespace", _fake_ingest)
+
+    result = harness.seed_rag_corpus_from_manifest(manifest)
+
+    assert result["errors"] == []
+    assert result["seeded_total"] == 2
+    assert result["donor_counts"]["usaid"] == 1
+    assert result["donor_counts"]["state_department"] == 1
+    assert result["donor_namespaces"]["usaid"] == "usaid_ads201"
+    assert result["donor_namespaces"]["state_department"] == "us_state_department_guidance"
+    assert {row["namespace"] for row in calls} == {"usaid_ads201", "us_state_department_guidance"}
+
+
+def test_seed_rag_corpus_from_manifest_reports_unknown_donor_id(tmp_path, monkeypatch):
+    seed_pdf = tmp_path / "seed.pdf"
+    seed_pdf.write_bytes(b"%PDF-1.4\n%seed\n")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps({"donor_id": "not_real_donor", "file": str(seed_pdf)}) + "\n", encoding="utf-8")
+
+    def _fake_ingest(path: str, *, namespace: str, metadata=None):
+        raise AssertionError("ingest should not run for unknown donor ids")
+
+    monkeypatch.setattr("grantflow.memory_bank.ingest.ingest_pdf_to_namespace", _fake_ingest)
+
+    result = harness.seed_rag_corpus_from_manifest(manifest)
+
+    assert result["seeded_total"] == 0
+    assert result["donor_counts"] == {}
+    assert result["errors"]
+    assert "unknown donor_id 'not_real_donor'" in result["errors"][0]

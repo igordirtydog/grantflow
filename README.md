@@ -386,6 +386,8 @@ One-command variant:
 make eval-grounded-ab
 ```
 
+`--seed-rag-manifest` resolves each manifest `donor_id` via `DonorFactory` and ingests into the donor strategy RAG namespace (for example, `usaid -> usaid_ads201`, `state_department -> us_state_department_guidance`).
+
 Tune guard via environment variables if needed:
 
 ```bash

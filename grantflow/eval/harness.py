@@ -263,6 +263,7 @@ def seed_rag_corpus_from_manifest(
     skipped_total = 0
     errors: list[str] = []
     donor_counts: dict[str, int] = {}
+    donor_namespaces: dict[str, str] = {}
     for idx, line in enumerate(lines, start=1):
         try:
             row = json.loads(line)
@@ -279,13 +280,20 @@ def seed_rag_corpus_from_manifest(
         if donor_filter and donor_id not in donor_filter:
             skipped_total += 1
             continue
+        try:
+            strategy = DonorFactory.get_strategy(donor_id)
+        except Exception as exc:
+            errors.append(f"line {idx}: unknown donor_id '{donor_id}' ({exc})")
+            continue
+        namespace = str(strategy.get_rag_collection() or "").strip() or donor_id
+        donor_namespaces[donor_id] = namespace
         metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
         try:
             file_path = _resolve_manifest_entry_path(manifest_path, row.get("file"))
             if not file_path.exists():
                 errors.append(f"line {idx}: file not found ({file_path})")
                 continue
-            ingest_pdf_to_namespace(str(file_path), namespace=donor_id, metadata=metadata)
+            ingest_pdf_to_namespace(str(file_path), namespace=namespace, metadata=metadata)
             seeded_total += 1
             donor_counts[donor_id] = int(donor_counts.get(donor_id) or 0) + 1
         except Exception as exc:
@@ -296,6 +304,7 @@ def seed_rag_corpus_from_manifest(
         "skipped_total": skipped_total,
         "errors": errors,
         "donor_counts": donor_counts,
+        "donor_namespaces": donor_namespaces,
     }
 
 
