@@ -37,6 +37,8 @@ from grantflow.api.public_views import (
     public_job_quality_payload,
     public_job_review_workflow_csv_text,
     public_job_review_workflow_payload,
+    public_job_review_workflow_trends_csv_text,
+    public_job_review_workflow_trends_payload,
     public_job_review_workflow_sla_csv_text,
     public_job_review_workflow_sla_payload,
     public_job_review_workflow_sla_trends_csv_text,
@@ -67,6 +69,7 @@ from grantflow.api.schemas import (
     JobMetricsPublicResponse,
     JobQualitySummaryPublicResponse,
     JobReviewWorkflowPublicResponse,
+    JobReviewWorkflowTrendsPublicResponse,
     JobReviewWorkflowSLAProfilePublicResponse,
     JobReviewWorkflowSLARecomputePublicResponse,
     JobReviewWorkflowSLAPublicResponse,
@@ -5045,6 +5048,55 @@ def get_status_review_workflow(
 
 
 @app.get(
+    "/status/{job_id}/review/workflow/trends",
+    response_model=JobReviewWorkflowTrendsPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_status_review_workflow_trends(
+    job_id: str,
+    request: Request,
+    event_type: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    return public_job_review_workflow_trends_payload(
+        job_id,
+        job,
+        event_type=(event_type or None),
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+    )
+
+
+@app.get(
     "/status/{job_id}/review/workflow/sla",
     response_model=JobReviewWorkflowSLAPublicResponse,
     response_model_exclude_none=True,
@@ -5343,6 +5395,63 @@ def export_status_review_workflow(
         export_format=format,
         gzip_enabled=gzip_enabled,
         csv_renderer=public_job_review_workflow_csv_text,
+    )
+
+
+@app.get("/status/{job_id}/review/workflow/trends/export")
+def export_status_review_workflow_trends(
+    job_id: str,
+    request: Request,
+    event_type: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = Query(default=None, alias="finding_code"),
+    finding_section: Optional[str] = Query(default=None, alias="finding_section"),
+    comment_status: Optional[str] = Query(default=None, alias="comment_status"),
+    workflow_state: Optional[str] = Query(default=None, alias="workflow_state"),
+    overdue_after_hours: int = Query(
+        default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+        ge=1,
+        le=24 * 30,
+        alias="overdue_after_hours",
+    ),
+    format: Literal["csv", "json"] = Query(default="csv"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    workflow_state_filter = str(workflow_state or "").strip().lower() or None
+    if workflow_state_filter and workflow_state_filter not in REVIEW_WORKFLOW_STATE_FILTER_VALUES:
+        raise HTTPException(status_code=400, detail="Unsupported workflow_state filter")
+    finding_section_filter = _validated_filter_token(
+        finding_section,
+        allowed={"toc", "logframe", "general"},
+        detail="Unsupported finding_section filter",
+    )
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    payload = public_job_review_workflow_trends_payload(
+        job_id,
+        job,
+        event_type=(event_type or None),
+        finding_id=(finding_id or None),
+        finding_code=(str(finding_code or "").strip() or None),
+        finding_section=finding_section_filter,
+        comment_status=(comment_status or None),
+        workflow_state=workflow_state_filter,
+        overdue_after_hours=overdue_after_hours,
+    )
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix=f"grantflow_review_workflow_trends_{job_id}",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=public_job_review_workflow_trends_csv_text,
     )
 
 

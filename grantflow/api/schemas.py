@@ -234,6 +234,34 @@ class JobReviewWorkflowPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobReviewWorkflowTrendPointPublicResponse(BaseModel):
+    bucket: str
+    count: int
+
+    model_config = ConfigDict(extra="allow")
+
+
+class JobReviewWorkflowTrendsPublicResponse(BaseModel):
+    job_id: str
+    status: str
+    generated_at: str
+    filters: JobReviewWorkflowFiltersPublicResponse
+    bucket_granularity: str = "day"
+    bucket_count: int = 0
+    time_window_start: Optional[str] = None
+    time_window_end: Optional[str] = None
+    timeline_event_count: int = 0
+    top_event_type: Optional[str] = None
+    top_event_type_count: Optional[int] = None
+    total_series: list[JobReviewWorkflowTrendPointPublicResponse]
+    event_type_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    kind_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    section_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+    status_series: Dict[str, list[JobReviewWorkflowTrendPointPublicResponse]]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobReviewWorkflowSLAItemPublicResponse(BaseModel):
     kind: str
     id: str

@@ -347,8 +347,12 @@ def test_demo_console_page_loads():
     assert "/critic/findings/bulk-status" in body
     assert "reviewWorkflowBtn" in body
     assert "reviewWorkflowSummaryLine" in body
+    assert "reviewWorkflowTrendsSummaryLine" in body
     assert "reviewWorkflowTimelineList" in body
+    assert "reviewWorkflowTrendSparkline" in body
+    assert "reviewWorkflowTrendsList" in body
     assert "reviewWorkflowJson" in body
+    assert "reviewWorkflowTrendsJson" in body
     assert "reviewWorkflowEventTypeFilter" in body
     assert "reviewWorkflowFindingIdFilter" in body
     assert "reviewWorkflowFindingCodeFilter" in body
@@ -359,6 +363,9 @@ def test_demo_console_page_loads():
     assert "reviewWorkflowClearFiltersBtn" in body
     assert "reviewWorkflowExportJsonBtn" in body
     assert "reviewWorkflowExportCsvBtn" in body
+    assert "reviewWorkflowTrendsBtn" in body
+    assert "reviewWorkflowTrendsExportJsonBtn" in body
+    assert "reviewWorkflowTrendsExportCsvBtn" in body
     assert "reviewWorkflowSlaBtn" in body
     assert "reviewWorkflowSlaTrendsBtn" in body
     assert "reviewWorkflowSlaProfileBtn" in body
@@ -395,6 +402,7 @@ def test_demo_console_page_loads():
     assert 'params.set("overdue_after_hours",' in body
     assert "buildReviewWorkflowSlaFilterQueryString" in body
     assert "/status/${encodeURIComponent(jobId)}/review/workflow" in body
+    assert "/status/${encodeURIComponent(jobId)}/review/workflow/trends" in body
     assert "/status/${encodeURIComponent(jobId)}/review/workflow/sla" in body
     assert "/status/${encodeURIComponent(jobId)}/review/workflow/sla/trends" in body
     assert "/status/${encodeURIComponent(jobId)}/review/workflow/sla/export" in body
@@ -404,6 +412,7 @@ def test_demo_console_page_loads():
     assert "finding_sla_hours" in body
     assert "default_comment_sla_hours" in body
     assert "/status/${encodeURIComponent(jobId)}/review/workflow/export" in body
+    assert "/status/${encodeURIComponent(jobId)}/review/workflow/trends/export" in body
 
 
 def test_ready_endpoint():
@@ -3844,6 +3853,127 @@ def test_status_review_workflow_supports_pending_overdue_filters_and_validation(
     assert all(row.get("workflow_state") == "overdue" for row in overdue_body["comments"])
 
 
+def test_status_review_workflow_trends_endpoint_returns_bucketed_series():
+    job_id = "review-workflow-trends-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "finding-wt-1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC mismatch.",
+                            "updated_at": "2026-02-26T11:00:00+00:00",
+                        },
+                        {
+                            "finding_id": "finding-wt-2",
+                            "code": "MEL_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "message": "MEL baseline missing.",
+                            "updated_at": "2026-02-27T11:00:00+00:00",
+                        },
+                    ]
+                }
+            },
+            "review_comments": [
+                {
+                    "comment_id": "comment-wt-1",
+                    "ts": "2026-02-26T10:00:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Needs stronger assumptions.",
+                    "linked_finding_id": "finding-wt-1",
+                },
+                {
+                    "comment_id": "comment-wt-2",
+                    "ts": "2026-02-27T10:00:00+00:00",
+                    "section": "logframe",
+                    "status": "resolved",
+                    "message": "Resolved in review pass.",
+                    "linked_finding_id": "finding-wt-2",
+                },
+            ],
+            "job_events": [
+                {
+                    "event_id": "rwf-tr-1",
+                    "ts": "2026-02-26T10:00:00+00:00",
+                    "type": "review_comment_added",
+                    "comment_id": "comment-wt-1",
+                    "section": "toc",
+                },
+                {
+                    "event_id": "rwf-tr-2",
+                    "ts": "2026-02-26T11:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-wt-1",
+                    "status": "open",
+                    "section": "toc",
+                    "severity": "high",
+                },
+                {
+                    "event_id": "rwf-tr-3",
+                    "ts": "2026-02-27T10:00:00+00:00",
+                    "type": "review_comment_status_changed",
+                    "comment_id": "comment-wt-2",
+                    "status": "resolved",
+                    "section": "logframe",
+                },
+                {
+                    "event_id": "rwf-tr-4",
+                    "ts": "2026-02-27T11:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-wt-2",
+                    "status": "acknowledged",
+                    "section": "logframe",
+                    "severity": "medium",
+                },
+            ],
+        },
+    )
+
+    resp = client.get(f"/status/{job_id}/review/workflow/trends", params={"overdue_after_hours": 2})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["job_id"] == job_id
+    assert body["status"] == "done"
+    assert body["filters"] == {"overdue_after_hours": 2}
+    assert body["bucket_granularity"] == "day"
+    assert body["bucket_count"] == 2
+    assert body["time_window_start"] == "2026-02-26"
+    assert body["time_window_end"] == "2026-02-27"
+    assert body["timeline_event_count"] == 4
+    assert body["top_event_type"] == "critic_finding_status_changed"
+    assert body["top_event_type_count"] == 2
+    assert body["total_series"] == [
+        {"bucket": "2026-02-26", "count": 2},
+        {"bucket": "2026-02-27", "count": 2},
+    ]
+    assert body["event_type_series"]["review_comment_added"] == [{"bucket": "2026-02-26", "count": 1}]
+    assert body["event_type_series"]["critic_finding_status_changed"] == [
+        {"bucket": "2026-02-26", "count": 1},
+        {"bucket": "2026-02-27", "count": 1},
+    ]
+
+    code_filtered = client.get(
+        f"/status/{job_id}/review/workflow/trends",
+        params={"finding_code": "TOC_SCHEMA_INVALID", "overdue_after_hours": 2},
+    )
+    assert code_filtered.status_code == 200
+    code_payload = code_filtered.json()
+    assert code_payload["filters"]["finding_code"] == "TOC_SCHEMA_INVALID"
+    assert code_payload["bucket_count"] == 1
+    assert code_payload["timeline_event_count"] == 2
+    assert code_payload["total_series"] == [{"bucket": "2026-02-26", "count": 2}]
+
+
 def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     job_id = "review-workflow-sla-job-1"
     api_app_module.JOB_STORE.set(
@@ -4744,6 +4874,130 @@ def test_status_review_workflow_export_supports_csv_json_and_gzip():
     gzip_payload = json.loads(gzip.decompress(gzip_resp.content).decode("utf-8"))
     assert gzip_payload["filters"]["finding_code"] == "MEL_BASELINE_MISSING"
     assert {row["finding_id"] for row in gzip_payload["findings"]} == {"finding-export-2"}
+
+
+def test_status_review_workflow_trends_export_supports_csv_json_and_gzip():
+    job_id = "review-workflow-trends-export-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "critic_notes": {
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "finding-wt-exp-1",
+                            "code": "TOC_SCHEMA_INVALID",
+                            "severity": "high",
+                            "section": "toc",
+                            "status": "open",
+                            "message": "ToC mismatch.",
+                            "updated_at": "2026-02-26T11:00:00+00:00",
+                        },
+                        {
+                            "finding_id": "finding-wt-exp-2",
+                            "code": "MEL_BASELINE_MISSING",
+                            "severity": "medium",
+                            "section": "logframe",
+                            "status": "acknowledged",
+                            "message": "MEL baseline missing.",
+                            "updated_at": "2026-02-27T11:00:00+00:00",
+                        },
+                    ]
+                }
+            },
+            "review_comments": [
+                {
+                    "comment_id": "comment-wt-exp-1",
+                    "ts": "2026-02-26T10:00:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Needs stronger assumptions.",
+                    "linked_finding_id": "finding-wt-exp-1",
+                },
+                {
+                    "comment_id": "comment-wt-exp-2",
+                    "ts": "2026-02-27T10:00:00+00:00",
+                    "section": "logframe",
+                    "status": "resolved",
+                    "message": "Resolved in review pass.",
+                    "linked_finding_id": "finding-wt-exp-2",
+                },
+            ],
+            "job_events": [
+                {
+                    "event_id": "rwf-tr-exp-1",
+                    "ts": "2026-02-26T10:00:00+00:00",
+                    "type": "review_comment_added",
+                    "comment_id": "comment-wt-exp-1",
+                    "section": "toc",
+                },
+                {
+                    "event_id": "rwf-tr-exp-2",
+                    "ts": "2026-02-26T11:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-wt-exp-1",
+                    "status": "open",
+                    "section": "toc",
+                    "severity": "high",
+                },
+                {
+                    "event_id": "rwf-tr-exp-3",
+                    "ts": "2026-02-27T10:00:00+00:00",
+                    "type": "review_comment_status_changed",
+                    "comment_id": "comment-wt-exp-2",
+                    "status": "resolved",
+                    "section": "logframe",
+                },
+                {
+                    "event_id": "rwf-tr-exp-4",
+                    "ts": "2026-02-27T11:00:00+00:00",
+                    "type": "critic_finding_status_changed",
+                    "finding_id": "finding-wt-exp-2",
+                    "status": "acknowledged",
+                    "section": "logframe",
+                    "severity": "medium",
+                },
+            ],
+        },
+    )
+
+    csv_resp = client.get(
+        f"/status/{job_id}/review/workflow/trends/export",
+        params={"finding_section": "toc", "overdue_after_hours": 2, "format": "csv"},
+    )
+    assert csv_resp.status_code == 200
+    assert csv_resp.headers["content-type"].startswith("text/csv")
+    csv_disposition = csv_resp.headers.get("content-disposition", "")
+    assert f"grantflow_review_workflow_trends_{job_id}.csv" in csv_disposition
+    csv_text = csv_resp.text
+    assert csv_text.startswith("field,value\n")
+    assert "filters.finding_section,toc" in csv_text
+    assert "filters.overdue_after_hours,2" in csv_text
+    assert "total_series[0].bucket,2026-02-26" in csv_text
+
+    json_resp = client.get(
+        f"/status/{job_id}/review/workflow/trends/export",
+        params={"finding_code": "MEL_BASELINE_MISSING", "overdue_after_hours": 2, "format": "json"},
+    )
+    assert json_resp.status_code == 200
+    assert json_resp.headers["content-type"].startswith("application/json")
+    json_payload = json_resp.json()
+    assert json_payload["filters"]["finding_code"] == "MEL_BASELINE_MISSING"
+    assert json_payload["bucket_count"] == 1
+    assert json_payload["timeline_event_count"] == 2
+
+    gzip_resp = client.get(
+        f"/status/{job_id}/review/workflow/trends/export",
+        params={"overdue_after_hours": 2, "format": "json", "gzip": "true"},
+    )
+    assert gzip_resp.status_code == 200
+    assert gzip_resp.headers["content-type"].startswith("application/gzip")
+    gzip_disposition = gzip_resp.headers.get("content-disposition", "")
+    assert f"grantflow_review_workflow_trends_{job_id}.json.gz" in gzip_disposition
+    gzip_payload = json.loads(gzip.decompress(gzip_resp.content).decode("utf-8"))
+    assert gzip_payload["bucket_count"] == 2
+    assert gzip_payload["timeline_event_count"] == 4
 
 
 def test_metrics_endpoint_derives_timeline_metrics_from_events():
@@ -6589,6 +6843,15 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     review_workflow_auth = client.get(f"/status/{job_id}/review/workflow", headers={"X-API-Key": "test-secret"})
     assert review_workflow_auth.status_code == 200
 
+    review_workflow_trends_unauth = client.get(f"/status/{job_id}/review/workflow/trends")
+    assert review_workflow_trends_unauth.status_code == 401
+
+    review_workflow_trends_auth = client.get(
+        f"/status/{job_id}/review/workflow/trends",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_trends_auth.status_code == 200
+
     review_workflow_sla_unauth = client.get(f"/status/{job_id}/review/workflow/sla")
     assert review_workflow_sla_unauth.status_code == 401
 
@@ -6651,6 +6914,15 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
         headers={"X-API-Key": "test-secret"},
     )
     assert review_workflow_export_auth.status_code == 200
+
+    review_workflow_trends_export_unauth = client.get(f"/status/{job_id}/review/workflow/trends/export")
+    assert review_workflow_trends_export_unauth.status_code == 401
+
+    review_workflow_trends_export_auth = client.get(
+        f"/status/{job_id}/review/workflow/trends/export",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert review_workflow_trends_export_auth.status_code == 200
 
     add_comment_unauth = client.post(
         f"/status/{job_id}/comments",
@@ -6825,6 +7097,9 @@ def test_openapi_declares_api_key_security_scheme():
     status_review_workflow_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow") or {}).get("get") or {}
     ).get("security")
+    status_review_workflow_trends_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/trends") or {}).get("get") or {}
+    ).get("security")
     status_review_workflow_sla_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla") or {}).get("get") or {}
     ).get("security")
@@ -6845,6 +7120,9 @@ def test_openapi_declares_api_key_security_scheme():
     ).get("security")
     status_review_workflow_export_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/export") or {}).get("get") or {}
+    ).get("security")
+    status_review_workflow_trends_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/trends/export") or {}).get("get") or {}
     ).get("security")
     status_comments_post_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/comments") or {}).get("post") or {}
@@ -7051,6 +7329,14 @@ def test_openapi_declares_api_key_security_scheme():
         .get("application/json", {})
         .get("schema")
     )
+    status_review_workflow_trends_response_schema = (
+        (((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/trends") or {}).get("get") or {})
+        .get("responses", {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     status_review_workflow_sla_response_schema = (
         (((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla") or {}).get("get") or {})
         .get("responses", {})
@@ -7181,6 +7467,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_critic_finding_bulk_status_security == [{"ApiKeyAuth": []}]
     assert status_comments_get_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_trends_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_trends_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_trends_export_security == [{"ApiKeyAuth": []}]
@@ -7188,6 +7475,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_review_workflow_sla_profile_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_recompute_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_export_security == [{"ApiKeyAuth": []}]
+    assert status_review_workflow_trends_export_security == [{"ApiKeyAuth": []}]
     assert status_comments_post_security == [{"ApiKeyAuth": []}]
     assert status_comments_resolve_security == [{"ApiKeyAuth": []}]
     assert status_comments_reopen_security == [{"ApiKeyAuth": []}]
@@ -7225,6 +7513,9 @@ def test_openapi_declares_api_key_security_scheme():
     }
     assert status_comments_response_schema == {"$ref": "#/components/schemas/JobCommentsPublicResponse"}
     assert status_review_workflow_response_schema == {"$ref": "#/components/schemas/JobReviewWorkflowPublicResponse"}
+    assert status_review_workflow_trends_response_schema == {
+        "$ref": "#/components/schemas/JobReviewWorkflowTrendsPublicResponse"
+    }
     assert status_review_workflow_sla_response_schema == {
         "$ref": "#/components/schemas/JobReviewWorkflowSLAPublicResponse"
     }
@@ -7264,6 +7555,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert "CriticFindingsListFiltersPublicResponse" in schemas
     assert "CriticFindingsListSummaryPublicResponse" in schemas
     assert "JobReviewWorkflowPublicResponse" in schemas
+    assert "JobReviewWorkflowTrendsPublicResponse" in schemas
+    assert "JobReviewWorkflowTrendPointPublicResponse" in schemas
     assert "JobReviewWorkflowSLAPublicResponse" in schemas
     assert "JobReviewWorkflowSLATrendsPublicResponse" in schemas
     assert "JobReviewWorkflowSLATrendPointPublicResponse" in schemas
@@ -7313,6 +7606,12 @@ def test_openapi_declares_api_key_security_scheme():
     review_workflow_params = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow") or {}).get("get") or {}
     ).get("parameters") or []
+    review_workflow_trends_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/trends") or {}).get("get") or {}
+    ).get("parameters") or []
+    review_workflow_trends_export_params = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/trends/export") or {}).get("get") or {}
+    ).get("parameters") or []
     review_workflow_sla_params = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla") or {}).get("get") or {}
     ).get("parameters") or []
@@ -7334,6 +7633,12 @@ def test_openapi_declares_api_key_security_scheme():
         str(p.get("name") or "") for p in portfolio_quality_export_params if isinstance(p, dict)
     ]
     review_workflow_param_names = [str(p.get("name") or "") for p in review_workflow_params if isinstance(p, dict)]
+    review_workflow_trends_param_names = [
+        str(p.get("name") or "") for p in review_workflow_trends_params if isinstance(p, dict)
+    ]
+    review_workflow_trends_export_param_names = [
+        str(p.get("name") or "") for p in review_workflow_trends_export_params if isinstance(p, dict)
+    ]
     review_workflow_sla_param_names = [
         str(p.get("name") or "") for p in review_workflow_sla_params if isinstance(p, dict)
     ]
@@ -7346,6 +7651,9 @@ def test_openapi_declares_api_key_security_scheme():
     review_workflow_sla_export_param_names = [
         str(p.get("name") or "") for p in review_workflow_sla_export_params if isinstance(p, dict)
     ]
+    assert "event_type" in review_workflow_param_names
+    assert "event_type" in review_workflow_trends_param_names
+    assert "event_type" in review_workflow_trends_export_param_names
     for name in (
         "finding_id",
         "finding_code",
@@ -7355,10 +7663,14 @@ def test_openapi_declares_api_key_security_scheme():
         "overdue_after_hours",
     ):
         assert name in review_workflow_param_names
+        assert name in review_workflow_trends_param_names
+        assert name in review_workflow_trends_export_param_names
         assert name in review_workflow_sla_param_names
         assert name in review_workflow_sla_trends_param_names
         assert name in review_workflow_sla_trends_export_param_names
         assert name in review_workflow_sla_export_param_names
+    assert "format" in review_workflow_trends_export_param_names
+    assert "gzip" in review_workflow_trends_export_param_names
     assert "format" in review_workflow_sla_trends_export_param_names
     assert "gzip" in review_workflow_sla_trends_export_param_names
     assert "format" in review_workflow_sla_export_param_names

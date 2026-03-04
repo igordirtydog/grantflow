@@ -840,6 +840,119 @@ def public_job_review_workflow_payload(
     }
 
 
+def public_job_review_workflow_trends_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    event_type: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+) -> Dict[str, Any]:
+    workflow_payload = public_job_review_workflow_payload(
+        job_id,
+        job,
+        event_type=event_type,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    timeline = workflow_payload.get("timeline")
+    timeline_rows = [row for row in timeline if isinstance(row, dict)] if isinstance(timeline, list) else []
+    filters = workflow_payload.get("filters")
+    filters_dict = filters if isinstance(filters, dict) else {}
+
+    total_bucket_counts: Dict[str, int] = {}
+    event_type_bucket_counts: Dict[str, Dict[str, int]] = {}
+    kind_bucket_counts: Dict[str, Dict[str, int]] = {}
+    section_bucket_counts: Dict[str, Dict[str, int]] = {}
+    status_bucket_counts: Dict[str, Dict[str, int]] = {}
+
+    for row in timeline_rows:
+        ts_dt = _parse_event_ts(row.get("ts"))
+        bucket = ts_dt.date().isoformat() if ts_dt is not None else "unknown"
+        total_bucket_counts[bucket] = int(total_bucket_counts.get(bucket) or 0) + 1
+
+        event_type_key = str(row.get("type") or "").strip().lower() or "unknown"
+        event_type_counts = event_type_bucket_counts.setdefault(event_type_key, {})
+        event_type_counts[bucket] = int(event_type_counts.get(bucket) or 0) + 1
+
+        kind_key = str(row.get("kind") or "").strip().lower() or "unknown"
+        kind_counts = kind_bucket_counts.setdefault(kind_key, {})
+        kind_counts[bucket] = int(kind_counts.get(bucket) or 0) + 1
+
+        section_key = str(row.get("section") or "").strip().lower() or "unknown"
+        section_counts = section_bucket_counts.setdefault(section_key, {})
+        section_counts[bucket] = int(section_counts.get(bucket) or 0) + 1
+
+        status_key = str(row.get("status") or "").strip().lower() or "unknown"
+        status_counts = status_bucket_counts.setdefault(status_key, {})
+        status_counts[bucket] = int(status_counts.get(bucket) or 0) + 1
+
+    def _series_rows(counts: Dict[str, int]) -> list[Dict[str, Any]]:
+        return [{"bucket": bucket, "count": int(counts.get(bucket) or 0)} for bucket in sorted(counts.keys())]
+
+    total_series = _series_rows(total_bucket_counts)
+    event_type_series = {
+        key: _series_rows(event_type_bucket_counts.get(key, {})) for key in sorted(event_type_bucket_counts.keys())
+    }
+    kind_series = {key: _series_rows(kind_bucket_counts.get(key, {})) for key in sorted(kind_bucket_counts.keys())}
+    section_series = {
+        key: _series_rows(section_bucket_counts.get(key, {})) for key in sorted(section_bucket_counts.keys())
+    }
+    status_series = {
+        key: _series_rows(status_bucket_counts.get(key, {})) for key in sorted(status_bucket_counts.keys())
+    }
+
+    dated_buckets = []
+    for point in total_series:
+        bucket = str(point.get("bucket") or "").strip()
+        try:
+            datetime.strptime(bucket, "%Y-%m-%d")
+            dated_buckets.append(bucket)
+        except ValueError:
+            continue
+    time_window_start = dated_buckets[0] if dated_buckets else None
+    time_window_end = dated_buckets[-1] if dated_buckets else None
+
+    top_event_type = None
+    top_event_type_count = -1
+    for key, rows in event_type_series.items():
+        total = sum(int(row.get("count") or 0) for row in rows if isinstance(row, dict))
+        if total > top_event_type_count:
+            top_event_type = key
+            top_event_type_count = total
+
+    summary = workflow_payload.get("summary")
+    summary_dict = summary if isinstance(summary, dict) else {}
+    timeline_event_count = _coerce_int(summary_dict.get("timeline_event_count"), default=len(timeline_rows))
+
+    return {
+        "job_id": str(job_id),
+        "status": str(job.get("status") or ""),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": filters_dict,
+        "bucket_granularity": "day",
+        "bucket_count": len(total_series),
+        "time_window_start": time_window_start,
+        "time_window_end": time_window_end,
+        "timeline_event_count": timeline_event_count,
+        "top_event_type": top_event_type,
+        "top_event_type_count": top_event_type_count if top_event_type is not None else None,
+        "total_series": total_series,
+        "event_type_series": event_type_series,
+        "kind_series": kind_series,
+        "section_series": section_series,
+        "status_series": status_series,
+    }
+
+
 def _review_workflow_sla_snapshot(
     job_id: str,
     job: Dict[str, Any],
@@ -3698,6 +3811,10 @@ def public_ingest_inventory_csv_text(payload: Dict[str, Any]) -> str:
 
 
 def public_job_review_workflow_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_job_review_workflow_trends_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 

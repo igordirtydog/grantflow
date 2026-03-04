@@ -1161,12 +1161,32 @@ def render_demo_ui_html() -> str:
               <button id="reviewWorkflowExportCsvBtn" class="secondary">Export Workflow CSV</button>
               <div class="sub" style="align-self:center;">Export uses current workflow filters.</div>
             </div>
+            <div class="row3" style="margin-top:10px;">
+              <button id="reviewWorkflowTrendsBtn" class="ghost">Load Workflow Trends</button>
+              <div id="reviewWorkflowTrendsSummaryLine" class="footer-note mono" style="align-self:center;">
+                workflow trends: buckets=- · window=- · events=-
+              </div>
+              <div></div>
+            </div>
+            <div class="row3" style="margin-top:10px;">
+              <button id="reviewWorkflowTrendsExportJsonBtn" class="ghost">Export Workflow Trends JSON</button>
+              <button id="reviewWorkflowTrendsExportCsvBtn" class="secondary">Export Workflow Trends CSV</button>
+              <div class="sub" style="align-self:center;">Workflow trends export uses current workflow filters.</div>
+            </div>
             <div style="margin-top:10px;">
               <label>Review Workflow Timeline</label>
               <div class="list" id="reviewWorkflowTimelineList"></div>
             </div>
             <div style="margin-top:10px;">
+              <label>Review Workflow Trends</label>
+              <div id="reviewWorkflowTrendSparkline" class="footer-note mono">trend: -</div>
+              <div class="list" id="reviewWorkflowTrendsList"></div>
+            </div>
+            <div style="margin-top:10px;">
               <pre id="reviewWorkflowJson">{}</pre>
+            </div>
+            <div style="margin-top:10px;">
+              <pre id="reviewWorkflowTrendsJson">{}</pre>
             </div>
             <div class="row3" style="margin-top:10px;">
               <button id="reviewWorkflowSlaBtn" class="ghost">Load Workflow SLA</button>
@@ -1543,6 +1563,13 @@ def render_demo_ui_html() -> str:
         reviewWorkflowTimelineList: $("reviewWorkflowTimelineList"),
         reviewWorkflowSummaryLine: $("reviewWorkflowSummaryLine"),
         reviewWorkflowJson: $("reviewWorkflowJson"),
+        reviewWorkflowTrendsBtn: $("reviewWorkflowTrendsBtn"),
+        reviewWorkflowTrendsExportJsonBtn: $("reviewWorkflowTrendsExportJsonBtn"),
+        reviewWorkflowTrendsExportCsvBtn: $("reviewWorkflowTrendsExportCsvBtn"),
+        reviewWorkflowTrendsSummaryLine: $("reviewWorkflowTrendsSummaryLine"),
+        reviewWorkflowTrendSparkline: $("reviewWorkflowTrendSparkline"),
+        reviewWorkflowTrendsList: $("reviewWorkflowTrendsList"),
+        reviewWorkflowTrendsJson: $("reviewWorkflowTrendsJson"),
         reviewWorkflowEventTypeFilter: $("reviewWorkflowEventTypeFilter"),
         reviewWorkflowFindingIdFilter: $("reviewWorkflowFindingIdFilter"),
         reviewWorkflowFindingCodeFilter: $("reviewWorkflowFindingCodeFilter"),
@@ -1879,7 +1906,13 @@ def render_demo_ui_html() -> str:
         renderExportContract(null);
         renderGeneratePreflightAlert(null);
         renderGeneratePresetReadiness();
-        await Promise.allSettled([refreshPortfolioBundle(), refreshComments(), refreshReviewWorkflow(), refreshDiff()]);
+        await Promise.allSettled([
+          refreshPortfolioBundle(),
+          refreshComments(),
+          refreshReviewWorkflow(),
+          refreshReviewWorkflowTrends(),
+          refreshDiff(),
+        ]);
       }
 
       function clearLinkedFindingSelection() {
@@ -4047,7 +4080,12 @@ def render_demo_ui_html() -> str:
         }
         els.reviewWorkflowFindingIdFilter.value = selectedFinding ? String(selectedFinding.findingId || "") : "";
         persistUiState();
-        await Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]);
+        await Promise.allSettled([
+          refreshReviewWorkflow(),
+          refreshReviewWorkflowTrends(),
+          refreshReviewWorkflowSla(),
+          refreshReviewWorkflowSlaTrends(),
+        ]);
       }
 
       function renderReviewWorkflowTimeline(body) {
@@ -4100,6 +4138,99 @@ def render_demo_ui_html() -> str:
         if (els.reviewWorkflowSummaryLine) {
           els.reviewWorkflowSummaryLine.textContent =
             `workflow: timeline=${timelineCount} · findings=${findingCount} (pending=${pendingFindingCount}, overdue=${overdueFindingCount}) · comments=${commentCount} (pending=${pendingCommentCount}, overdue=${overdueCommentCount}) · orphan_links=${orphanLinkedCount} · last=${lastActivity}`;
+        }
+      }
+
+      function renderReviewWorkflowTrends(body) {
+        const totalSeries = Array.isArray(body?.total_series) ? body.total_series : [];
+        const eventTypeSeriesRaw = body?.event_type_series && typeof body.event_type_series === "object"
+          ? body.event_type_series
+          : {};
+        const kindSeriesRaw = body?.kind_series && typeof body.kind_series === "object"
+          ? body.kind_series
+          : {};
+        const statusSeriesRaw = body?.status_series && typeof body.status_series === "object"
+          ? body.status_series
+          : {};
+        const windowStart = String(body?.time_window_start || "-");
+        const windowEnd = String(body?.time_window_end || "-");
+        const bucketCount = Number(body?.bucket_count || totalSeries.length || 0);
+        const timelineEventCount = Number(body?.timeline_event_count || 0);
+        if (els.reviewWorkflowTrendsSummaryLine) {
+          els.reviewWorkflowTrendsSummaryLine.textContent =
+            `workflow trends: buckets=${bucketCount} · window=${windowStart}..${windowEnd} · events=${timelineEventCount}`;
+        }
+
+        const sparklinePalette = " .:-=+*#%@";
+        const seriesCounts = totalSeries.map((point) => Number(point?.count || 0));
+        const maxCount = seriesCounts.length ? Math.max(...seriesCounts) : 0;
+        const sparkline = seriesCounts.length
+          ? seriesCounts
+              .map((count) => {
+                if (maxCount <= 0) return ".";
+                const idx = Math.min(
+                  sparklinePalette.length - 1,
+                  Math.max(0, Math.round((count / maxCount) * (sparklinePalette.length - 1)))
+                );
+                return sparklinePalette.charAt(idx);
+              })
+              .join("")
+          : "-";
+        if (els.reviewWorkflowTrendSparkline) {
+          els.reviewWorkflowTrendSparkline.textContent = `trend: ${sparkline} (max=${maxCount})`;
+        }
+
+        const buildBucketMap = (rawSeries) => {
+          const out = {};
+          for (const [key, series] of Object.entries(rawSeries || {})) {
+            if (!Array.isArray(series)) continue;
+            const bucketMap = {};
+            for (const row of series) {
+              const bucket = String(row?.bucket || "").trim();
+              if (!bucket) continue;
+              bucketMap[bucket] = Number(row?.count || 0);
+            }
+            out[String(key)] = bucketMap;
+          }
+          return out;
+        };
+        const eventTypeBucketMap = buildBucketMap(eventTypeSeriesRaw);
+        const kindBucketMap = buildBucketMap(kindSeriesRaw);
+        const statusBucketMap = buildBucketMap(statusSeriesRaw);
+
+        els.reviewWorkflowTrendsList.innerHTML = "";
+        if (!totalSeries.length) {
+          els.reviewWorkflowTrendsList.innerHTML = `<div class="item"><div class="sub">No workflow trend buckets for current filters.</div></div>`;
+          return;
+        }
+
+        const topTokenForBucket = (bucket, bucketMap) => {
+          let topKey = "-";
+          let topCount = -1;
+          for (const [key, countsByBucket] of Object.entries(bucketMap)) {
+            const count = Number(countsByBucket?.[bucket] || 0);
+            if (count > topCount) {
+              topKey = key;
+              topCount = count;
+            }
+          }
+          return `${topKey}${topCount >= 0 ? ` (${topCount})` : ""}`;
+        };
+
+        for (const point of totalSeries) {
+          const bucket = String(point?.bucket || "").trim() || "unknown";
+          const total = Number(point?.count || 0);
+          const topEventType = topTokenForBucket(bucket, eventTypeBucketMap);
+          const topKind = topTokenForBucket(bucket, kindBucketMap);
+          const topStatus = topTokenForBucket(bucket, statusBucketMap);
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `
+            <div class="title mono">${escapeHtml(`${bucket} · events=${total}`)}</div>
+            <div class="sub">${escapeHtml(`top_type=${topEventType} · top_kind=${topKind}`)}</div>
+            <div class="sub" style="margin-top:6px;">${escapeHtml(`top_status=${topStatus}`)}</div>
+          `;
+          els.reviewWorkflowTrendsList.appendChild(div);
         }
       }
 
@@ -4817,6 +4948,17 @@ def render_demo_ui_html() -> str:
         return body;
       }
 
+      async function refreshReviewWorkflowTrends() {
+        const jobId = currentJobId();
+        if (!jobId) return;
+        persistUiState();
+        const q = buildReviewWorkflowFilterQueryString();
+        const body = await apiFetch(`/status/${encodeURIComponent(jobId)}/review/workflow/trends${q}`);
+        renderReviewWorkflowTrends(body);
+        setJson(els.reviewWorkflowTrendsJson, body);
+        return body;
+      }
+
       async function refreshReviewWorkflowSla() {
         const jobId = currentJobId();
         if (!jobId) return;
@@ -5203,6 +5345,7 @@ def render_demo_ui_html() -> str:
           refreshEvents(),
           refreshComments(),
           refreshReviewWorkflow(),
+          refreshReviewWorkflowTrends(),
           refreshReviewWorkflowSla(),
           refreshReviewWorkflowSlaTrends(),
           refreshReviewWorkflowSlaProfile(),
@@ -5321,6 +5464,37 @@ def render_demo_ui_html() -> str:
           throw new Error(await res.text());
         }
         const fallbackFilename = `grantflow_review_workflow_${jobId}.${format}${exportGzipEnabled() ? ".gz" : ""}`;
+        const filename = parseDownloadFilenameFromDisposition(
+          res.headers.get("content-disposition"),
+          fallbackFilename
+        );
+        const blob = await res.blob();
+        downloadBlob(blob, filename);
+      }
+
+      async function exportReviewWorkflowTrendsAggregate(format) {
+        const jobId = currentJobId();
+        if (!jobId) throw new Error("No job_id");
+        persistUiState();
+        persistBasics();
+        const q = buildReviewWorkflowFilterQueryString();
+        const params = new URLSearchParams(q.startsWith("?") ? q.slice(1) : "");
+        params.set("format", format);
+        if (exportGzipEnabled()) params.set("gzip", "true");
+        const query = params.toString();
+        const endpointPath = `/status/${encodeURIComponent(jobId)}/review/workflow/trends/export`;
+        const res = await fetch(`${apiBase()}${endpointPath}?${query}`, {
+          headers: { ...headers() },
+        });
+        if (!res.ok) {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const body = await res.json();
+            throw new Error(JSON.stringify(body, null, 2));
+          }
+          throw new Error(await res.text());
+        }
+        const fallbackFilename = `grantflow_review_workflow_trends_${jobId}.${format}${exportGzipEnabled() ? ".gz" : ""}`;
         const filename = parseDownloadFilenameFromDisposition(
           res.headers.get("content-disposition"),
           fallbackFilename
@@ -5495,6 +5669,16 @@ def render_demo_ui_html() -> str:
       async function downloadReviewWorkflowCsv() {
         await refreshReviewWorkflow();
         await exportReviewWorkflowAggregate("csv");
+      }
+
+      async function downloadReviewWorkflowTrendsJson() {
+        await refreshReviewWorkflowTrends();
+        await exportReviewWorkflowTrendsAggregate("json");
+      }
+
+      async function downloadReviewWorkflowTrendsCsv() {
+        await refreshReviewWorkflowTrends();
+        await exportReviewWorkflowTrendsAggregate("csv");
       }
 
       async function downloadReviewWorkflowSlaJson() {
@@ -5693,7 +5877,7 @@ def render_demo_ui_html() -> str:
         els.selectedCommentId.value = created.comment_id || "";
         els.commentMessage.value = "";
         persistUiState();
-        await Promise.allSettled([refreshComments(), refreshReviewWorkflow()]);
+        await Promise.allSettled([refreshComments(), refreshReviewWorkflow(), refreshReviewWorkflowTrends()]);
         return created;
       }
 
@@ -5712,7 +5896,7 @@ def render_demo_ui_html() -> str:
           `/status/${encodeURIComponent(jobId)}/critic/findings/${encodeURIComponent(findingId)}/${action}`,
           { method: "POST" }
         );
-        await Promise.allSettled([refreshCritic(), refreshReviewWorkflow()]);
+        await Promise.allSettled([refreshCritic(), refreshReviewWorkflow(), refreshReviewWorkflowTrends()]);
         return updated;
       }
 
@@ -5744,7 +5928,7 @@ def render_demo_ui_html() -> str:
           body: JSON.stringify(payload),
         });
         setJson(els.criticBulkResultJson, result);
-        await Promise.allSettled([refreshCritic(), refreshReviewWorkflow()]);
+        await Promise.allSettled([refreshCritic(), refreshReviewWorkflow(), refreshReviewWorkflowTrends()]);
         return result;
       }
 
@@ -5758,7 +5942,7 @@ def render_demo_ui_html() -> str:
           `/status/${encodeURIComponent(jobId)}/comments/${encodeURIComponent(commentId)}/${action}`,
           { method: "POST" }
         );
-        await Promise.allSettled([refreshComments(), refreshReviewWorkflow()]);
+        await Promise.allSettled([refreshComments(), refreshReviewWorkflow(), refreshReviewWorkflowTrends()]);
         return updated;
       }
 
@@ -5905,15 +6089,23 @@ def render_demo_ui_html() -> str:
         els.reviewWorkflowBtn.addEventListener("click", () => {
           Promise.allSettled([
             refreshReviewWorkflow(),
+            refreshReviewWorkflowTrends(),
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
             refreshReviewWorkflowSlaProfile(),
           ]).catch(showError);
         });
+        els.reviewWorkflowTrendsBtn.addEventListener("click", () => refreshReviewWorkflowTrends().catch(showError));
         els.reviewWorkflowSlaBtn.addEventListener("click", () => refreshReviewWorkflowSla().catch(showError));
         els.reviewWorkflowSlaTrendsBtn.addEventListener("click", () => refreshReviewWorkflowSlaTrends().catch(showError));
         els.reviewWorkflowSlaProfileBtn.addEventListener("click", () => refreshReviewWorkflowSlaProfile().catch(showError));
         els.reviewWorkflowSlaRecomputeBtn.addEventListener("click", () => recomputeReviewWorkflowSla().catch(showError));
+        els.reviewWorkflowTrendsExportJsonBtn.addEventListener("click", () =>
+          downloadReviewWorkflowTrendsJson().catch((err) => showError(err))
+        );
+        els.reviewWorkflowTrendsExportCsvBtn.addEventListener("click", () =>
+          downloadReviewWorkflowTrendsCsv().catch((err) => showError(err))
+        );
         els.reviewWorkflowSlaExportJsonBtn.addEventListener("click", () =>
           downloadReviewWorkflowSlaJson().catch((err) => showError(err))
         );
@@ -5930,6 +6122,7 @@ def render_demo_ui_html() -> str:
           clearReviewWorkflowFilters();
           Promise.allSettled([
             refreshReviewWorkflow(),
+            refreshReviewWorkflowTrends(),
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
             refreshReviewWorkflowSlaProfile(),
@@ -5988,16 +6181,31 @@ def render_demo_ui_html() -> str:
         ].forEach((el) =>
           el.addEventListener("change", () => {
             persistUiState();
-            Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
+            Promise.allSettled([
+              refreshReviewWorkflow(),
+              refreshReviewWorkflowTrends(),
+              refreshReviewWorkflowSla(),
+              refreshReviewWorkflowSlaTrends(),
+            ]).catch(showError);
           })
         );
         [els.reviewWorkflowFindingIdFilter].forEach((el) => el.addEventListener("change", () => {
           persistUiState();
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
+          Promise.allSettled([
+            refreshReviewWorkflow(),
+            refreshReviewWorkflowTrends(),
+            refreshReviewWorkflowSla(),
+            refreshReviewWorkflowSlaTrends(),
+          ]).catch(showError);
         }));
         els.reviewWorkflowOverdueHoursFilter.addEventListener("change", () => {
           persistUiState();
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
+          Promise.allSettled([
+            refreshReviewWorkflow(),
+            refreshReviewWorkflowTrends(),
+            refreshReviewWorkflowSla(),
+            refreshReviewWorkflowSlaTrends(),
+          ]).catch(showError);
         });
         [
           els.reviewWorkflowSlaHighHours,
