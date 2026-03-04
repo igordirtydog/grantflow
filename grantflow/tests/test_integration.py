@@ -5025,6 +5025,25 @@ def test_portfolio_metrics_export_endpoint_supports_csv_json_and_gzip():
     assert payload["filters"]["donor_id"] == "usaid"
     assert payload["filters"]["grounding_risk_level"] == "high"
 
+    toc_csv_resp = client.get(
+        "/portfolio/metrics/export",
+        params={"donor_id": "usaid", "toc_text_risk_level": "high", "format": "csv"},
+    )
+    assert toc_csv_resp.status_code == 200
+    assert toc_csv_resp.headers["content-type"].startswith("text/csv")
+    toc_csv_text = toc_csv_resp.text
+    assert "filters.toc_text_risk_level,high" in toc_csv_text
+
+    toc_json_resp = client.get(
+        "/portfolio/metrics/export",
+        params={"donor_id": "usaid", "toc_text_risk_level": "high", "format": "json"},
+    )
+    assert toc_json_resp.status_code == 200
+    assert toc_json_resp.headers["content-type"].startswith("application/json")
+    toc_payload = toc_json_resp.json()
+    assert toc_payload["filters"]["donor_id"] == "usaid"
+    assert toc_payload["filters"]["toc_text_risk_level"] == "high"
+
     csv_gzip_resp = client.get(
         "/portfolio/metrics/export", params={"donor_id": "usaid", "format": "csv", "gzip": "true"}
     )
