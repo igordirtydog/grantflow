@@ -111,6 +111,14 @@ jobs:
             --comparison-text-out eval-artifacts/eval-comparison.txt \
             --comparison-json-out eval-artifacts/eval-comparison.json
 
+      - name: Run evaluation harness (grounded deterministic suite)
+        run: |
+          python -m grantflow.eval.harness \
+            --cases-file grantflow/eval/cases/grounded_cases.json \
+            --suite-label grounded-eval \
+            --text-out eval-artifacts/grounded-eval-report.txt \
+            --json-out eval-artifacts/grounded-eval-report.json
+
       - name: Upload evaluation report
         uses: actions/upload-artifact@v4
         if: always()

@@ -260,6 +260,31 @@ curl -s -X POST http://127.0.0.1:8000/export \
   - `tenant_id` supported on ingest and ingest read endpoints
 - `POST /export`
 
+## Evaluation
+
+Run baseline + grounded deterministic eval locally:
+
+```bash
+mkdir -p eval-artifacts
+
+# Baseline suite + regression comparison
+python -m grantflow.eval.harness \
+  --text-out eval-artifacts/eval-report.txt \
+  --json-out eval-artifacts/eval-report.json \
+  --compare-to-baseline grantflow/eval/fixtures/baseline_regression_snapshot.json \
+  --comparison-text-out eval-artifacts/eval-comparison.txt \
+  --comparison-json-out eval-artifacts/eval-comparison.json
+
+# Grounded deterministic suite
+python -m grantflow.eval.harness \
+  --cases-file grantflow/eval/cases/grounded_cases.json \
+  --suite-label grounded-eval \
+  --text-out eval-artifacts/grounded-eval-report.txt \
+  --json-out eval-artifacts/grounded-eval-report.json
+```
+
+CI uploads the same files as the `eval-report` artifact.
+
 ## Deployment
 
 ```bash
