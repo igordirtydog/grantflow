@@ -11,6 +11,7 @@ from grantflow.memory_bank.vector_store import vector_store
 from grantflow.swarm.citations import citation_traceability_status
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
+    llm_model_candidates,
     openai_compatible_llm_available,
     openai_compatible_missing_reason,
 )
@@ -322,6 +323,7 @@ def _fallback_structured_toc(
 def _llm_structured_toc(
     schema_cls: Type[BaseModel],
     *,
+    model_name: str,
     system_prompt: str,
     donor_id: str,
     project: str,
@@ -332,7 +334,7 @@ def _llm_structured_toc(
     schema_contract_hint: str = "",
     validation_error_hint: Optional[str] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    llm_kwargs = chat_openai_init_kwargs(model=config.llm.reasoning_model, temperature=0.1)
+    llm_kwargs = chat_openai_init_kwargs(model=model_name, temperature=0.1)
     if llm_kwargs is None:
         return None, None, openai_compatible_missing_reason()
 
@@ -387,9 +389,9 @@ def _llm_structured_toc(
             ]
         )
         if isinstance(result, BaseModel):
-            return _model_dump(result), f"llm:{config.llm.reasoning_model}", None
+            return _model_dump(result), f"llm:{model_name}", None
         if isinstance(result, dict):
-            return result, f"llm:{config.llm.reasoning_model}", None
+            return result, f"llm:{model_name}", None
         return None, None, "LLM structured output returned unsupported type"
     except Exception as exc:  # pragma: no cover - exercised only when LLM deps configured
         return None, None, str(exc)
@@ -771,55 +773,79 @@ def generate_toc_under_contract(
     model: Optional[BaseModel] = None
     llm_repair_attempted = False
     llm_attempted = False
+    llm_selected_model: Optional[str] = None
+    llm_models_tried: list[str] = []
+    llm_failure_reasons: list[str] = []
     fallback_used = False
     fallback_class = "deterministic_mode"
 
     if llm_mode and llm_available:
-        llm_attempted = True
         prompts = getattr(strategy, "get_system_prompts", lambda: {})() or {}
-        raw_payload, llm_engine, llm_error = _llm_structured_toc(
-            schema_cls,
-            system_prompt=str(prompts.get("Architect") or ""),
-            donor_id=donor_id,
-            project=project,
-            country=country,
-            input_context=input_context,
-            revision_hint=revision_hint,
-            evidence_hits=evidence_hits,
-            schema_contract_hint=schema_contract_hint,
-            validation_error_hint=None,
+        model_candidates = llm_model_candidates(
+            str(getattr(config.llm, "architect_model", "") or ""),
+            str(getattr(config.llm, "reasoning_model", "") or ""),
+            str(getattr(config.llm, "cheap_model", "") or ""),
         )
-        if raw_payload:
-            engine = llm_engine or engine
-            try:
-                model = _model_validate(schema_cls, raw_payload)
-            except Exception as exc:
-                llm_validation_error = str(exc)
-                llm_repair_attempted = True
-                raw_payload, llm_engine_retry, llm_error_retry = _llm_structured_toc(
-                    schema_cls,
-                    system_prompt=str(prompts.get("Architect") or ""),
-                    donor_id=donor_id,
-                    project=project,
-                    country=country,
-                    input_context=input_context,
-                    revision_hint=revision_hint,
-                    evidence_hits=evidence_hits,
-                    schema_contract_hint=schema_contract_hint,
-                    validation_error_hint=llm_validation_error,
-                )
-                if raw_payload:
-                    engine = llm_engine_retry or engine
-                    try:
-                        model = _model_validate(schema_cls, raw_payload)
-                    except Exception as exc_retry:
-                        llm_error = f"LLM structured output failed validation after retry: {exc_retry}"
-                        raw_payload = None
+        for model_name in model_candidates:
+            llm_attempted = True
+            llm_models_tried.append(model_name)
+            raw_payload, llm_engine, llm_error = _llm_structured_toc(
+                schema_cls,
+                model_name=model_name,
+                system_prompt=str(prompts.get("Architect") or ""),
+                donor_id=donor_id,
+                project=project,
+                country=country,
+                input_context=input_context,
+                revision_hint=revision_hint,
+                evidence_hits=evidence_hits,
+                schema_contract_hint=schema_contract_hint,
+                validation_error_hint=None,
+            )
+            if raw_payload:
+                engine = llm_engine or f"llm:{model_name}"
+                try:
+                    model = _model_validate(schema_cls, raw_payload)
+                except Exception as exc:
+                    llm_validation_error = str(exc)
+                    llm_repair_attempted = True
+                    raw_payload, llm_engine_retry, llm_error_retry = _llm_structured_toc(
+                        schema_cls,
+                        model_name=model_name,
+                        system_prompt=str(prompts.get("Architect") or ""),
+                        donor_id=donor_id,
+                        project=project,
+                        country=country,
+                        input_context=input_context,
+                        revision_hint=revision_hint,
+                        evidence_hits=evidence_hits,
+                        schema_contract_hint=schema_contract_hint,
+                        validation_error_hint=llm_validation_error,
+                    )
+                    if raw_payload:
+                        engine = llm_engine_retry or engine
+                        try:
+                            model = _model_validate(schema_cls, raw_payload)
+                        except Exception as exc_retry:
+                            llm_error = f"LLM structured output failed validation after retry: {exc_retry}"
+                            llm_failure_reasons.append(f"{model_name}: {llm_error}")
+                            raw_payload = None
+                        else:
+                            llm_selected_model = model_name
+                            if llm_error_retry:
+                                llm_error = llm_error_retry
+                            break
                     else:
-                        if llm_error_retry:
-                            llm_error = llm_error_retry
+                        llm_error = llm_error_retry or f"LLM structured output failed validation: {llm_validation_error}"
+                        llm_failure_reasons.append(f"{model_name}: {llm_error}")
                 else:
-                    llm_error = llm_error_retry or f"LLM structured output failed validation: {llm_validation_error}"
+                    llm_selected_model = model_name
+                    break
+            else:
+                llm_failure_reasons.append(f"{model_name}: {llm_error or 'structured_output_failed'}")
+
+        if model is None and llm_failure_reasons and not llm_error:
+            llm_error = "; ".join(llm_failure_reasons[:3])
     elif llm_mode and not llm_available:
         llm_error = openai_compatible_missing_reason()
 
@@ -870,6 +896,9 @@ def generate_toc_under_contract(
         "llm_requested": llm_mode,
         "llm_available": llm_available,
         "llm_attempted": llm_attempted,
+        "llm_attempt_count": len(llm_models_tried),
+        "llm_models_tried": llm_models_tried,
+        "llm_selected_model": llm_selected_model,
         "retrieval_used": bool(evidence_hits),
         "fallback_used": fallback_used,
         "fallback_class": fallback_class,
@@ -887,6 +916,8 @@ def generate_toc_under_contract(
     }
     if llm_error:
         generation_meta["llm_fallback_reason"] = llm_error
+    if llm_failure_reasons:
+        generation_meta["llm_failure_reasons"] = llm_failure_reasons[:5]
     if llm_repair_attempted:
         generation_meta["llm_validation_repair_attempted"] = True
     return toc_payload, validation, generation_meta, claim_citations

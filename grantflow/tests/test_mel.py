@@ -232,6 +232,62 @@ def test_mel_llm_prompt_receives_full_input_context_and_schema_contract(monkeypa
     assert "used_results" in retrieval_hint
 
 
+def test_mel_llm_tries_fallback_model_chain_and_selects_first_success(monkeypatch):
+    monkeypatch.setattr(mel_module, "openai_compatible_llm_available", lambda: True)
+    monkeypatch.setattr(mel_module.config.llm, "mel_model", "model-primary")
+    monkeypatch.setattr(mel_module.config.llm, "reasoning_model", "model-secondary")
+    monkeypatch.setattr(mel_module.config.llm, "cheap_model", "model-cheap")
+
+    def fake_query(*, namespace, query_texts, n_results):  # noqa: ARG001
+        return {
+            "documents": [["Official donor indicator guidance excerpt"]],
+            "metadatas": [[{"doc_id": "usaid_ads201_p10_c1", "chunk_id": "usaid_ads201_p10_c1", "page": 10}]],
+            "ids": [["usaid_ads201_p10_c1"]],
+            "distances": [[0.1]],
+        }
+
+    monkeypatch.setattr(mel_module.vector_store, "query", fake_query)
+    calls: list[str] = []
+
+    def fake_llm_structured_mel(**kwargs):
+        model_name = str(kwargs.get("model_name") or "")
+        calls.append(model_name)
+        if model_name == "model-primary":
+            return None, None, "primary model unavailable"
+        if model_name == "model-secondary":
+            return (
+                {
+                    "indicators": [
+                        {
+                            "indicator_id": "IND_201",
+                            "name": "Officials trained on AI governance",
+                            "justification": "Tracks workforce capability improvements.",
+                            "citation": "usaid_ads201_p10_c1",
+                            "baseline": "0",
+                            "target": "300",
+                            "evidence_excerpt": "Official donor indicator guidance excerpt",
+                        }
+                    ]
+                },
+                "llm:model-secondary",
+                None,
+            )
+        return None, None, "unexpected model"
+
+    monkeypatch.setattr(mel_module, "_llm_structured_mel", fake_llm_structured_mel)
+
+    state = _base_state(llm_mode=True)
+    out = mel_module.mel_assign_indicators(state)
+    generation = out.get("mel_generation_meta") or {}
+
+    assert generation.get("llm_used") is True
+    assert generation.get("engine") == "llm:model-secondary"
+    assert generation.get("llm_selected_model") == "model-secondary"
+    assert generation.get("llm_attempt_count") == 2
+    assert generation.get("llm_models_tried") == ["model-primary", "model-secondary"]
+    assert calls == ["model-primary", "model-secondary"]
+
+
 def test_mel_deterministic_mode_replaces_placeholder_baseline_target(monkeypatch):
     def fake_query(*, namespace, query_texts, n_results):  # noqa: ARG001
         return {

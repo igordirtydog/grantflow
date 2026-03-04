@@ -17,6 +17,9 @@ class LLMConfig(BaseModel):
 
     cheap_model: str = "gpt-4o-mini"
     reasoning_model: str = "gpt-4o"
+    architect_model: str = ""
+    mel_model: str = ""
+    critic_model: str = ""
     max_tokens: int = 4000
     temperature: float = 0.7
 
@@ -116,6 +119,9 @@ class GrantFlowConfig(BaseModel):
             llm=LLMConfig(
                 cheap_model=_env("GRANTFLOW_CHEAP_MODEL", "gpt-4o-mini"),
                 reasoning_model=_env("GRANTFLOW_REASONING_MODEL", "gpt-4o"),
+                architect_model=_env("GRANTFLOW_ARCHITECT_MODEL", ""),
+                mel_model=_env("GRANTFLOW_MEL_MODEL", ""),
+                critic_model=_env("GRANTFLOW_CRITIC_MODEL", ""),
                 max_tokens=int(_env("GRANTFLOW_MAX_TOKENS", "4000")),
                 temperature=float(_env("GRANTFLOW_TEMPERATURE", "0.7")),
             ),

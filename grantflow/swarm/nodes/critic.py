@@ -23,6 +23,7 @@ from grantflow.swarm.findings import canonicalize_findings, finding_messages, wr
 from grantflow.swarm.grounding_gate import evaluate_grounding_gate
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
+    llm_model_candidates,
     openai_compatible_llm_available,
     openai_compatible_missing_reason,
 )
@@ -453,6 +454,9 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
     llm_mode = state_llm_mode(state, default=False)
     critic_engine = "rules"
     llm_reason: Optional[str] = None
+    llm_models_tried: list[str] = []
+    llm_selected_model: Optional[str] = None
+    llm_failure_reasons: list[str] = []
     rule_report = evaluate_rule_based_critic(state)
 
     if llm_mode and openai_compatible_llm_available():
@@ -460,11 +464,6 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
             from langchain_core.messages import HumanMessage, SystemMessage
             from langchain_openai import ChatOpenAI
 
-            llm_kwargs = chat_openai_init_kwargs(model=config.llm.reasoning_model, temperature=0.1)
-            if llm_kwargs is None:
-                raise RuntimeError(openai_compatible_missing_reason())
-            llm = ChatOpenAI(**llm_kwargs)
-            evaluator_llm = llm.with_structured_output(RedTeamEvaluation)
             system_prompt = donor_strategy.get_system_prompts().get(
                 "Red_Team_Critic", "Evaluate quality and compliance strictly."
             )
@@ -474,10 +473,33 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
                 f"Logical Framework / Indicators:\n{state.get('logframe_draft', {})}\n\n"
                 "Be strict and return the structured schema only."
             )
-            evaluation = evaluator_llm.invoke(
-                [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+            model_candidates = llm_model_candidates(
+                str(getattr(config.llm, "critic_model", "") or ""),
+                str(getattr(config.llm, "reasoning_model", "") or ""),
+                str(getattr(config.llm, "cheap_model", "") or ""),
             )
-            critic_engine = f"rules+llm:{config.llm.reasoning_model}"
+            for model_name in model_candidates:
+                llm_models_tried.append(model_name)
+                llm_kwargs = chat_openai_init_kwargs(model=model_name, temperature=0.1)
+                if llm_kwargs is None:
+                    llm_failure_reasons.append(f"{model_name}: {openai_compatible_missing_reason()}")
+                    continue
+                try:
+                    llm = ChatOpenAI(**llm_kwargs)
+                    evaluator_llm = llm.with_structured_output(RedTeamEvaluation)
+                    evaluation = evaluator_llm.invoke(
+                        [SystemMessage(content=system_prompt), HumanMessage(content=human_prompt)]
+                    )
+                    critic_engine = f"rules+llm:{model_name}"
+                    llm_selected_model = model_name
+                    break
+                except Exception as model_exc:
+                    llm_failure_reasons.append(f"{model_name}: {model_exc}")
+            if evaluation is None:
+                if llm_failure_reasons:
+                    llm_reason = f"LLM unavailable: {'; '.join(llm_failure_reasons[:3])}"
+                else:
+                    llm_reason = "LLM unavailable: no configured model candidates"
         except Exception as exc:
             llm_reason = f"LLM unavailable: {exc}"
     else:
@@ -608,10 +630,14 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
         "rule_score": float(rule_report.score),
         "llm_score": llm_score,
         "engine": critic_engine,
+        "llm_models_tried": llm_models_tried,
+        "llm_selected_model": llm_selected_model,
         "grounding_gate": grounding_gate,
     }
     if llm_reason:
         notes["llm_reason"] = llm_reason
+    if llm_failure_reasons:
+        notes["llm_failure_reasons"] = llm_failure_reasons[:5]
     if llm_score_calibration is not None:
         notes["llm_score_calibration"] = llm_score_calibration
     if llm_fatal_flaw_items:

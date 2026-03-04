@@ -526,3 +526,53 @@ def test_architect_llm_prompt_receives_full_input_context_and_schema_contract(mo
     schema_hint = str(captured.get("schema_contract_hint") or "")
     assert schema_hint
     assert "project_goal" in schema_hint
+
+
+def test_architect_llm_tries_fallback_model_chain_and_selects_first_success(monkeypatch):
+    strategy = DonorFactory.get_strategy("usaid")
+    monkeypatch.setattr(architect_generation_module, "openai_compatible_llm_available", lambda: True)
+    monkeypatch.setattr(architect_generation_module.config.llm, "architect_model", "model-primary")
+    monkeypatch.setattr(architect_generation_module.config.llm, "reasoning_model", "model-secondary")
+    monkeypatch.setattr(architect_generation_module.config.llm, "cheap_model", "model-cheap")
+
+    schema_cls = strategy.get_toc_schema()
+    valid_payload, _ = _fallback_structured_toc(
+        schema_cls,
+        donor_id="usaid",
+        project="Digital Governance",
+        country="Kazakhstan",
+        revision_hint="",
+        evidence_hits=[],
+    )
+    calls: list[str] = []
+
+    def fake_llm_structured_toc(*args, **kwargs):
+        model_name = str(kwargs.get("model_name") or "")
+        calls.append(model_name)
+        if model_name == "model-primary":
+            return None, None, "primary model unavailable"
+        if model_name == "model-secondary":
+            return valid_payload, "llm:model-secondary", None
+        return None, None, "unexpected model"
+
+    monkeypatch.setattr(architect_generation_module, "_llm_structured_toc", fake_llm_structured_toc)
+
+    state = {
+        "donor_id": "usaid",
+        "donor_strategy": strategy,
+        "input_context": {"project": "Digital Governance", "country": "Kazakhstan"},
+        "llm_mode": True,
+        "critic_notes": {},
+    }
+    _toc, validation, generation_meta, _claim_citations = generate_toc_under_contract(
+        state=state,
+        strategy=strategy,
+        evidence_hits=[],
+    )
+    assert validation["valid"] is True
+    assert generation_meta["llm_used"] is True
+    assert generation_meta["engine"] == "llm:model-secondary"
+    assert generation_meta["llm_selected_model"] == "model-secondary"
+    assert generation_meta["llm_attempt_count"] == 2
+    assert generation_meta["llm_models_tried"] == ["model-primary", "model-secondary"]
+    assert calls == ["model-primary", "model-secondary"]

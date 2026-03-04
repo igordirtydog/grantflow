@@ -48,3 +48,13 @@ def test_chat_openai_init_kwargs_returns_none_without_any_key(monkeypatch):
     assert llm_provider.chat_openai_init_kwargs(model="gpt-4o", temperature=0.2) is None
     assert llm_provider.openai_compatible_llm_available() is False
     assert "OPENROUTER_API_KEY" in llm_provider.openai_compatible_missing_reason()
+
+
+def test_llm_model_candidates_dedupes_and_ignores_empty_tokens():
+    models = llm_provider.llm_model_candidates(
+        "",
+        "gpt-4o, gpt-4o-mini",
+        "gpt-4o-mini",
+        " openrouter/free ",
+    )
+    assert models == ["gpt-4o", "gpt-4o-mini", "openrouter/free"]

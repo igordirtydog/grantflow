@@ -14,6 +14,7 @@ from grantflow.swarm.citation_source import citation_label_from_metadata, citati
 from grantflow.swarm.citations import append_citations, citation_traceability_status
 from grantflow.swarm.llm_provider import (
     chat_openai_init_kwargs,
+    llm_model_candidates,
     openai_compatible_llm_available,
     openai_compatible_missing_reason,
 )
@@ -624,6 +625,7 @@ def _normalize_llm_indicators(
 
 def _llm_structured_mel(
     *,
+    model_name: str,
     system_prompt: str,
     donor_id: str,
     project: str,
@@ -636,7 +638,7 @@ def _llm_structured_mel(
     retrieval_trace_hint: Optional[str] = None,
     validation_error_hint: Optional[str] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    llm_kwargs = chat_openai_init_kwargs(model=config.llm.reasoning_model, temperature=0.1)
+    llm_kwargs = chat_openai_init_kwargs(model=model_name, temperature=0.1)
     if llm_kwargs is None:
         return None, None, openai_compatible_missing_reason()
 
@@ -695,9 +697,9 @@ def _llm_structured_mel(
             ]
         )
         if isinstance(result, BaseModel):
-            return _model_dump(result), f"llm:{config.llm.reasoning_model}", None
+            return _model_dump(result), f"llm:{model_name}", None
         if isinstance(result, dict):
-            return result, f"llm:{config.llm.reasoning_model}", None
+            return result, f"llm:{model_name}", None
         return None, None, "LLM structured output returned unsupported type"
     except Exception as exc:  # pragma: no cover - exercised only when LLM deps configured
         return None, None, str(exc)
@@ -877,6 +879,9 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     llm_available = openai_compatible_llm_available()
     llm_attempted = False
     llm_repair_attempted = False
+    llm_selected_model: Optional[str] = None
+    llm_models_tried: list[str] = []
+    llm_failure_reasons: list[str] = []
     llm_error: Optional[str] = None
     generation_engine = "deterministic:retrieval_template"
     fallback_used = False
@@ -955,63 +960,83 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
 
     indicators: list[Dict[str, Any]] = []
     if llm_mode and llm_available:
-        llm_attempted = True
         prompts = getattr(strategy, "get_system_prompts", lambda: {})() or {}
-        raw_payload, llm_engine, llm_error = _llm_structured_mel(
-            system_prompt=str(prompts.get("MEL_Specialist") or ""),
-            donor_id=donor_id,
-            project=project,
-            country=country,
-            input_context=input_context,
-            toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
-            revision_hint=revision_hint,
-            evidence_hits=retrieval_hits,
-            schema_contract_hint=schema_contract_hint,
-            retrieval_trace_hint=retrieval_trace_hint,
-            validation_error_hint=None,
+        model_candidates = llm_model_candidates(
+            str(getattr(config.llm, "mel_model", "") or ""),
+            str(getattr(config.llm, "reasoning_model", "") or ""),
+            str(getattr(config.llm, "cheap_model", "") or ""),
         )
-        if raw_payload is not None:
-            generation_engine = llm_engine or "llm:unknown"
-            try:
-                parsed = _model_validate(MELDraftOutput, raw_payload)
-                indicators = _normalize_llm_indicators(
-                    _model_dump(parsed).get("indicators"),
-                    namespace=namespace,
-                    input_context=input_context,
-                )
-            except Exception as exc:
-                llm_repair_attempted = True
-                raw_payload_retry, llm_engine_retry, llm_error_retry = _llm_structured_mel(
-                    system_prompt=str(prompts.get("MEL_Specialist") or ""),
-                    donor_id=donor_id,
-                    project=project,
-                    country=country,
-                    input_context=input_context,
-                    toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
-                    revision_hint=revision_hint,
-                    evidence_hits=retrieval_hits,
-                    schema_contract_hint=schema_contract_hint,
-                    retrieval_trace_hint=retrieval_trace_hint,
-                    validation_error_hint=str(exc),
-                )
-                if raw_payload_retry is not None:
-                    generation_engine = llm_engine_retry or generation_engine
-                    try:
-                        parsed_retry = _model_validate(MELDraftOutput, raw_payload_retry)
-                        indicators = _normalize_llm_indicators(
-                            _model_dump(parsed_retry).get("indicators"),
-                            namespace=namespace,
-                            input_context=input_context,
-                        )
-                    except Exception as exc_retry:
-                        llm_error = f"LLM MEL structured output validation failed after retry: {exc_retry}"
+        for model_name in model_candidates:
+            llm_attempted = True
+            llm_models_tried.append(model_name)
+            raw_payload, llm_engine, llm_error = _llm_structured_mel(
+                model_name=model_name,
+                system_prompt=str(prompts.get("MEL_Specialist") or ""),
+                donor_id=donor_id,
+                project=project,
+                country=country,
+                input_context=input_context,
+                toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
+                revision_hint=revision_hint,
+                evidence_hits=retrieval_hits,
+                schema_contract_hint=schema_contract_hint,
+                retrieval_trace_hint=retrieval_trace_hint,
+                validation_error_hint=None,
+            )
+            if raw_payload is not None:
+                generation_engine = llm_engine or f"llm:{model_name}"
+                try:
+                    parsed = _model_validate(MELDraftOutput, raw_payload)
+                    indicators = _normalize_llm_indicators(
+                        _model_dump(parsed).get("indicators"),
+                        namespace=namespace,
+                        input_context=input_context,
+                    )
+                except Exception as exc:
+                    llm_repair_attempted = True
+                    raw_payload_retry, llm_engine_retry, llm_error_retry = _llm_structured_mel(
+                        model_name=model_name,
+                        system_prompt=str(prompts.get("MEL_Specialist") or ""),
+                        donor_id=donor_id,
+                        project=project,
+                        country=country,
+                        input_context=input_context,
+                        toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
+                        revision_hint=revision_hint,
+                        evidence_hits=retrieval_hits,
+                        schema_contract_hint=schema_contract_hint,
+                        retrieval_trace_hint=retrieval_trace_hint,
+                        validation_error_hint=str(exc),
+                    )
+                    if raw_payload_retry is not None:
+                        generation_engine = llm_engine_retry or generation_engine
+                        try:
+                            parsed_retry = _model_validate(MELDraftOutput, raw_payload_retry)
+                            indicators = _normalize_llm_indicators(
+                                _model_dump(parsed_retry).get("indicators"),
+                                namespace=namespace,
+                                input_context=input_context,
+                            )
+                        except Exception as exc_retry:
+                            llm_error = f"LLM MEL structured output validation failed after retry: {exc_retry}"
+                            llm_failure_reasons.append(f"{model_name}: {llm_error}")
+                        else:
+                            llm_selected_model = model_name
+                            if llm_error_retry:
+                                llm_error = llm_error_retry
+                            break
                     else:
-                        if llm_error_retry:
-                            llm_error = llm_error_retry
+                        llm_error = llm_error_retry or f"LLM MEL structured output validation failed: {exc}"
+                        llm_failure_reasons.append(f"{model_name}: {llm_error}")
                 else:
-                    llm_error = llm_error_retry or f"LLM MEL structured output validation failed: {exc}"
+                    llm_selected_model = model_name
+                    break
+            else:
+                llm_failure_reasons.append(f"{model_name}: {llm_error or 'structured_output_failed'}")
     elif llm_mode and not llm_available:
         llm_error = openai_compatible_missing_reason()
+    if llm_mode and not indicators and llm_failure_reasons and not llm_error:
+        llm_error = "; ".join(llm_failure_reasons[:3])
 
     if not indicators:
         if retrieval_hits:
@@ -1043,6 +1068,9 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         "llm_requested": llm_mode,
         "llm_available": llm_available,
         "llm_attempted": llm_attempted,
+        "llm_attempt_count": len(llm_models_tried),
+        "llm_models_tried": llm_models_tried,
+        "llm_selected_model": llm_selected_model,
         "retrieval_used": bool(retrieval_hits),
         "fallback_used": fallback_used,
         "fallback_class": fallback_class,
@@ -1054,6 +1082,8 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     }
     if llm_error:
         mel_generation_meta["llm_fallback_reason"] = llm_error
+    if llm_failure_reasons:
+        mel_generation_meta["llm_failure_reasons"] = llm_failure_reasons[:5]
     if llm_repair_attempted:
         mel_generation_meta["llm_validation_repair_attempted"] = True
 

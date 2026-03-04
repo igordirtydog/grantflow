@@ -50,6 +50,25 @@ def openai_compatible_missing_reason() -> str:
     return "OPENAI_API_KEY / OPENROUTER_API_KEY missing"
 
 
+def llm_model_candidates(*values: Optional[str]) -> list[str]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        token = str(raw or "").strip()
+        if not token:
+            continue
+        for part in token.split(","):
+            model = str(part or "").strip()
+            if not model:
+                continue
+            marker = model.lower()
+            if marker in seen:
+                continue
+            seen.add(marker)
+            candidates.append(model)
+    return candidates
+
+
 def chat_openai_init_kwargs(*, model: str, temperature: float) -> Optional[dict[str, Any]]:
     api_key = openai_compatible_api_key()
     if not api_key:
