@@ -189,6 +189,7 @@ def test_demo_console_page_loads():
     assert "generatePreflightAlertBody" in body
     assert "portfolioBtn" in body
     assert "portfolioClearBtn" in body
+    assert "clearPortfolioToCTextRiskBtn" in body
     assert "portfolioWarningLevelFilter" in body
     assert "portfolioGroundingRiskLevelFilter" in body
     assert "portfolioFindingStatusFilter" in body
@@ -224,6 +225,7 @@ def test_demo_console_page_loads():
     assert "% High ToC-text Risk" in body
     assert "ToC Text Issues" in body
     assert "ToC Text Risk Levels" in body
+    assert "Clear ToC Risk Filter" in body
     assert "portfolioWarningMetaLine" in body
     assert "qualityLlmFindingLabelsList" in body
     assert "qualityAdvisoryBadgeList" in body
@@ -245,6 +247,7 @@ def test_demo_console_page_loads():
     assert 'params.set("finding_status",' in body
     assert 'params.set("finding_severity",' in body
     assert 'params.set("toc_text_risk_level",' in body
+    assert "clearPortfolioToCTextRiskFilter" in body
     assert "copyPortfolioMetricsJsonBtn" in body
     assert "downloadPortfolioMetricsJsonBtn" in body
     assert "downloadPortfolioMetricsCsvBtn" in body

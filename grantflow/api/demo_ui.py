@@ -622,6 +622,10 @@ def render_demo_ui_html() -> str:
               <div class="kpi"><div class="label">ToC Text Issues</div><div class="value mono">-</div></div>
             </div>
             <div id="portfolioWarningMetaLine" class="footer-note mono">high=- · medium=- · low=- · none=- · total=-</div>
+            <div class="row" style="margin-top:8px;">
+              <button id="clearPortfolioToCTextRiskBtn" class="ghost">Clear ToC Risk Filter</button>
+              <div class="sub" style="align-self:center;">Quick reset for only <code>toc_text_risk_level</code>.</div>
+            </div>
             <div class="row" style="margin-top:10px;">
               <button id="copyPortfolioQualityJsonBtn" class="ghost">Copy Quality JSON</button>
               <button id="downloadPortfolioQualityJsonBtn" class="ghost">Export Quality JSON</button>
@@ -1563,6 +1567,7 @@ def render_demo_ui_html() -> str:
         qualityBtn: $("qualityBtn"),
         portfolioBtn: $("portfolioBtn"),
         portfolioClearBtn: $("portfolioClearBtn"),
+        clearPortfolioToCTextRiskBtn: $("clearPortfolioToCTextRiskBtn"),
         copyPortfolioMetricsJsonBtn: $("copyPortfolioMetricsJsonBtn"),
         downloadPortfolioMetricsJsonBtn: $("downloadPortfolioMetricsJsonBtn"),
         downloadPortfolioMetricsCsvBtn: $("downloadPortfolioMetricsCsvBtn"),
@@ -1644,6 +1649,12 @@ def render_demo_ui_html() -> str:
         els.portfolioFindingSeverityFilter.value = "";
         els.portfolioToCTextRiskLevelFilter.value = "";
         persistUiState();
+      }
+
+      function clearPortfolioToCTextRiskFilter() {
+        els.portfolioToCTextRiskLevelFilter.value = "";
+        persistUiState();
+        refreshPortfolioBundle().catch(showError);
       }
 
       function clearCriticFilters() {
@@ -5128,6 +5139,9 @@ def render_demo_ui_html() -> str:
         els.portfolioClearBtn.addEventListener("click", () => {
           clearPortfolioFilters();
           refreshPortfolioBundle().catch(showError);
+        });
+        els.clearPortfolioToCTextRiskBtn.addEventListener("click", () => {
+          clearPortfolioToCTextRiskFilter();
         });
         els.copyPortfolioMetricsJsonBtn.addEventListener("click", () =>
           copyPortfolioMetricsJson().catch((err) => showError(err))
