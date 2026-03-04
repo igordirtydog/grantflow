@@ -350,10 +350,14 @@ python -m grantflow.eval.harness \
   --seed-rag-manifest docs/rag_seed_corpus/ingest_manifest.jsonl \
   --suite-label grounded-eval \
   --text-out eval-artifacts/grounded-eval-report.txt \
-  --json-out eval-artifacts/grounded-eval-report.json
+  --json-out eval-artifacts/grounded-eval-report.json \
+  --compare-to-baseline grantflow/eval/fixtures/grounded_regression_snapshot.json \
+  --comparison-text-out eval-artifacts/grounded-regression-comparison.txt \
+  --comparison-json-out eval-artifacts/grounded-regression-comparison.json
 
 # grounded_cases.json is a strict gate:
 # high quality/critic minima + zero fallback namespace citations + low non-retrieval and traceability-gap limits.
+# the run also performs trend-regression check versus `grounded_regression_snapshot.json`.
 
 # Grounded A/B (architect RAG on vs off, metrics-only)
 python -m grantflow.eval.harness \
@@ -389,6 +393,7 @@ python scripts/eval_ab_diff.py \
 
 python scripts/build_grounded_gate_summary.py \
   --grounded-json eval-artifacts/grounded-eval-report.json \
+  --grounded-comparison-json eval-artifacts/grounded-regression-comparison.json \
   --ab-diff-json eval-artifacts/grounded-ab-diff.json \
   --expected-donors usaid,eu,worldbank,state_department \
   --min-seeded-total 1 \

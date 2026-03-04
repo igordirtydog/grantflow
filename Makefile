@@ -4,6 +4,7 @@ PYTHON ?= python3
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
 GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
+GROUNDED_BASELINE ?= grantflow/eval/fixtures/grounded_regression_snapshot.json
 GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
 GROUNDED_MAX_NON_RETRIEVAL ?= 0.25
 GROUNDED_MIN_RETRIEVAL_GROUNDED ?= 0.75
@@ -20,7 +21,10 @@ eval-grounded-ab:
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--suite-label grounded-eval \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.txt \
-		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json \
+		--compare-to-baseline $(GROUNDED_BASELINE) \
+		--comparison-text-out $(EVAL_ARTIFACTS_DIR)/grounded-regression-comparison.txt \
+		--comparison-json-out $(EVAL_ARTIFACTS_DIR)/grounded-regression-comparison.json
 	$(PYTHON) scripts/check_seeded_corpus.py \
 		--json $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json \
 		--label grounded-eval-seed \
@@ -66,6 +70,7 @@ eval-grounded-ab:
 		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json
 	$(PYTHON) scripts/build_grounded_gate_summary.py \
 		--grounded-json $(EVAL_ARTIFACTS_DIR)/grounded-eval-report.json \
+		--grounded-comparison-json $(EVAL_ARTIFACTS_DIR)/grounded-regression-comparison.json \
 		--ab-diff-json $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json \
 		--expected-donors $(GROUNDED_EXPECTED_DONORS) \
 		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL) \

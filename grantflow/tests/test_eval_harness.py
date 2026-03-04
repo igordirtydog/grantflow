@@ -385,6 +385,16 @@ def test_grounded_cases_expectations_are_strict_quality_gate():
         assert expectations.get("max_traceability_gap_citation_rate") <= 0.1
 
 
+def test_grounded_regression_snapshot_covers_grounded_cases():
+    cases = load_eval_cases(case_files=[Path("grantflow/eval/cases/grounded_cases.json")])
+    expected_case_ids = {str(case.get("case_id") or "").strip() for case in cases if case.get("case_id")}
+    assert expected_case_ids, "Expected non-empty grounded case ids"
+    snapshot = json.loads(Path("grantflow/eval/fixtures/grounded_regression_snapshot.json").read_text(encoding="utf-8"))
+    snapshot_cases = snapshot.get("cases") if isinstance(snapshot.get("cases"), dict) else {}
+    snapshot_case_ids = {str(case_id).strip() for case_id in snapshot_cases}
+    assert snapshot_case_ids == expected_case_ids
+
+
 def test_filter_eval_cases_supports_donor_and_case_filters():
     source_cases = [
         {"case_id": "usaid_a", "donor_id": "usaid"},

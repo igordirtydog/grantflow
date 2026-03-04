@@ -137,6 +137,7 @@ def build_summary_markdown(
     *,
     report_payload: dict[str, Any],
     ab_diff_payload: dict[str, Any] | None = None,
+    grounded_comparison_payload: dict[str, Any] | None = None,
     expected_donors: list[str] | None = None,
     min_seeded_total: int = 1,
 ) -> str:
@@ -181,6 +182,16 @@ def build_summary_markdown(
                     continue
                 lines.append(f"  - `{item.get('donor_id')}` `{item.get('kind')}` observed=`{item.get('observed')}`")
 
+    if grounded_comparison_payload is not None:
+        has_regressions = bool(grounded_comparison_payload.get("has_regressions"))
+        regression_count = _as_int(grounded_comparison_payload.get("regression_count"), default=0)
+        warning_count = _as_int(grounded_comparison_payload.get("warning_count"), default=0)
+        lines.append(
+            "- Trend regression gate: "
+            + ("**FAIL**" if has_regressions else "**PASS**")
+            + f" (regressions=`{regression_count}`, warnings=`{warning_count}`)"
+        )
+
     if donor_rows:
         lines.extend(
             [
@@ -224,6 +235,12 @@ def build_summary_markdown(
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build markdown summary for grounded eval gate artifacts.")
     parser.add_argument("--grounded-json", type=Path, required=True, help="Path to grounded eval report JSON.")
+    parser.add_argument(
+        "--grounded-comparison-json",
+        type=Path,
+        default=None,
+        help="Optional path to grounded regression comparison JSON.",
+    )
     parser.add_argument("--ab-diff-json", type=Path, default=None, help="Optional grounded A/B diff JSON path.")
     parser.add_argument("--out", type=Path, required=True, help="Path to output markdown summary.")
     parser.add_argument(
@@ -252,10 +269,16 @@ def main(argv: list[str] | None = None) -> int:
         loaded = json.loads(args.ab_diff_json.read_text(encoding="utf-8"))
         if isinstance(loaded, dict):
             ab_payload = loaded
+    grounded_comparison_payload: dict[str, Any] | None = None
+    if args.grounded_comparison_json is not None:
+        loaded = json.loads(args.grounded_comparison_json.read_text(encoding="utf-8"))
+        if isinstance(loaded, dict):
+            grounded_comparison_payload = loaded
 
     markdown = build_summary_markdown(
         report_payload=grounded_payload,
         ab_diff_payload=ab_payload,
+        grounded_comparison_payload=grounded_comparison_payload,
         expected_donors=_parse_csv_tokens(args.expected_donors),
         min_seeded_total=max(0, int(args.min_seeded_total)),
     )

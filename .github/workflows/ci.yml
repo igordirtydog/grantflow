@@ -118,7 +118,10 @@ jobs:
             --seed-rag-manifest docs/rag_seed_corpus/ingest_manifest.jsonl \
             --suite-label grounded-eval \
             --text-out eval-artifacts/grounded-eval-report.txt \
-            --json-out eval-artifacts/grounded-eval-report.json
+            --json-out eval-artifacts/grounded-eval-report.json \
+            --compare-to-baseline grantflow/eval/fixtures/grounded_regression_snapshot.json \
+            --comparison-text-out eval-artifacts/grounded-regression-comparison.txt \
+            --comparison-json-out eval-artifacts/grounded-regression-comparison.json
 
       - name: Validate seeded corpus (grounded deterministic suite)
         run: |
@@ -185,6 +188,7 @@ jobs:
         run: |
           python scripts/build_grounded_gate_summary.py \
             --grounded-json eval-artifacts/grounded-eval-report.json \
+            --grounded-comparison-json eval-artifacts/grounded-regression-comparison.json \
             --ab-diff-json eval-artifacts/grounded-ab-diff.json \
             --expected-donors usaid,eu,worldbank,state_department \
             --min-seeded-total 1 \

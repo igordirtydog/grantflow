@@ -55,6 +55,7 @@ def test_build_summary_markdown_includes_gate_status_and_table():
                 "donor_counts": {"usaid": 4, "eu": 4},
             },
         },
+        grounded_comparison_payload={"has_regressions": False, "regression_count": 0, "warning_count": 1},
         ab_diff_payload={"guard": {"status": "passed", "failures": []}},
         expected_donors=["usaid", "eu"],
         min_seeded_total=1,
@@ -63,6 +64,7 @@ def test_build_summary_markdown_includes_gate_status_and_table():
     assert "Deterministic grounded gate: **PASS**" in summary
     assert "Seeded corpus gate: **PASS**" in summary
     assert "A/B guard status: **PASSED**" in summary
+    assert "Trend regression gate: **PASS**" in summary
     assert "| Donor | Passed/Cases | Avg Quality" in summary
     assert "| usaid | 1/1 | 8.5" in summary
 
