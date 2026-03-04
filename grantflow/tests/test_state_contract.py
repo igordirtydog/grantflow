@@ -34,9 +34,9 @@ def test_normalize_state_contract_unifies_aliases_and_defaults():
 
     out = normalize_state_contract(state)
     assert out["donor_id"] == "usaid"
-    assert out["donor"] == "usaid"
+    assert "donor" not in out
     assert out["input_context"] == {"project": "AI upskilling"}
-    assert out["input"] == {"project": "AI upskilling"}
+    assert "input" not in out
     assert out["critic_score"] == 4.5
     assert out["quality_score"] == 4.5
     assert out["llm_mode"] is True
@@ -69,7 +69,7 @@ def test_state_strategy_helpers_prefer_canonical_field():
 
     set_state_donor_strategy(state, "normalized")
     assert state["donor_strategy"] == "normalized"
-    assert state["strategy"] == "normalized"
+    assert "strategy" not in state
 
 
 def test_discovery_normalizes_state_contract_for_legacy_inputs():
@@ -81,9 +81,9 @@ def test_discovery_normalizes_state_contract_for_legacy_inputs():
 
     out = validate_input_richness(state)
     assert out["donor_id"] == "usaid"
-    assert out["donor"] == "usaid"
+    assert "donor" not in out
     assert out["input_context"]["project"] == "Water Sanitation"
-    assert out["input"]["country"] == "Kenya"
+    assert "input" not in out
     assert isinstance(out["critic_notes"], dict)
 
 
@@ -109,7 +109,7 @@ def test_state_rag_namespace_prefers_canonical_field_and_normalizes_alias():
     alias_only = {"retrieval_namespace": "tenant_b/eu_intpa"}
     out = normalize_state_contract(alias_only)
     assert out["rag_namespace"] == "tenant_b/eu_intpa"
-    assert out["retrieval_namespace"] == "tenant_b/eu_intpa"
+    assert "retrieval_namespace" not in out
 
 
 def test_normalize_rag_namespace_compacts_separators_and_spaces():
@@ -153,7 +153,7 @@ def test_set_state_iteration_updates_canonical_and_legacy_aliases():
     value = set_state_iteration(state, "4")
     assert value == 4
     assert state["iteration_count"] == 4
-    assert state["iteration"] == 4
+    assert "iteration" not in state
 
 
 def test_build_graph_state_creates_canonical_runtime_state_with_aliases():
@@ -174,14 +174,14 @@ def test_build_graph_state_creates_canonical_runtime_state_with_aliases():
     )
 
     assert out["donor_id"] == "usaid"
-    assert out["donor"] == "usaid"
+    assert "donor" not in out
     assert out["input_context"] == {"project": "GovTech", "country": "Kazakhstan"}
-    assert out["input"] == {"project": "GovTech", "country": "Kazakhstan"}
+    assert "input" not in out
     assert out["donor_strategy"] is strategy
-    assert out["strategy"] is strategy
+    assert "strategy" not in out
     assert out["tenant_id"] == "tenant_a"
     assert out["rag_namespace"] == "tenant_a/usaid_ads201"
-    assert out["retrieval_namespace"] == "tenant_a/usaid_ads201"
+    assert "retrieval_namespace" not in out
     assert out["llm_mode"] is True
     assert out["max_iterations"] == 1
     assert out["strict_preflight"] is True
@@ -189,6 +189,19 @@ def test_build_graph_state_creates_canonical_runtime_state_with_aliases():
     assert out["architect_rag_enabled"] is True
     assert out["hitl_checkpoints"] == ["architect", "logframe"]
     assert out["errors"] == []
+
+
+def test_normalize_state_contract_can_emit_legacy_aliases_for_boundary_compat():
+    out = normalize_state_contract(
+        {"donor": "USAID", "input": {"project": "GovTech"}, "retrieval_namespace": "tenant_a/usaid_ads201"},
+        emit_legacy_aliases=True,
+    )
+    assert out["donor_id"] == "usaid"
+    assert out["donor"] == "usaid"
+    assert out["input_context"] == {"project": "GovTech"}
+    assert out["input"] == {"project": "GovTech"}
+    assert out["rag_namespace"] == "tenant_a/usaid_ads201"
+    assert out["retrieval_namespace"] == "tenant_a/usaid_ads201"
 
 
 def test_normalize_helpers_handle_non_dict_inputs_safely():

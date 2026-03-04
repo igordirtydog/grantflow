@@ -71,7 +71,7 @@ def prepare_state_for_storage(state: Any) -> Any:
         return sanitize_jsonable(state)
 
     normalized_state = copy.deepcopy(state)
-    normalize_state_contract(normalized_state)
+    normalize_state_contract(normalized_state, emit_legacy_aliases=True)
     stored_state: Dict[str, Any] = {}
     for key, value in normalized_state.items():
         if key in RUNTIME_STATE_KEYS:
@@ -93,7 +93,7 @@ def restore_state_from_storage(state: Any) -> Any:
             return restored
         restored["donor_strategy"] = strategy
         restored["strategy"] = strategy
-    normalize_state_contract(restored)
+    normalize_state_contract(restored, emit_legacy_aliases=True)
     return restored
 
 
@@ -101,7 +101,7 @@ def _normalize_state_in_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
     out = copy.deepcopy(payload)
     state = out.get("state")
     if isinstance(state, dict):
-        normalize_state_contract(state)
+        normalize_state_contract(state, emit_legacy_aliases=True)
     return out
 
 

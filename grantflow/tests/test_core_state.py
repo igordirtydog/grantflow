@@ -21,7 +21,7 @@ def test_core_state_normalization_path_matches_canonical_behavior():
     }
     normalized = core_state.normalize_state_contract(state)
     assert normalized["donor_id"] == "usaid"
-    assert normalized["donor"] == "usaid"
+    assert "donor" not in normalized
     assert normalized["input_context"]["country"] == "Kazakhstan"
-    assert normalized["input"]["project"] == "AI upskilling"
+    assert "input" not in normalized
     assert normalized["llm_mode"] is True

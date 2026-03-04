@@ -341,9 +341,9 @@ def test_build_initial_state_uses_canonical_state_contract():
         }
     )
     assert state["donor_id"] == "usaid"
-    assert state["donor"] == "usaid"
+    assert "donor" not in state
     assert state["input_context"]["project"] == "AI training"
-    assert state["input"]["country"] == "Kazakhstan"
+    assert "input" not in state
     assert state["llm_mode"] is True
     assert state["architect_rag_enabled"] is True
     assert state["max_iterations"] == 1

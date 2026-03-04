@@ -138,12 +138,19 @@ def state_donor_strategy(state: Mapping[str, Any], default: Any = None) -> Any:
     return strategy if strategy is not None else default
 
 
-def set_state_donor_strategy(state: MutableMapping[str, Any], strategy: Any) -> None:
+def set_state_donor_strategy(
+    state: MutableMapping[str, Any],
+    strategy: Any,
+    *,
+    emit_legacy_alias: bool = False,
+) -> None:
     if strategy is None:
         return
     state["donor_strategy"] = strategy
-    # Legacy alias retained for compatibility with older payload consumers.
-    state["strategy"] = strategy
+    if emit_legacy_alias:
+        state["strategy"] = strategy
+    else:
+        state.pop("strategy", None)
 
 
 def state_input_context(state: Mapping[str, Any]) -> dict[str, Any]:
@@ -165,11 +172,13 @@ def state_iteration(state: Mapping[str, Any], default: int = 0) -> int:
     return _as_int(state.get("iteration_count"), default=_as_int(state.get("iteration"), default=default))
 
 
-def set_state_iteration(state: MutableMapping[str, Any], iteration: Any) -> int:
+def set_state_iteration(state: MutableMapping[str, Any], iteration: Any, *, emit_legacy_alias: bool = False) -> int:
     value = max(0, _as_int(iteration, default=0))
     state["iteration_count"] = value
-    # Legacy alias retained for compatibility with older payload consumers.
-    state["iteration"] = value
+    if emit_legacy_alias:
+        state["iteration"] = value
+    else:
+        state.pop("iteration", None)
     return value
 
 
@@ -208,6 +217,7 @@ def build_graph_state(
     generate_preflight: Optional[Mapping[str, Any]] = None,
     strict_preflight: bool = False,
     extras: Optional[Mapping[str, Any]] = None,
+    emit_legacy_aliases: bool = False,
 ) -> GrantFlowState:
     state: dict[str, Any] = {
         "donor_id": normalize_donor_token(donor_id),
@@ -226,7 +236,7 @@ def build_graph_state(
         "strict_preflight": bool(strict_preflight),
     }
     if donor_strategy is not None:
-        set_state_donor_strategy(state, donor_strategy)
+        set_state_donor_strategy(state, donor_strategy, emit_legacy_alias=emit_legacy_aliases)
     normalized_tenant = str(tenant_id or "").strip()
     if normalized_tenant:
         state["tenant_id"] = normalized_tenant
@@ -237,34 +247,48 @@ def build_graph_state(
         state["generate_preflight"] = dict(generate_preflight)
     if isinstance(extras, Mapping):
         state.update(dict(extras))
-    return normalize_state_contract(state)
+    return normalize_state_contract(state, emit_legacy_aliases=emit_legacy_aliases)
 
 
-def normalize_state_contract(state: MutableMapping[str, Any]) -> GrantFlowState:
+def normalize_state_contract(
+    state: MutableMapping[str, Any],
+    *,
+    emit_legacy_aliases: bool = False,
+) -> GrantFlowState:
     donor_id = state_donor_id(state)
+    input_context = state_input_context(state)
+    strategy = state_donor_strategy(state)
+    rag_namespace = state_rag_namespace(state)
+    iteration_value = state_iteration(state)
+
+    if not emit_legacy_aliases:
+        state.pop("donor", None)
+        state.pop("input", None)
+        state.pop("strategy", None)
+        state.pop("retrieval_namespace", None)
+        state.pop("iteration", None)
+
     if donor_id:
         state["donor_id"] = donor_id
-        # Legacy alias retained for compatibility with older payload consumers.
-        state["donor"] = donor_id
+        if emit_legacy_aliases:
+            state["donor"] = donor_id
 
-    input_context = state_input_context(state)
     state["input_context"] = input_context
-    # Legacy alias retained for compatibility with older payload consumers.
-    state["input"] = input_context
+    if emit_legacy_aliases:
+        state["input"] = input_context
 
-    set_state_donor_strategy(state, state_donor_strategy(state))
+    set_state_donor_strategy(state, strategy, emit_legacy_alias=emit_legacy_aliases)
 
     tenant_id = str(state.get("tenant_id") or "").strip()
     if tenant_id:
         state["tenant_id"] = tenant_id
 
-    rag_namespace = state_rag_namespace(state)
     if rag_namespace:
         state["rag_namespace"] = rag_namespace
-        # Legacy alias retained for compatibility with older payload consumers.
-        state["retrieval_namespace"] = rag_namespace
+        if emit_legacy_aliases:
+            state["retrieval_namespace"] = rag_namespace
 
-    set_state_iteration(state, state_iteration(state))
+    set_state_iteration(state, iteration_value, emit_legacy_alias=emit_legacy_aliases)
 
     critic_score = _as_float(
         state.get("critic_score"),
