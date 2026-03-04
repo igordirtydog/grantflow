@@ -1,0 +1,139 @@
+{
+  "cases": [
+    {
+      "name": "usaid_complete_workbook_headers",
+      "input": {
+        "donor_id": "usaid",
+        "toc_payload": {
+          "project_goal": "Improve civic services",
+          "development_objectives": [
+            {
+              "do_id": "DO1",
+              "description": "Improved digital delivery",
+              "intermediate_results": []
+            }
+          ]
+        },
+        "workbook_sheetnames": [
+          "LogFrame",
+          "USAID_RF",
+          "Template Meta"
+        ],
+        "workbook_primary_sheet_headers": [
+          "DO ID",
+          "DO Description",
+          "IR ID",
+          "IR Description",
+          "Output ID",
+          "Output Description",
+          "Indicator Code",
+          "Indicator Name",
+          "Target",
+          "Justification",
+          "Citation"
+        ]
+      },
+      "expected": {
+        "template_key": "usaid",
+        "status": "pass",
+        "workbook_validation_enabled": true,
+        "missing_required_sections": [],
+        "missing_required_sheets": [],
+        "missing_required_primary_sheet_headers": []
+      }
+    },
+    {
+      "name": "eu_missing_primary_headers",
+      "input": {
+        "donor_id": "eu",
+        "toc_payload": {
+          "overall_objective": {
+            "objective_id": "OO1",
+            "title": "Digital governance",
+            "rationale": "EU fit"
+          },
+          "specific_objectives": [
+            {
+              "objective_id": "SO1",
+              "title": "Service quality",
+              "rationale": "Improve delivery standards"
+            }
+          ],
+          "expected_outcomes": [
+            {
+              "outcome_id": "OUT1",
+              "title": "Citizen trust",
+              "expected_change": "Higher service satisfaction"
+            }
+          ]
+        },
+        "workbook_sheetnames": [
+          "LogFrame",
+          "EU_Intervention",
+          "EU_Assumptions_Risks",
+          "Template Meta"
+        ],
+        "workbook_primary_sheet_headers": [
+          "Level",
+          "ID"
+        ]
+      },
+      "expected": {
+        "template_key": "eu",
+        "status": "warning",
+        "workbook_validation_enabled": true,
+        "missing_required_sections": [],
+        "missing_required_sheets": [],
+        "missing_required_primary_sheet_headers": [
+          "Title",
+          "Description"
+        ]
+      }
+    },
+    {
+      "name": "worldbank_missing_sheet_and_headers",
+      "input": {
+        "donor_id": "worldbank",
+        "toc_payload": {
+          "project_development_objective": "Improve municipal service delivery",
+          "objectives": [
+            {
+              "objective_id": "PDO1",
+              "title": "Service delivery quality",
+              "description": "Better outcomes"
+            }
+          ],
+          "results_chain": [
+            {
+              "result_id": "R1",
+              "title": "Digital workflows adopted",
+              "description": "Local agencies use digital case-management",
+              "indicator_focus": "Processing time"
+            }
+          ]
+        },
+        "workbook_sheetnames": [
+          "LogFrame",
+          "Template Meta"
+        ],
+        "workbook_primary_sheet_headers": [
+          "Level"
+        ]
+      },
+      "expected": {
+        "template_key": "worldbank",
+        "status": "warning",
+        "workbook_validation_enabled": true,
+        "missing_required_sections": [],
+        "missing_required_sheets": [
+          "WB_Results"
+        ],
+        "missing_required_primary_sheet_headers": [
+          "ID",
+          "Title",
+          "Description"
+        ]
+      }
+    }
+  ]
+}

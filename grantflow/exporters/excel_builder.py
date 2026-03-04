@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
-from grantflow.exporters.donor_contracts import evaluate_export_contract
+from grantflow.exporters.donor_contracts import DONOR_XLSX_PRIMARY_SHEET, evaluate_export_contract
 from grantflow.exporters.template_profile import build_export_template_profile, normalize_export_template_key
 from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
@@ -176,6 +176,14 @@ def _add_export_contract_sheet(wb: Workbook, contract: Dict[str, Any]) -> None:
             "Expected Primary Sheet Headers",
             ", ".join(str(x) for x in (contract.get("expected_primary_sheet_headers") or [])) or "-",
         ),
+        (
+            "Actual Primary Sheet Headers",
+            ", ".join(str(x) for x in (contract.get("actual_primary_sheet_headers") or [])) or "-",
+        ),
+        (
+            "Missing Required Primary Sheet Headers",
+            ", ".join(str(x) for x in (contract.get("missing_required_primary_sheet_headers") or [])) or "-",
+        ),
         ("Required Workbook Sheets", ", ".join(str(x) for x in (contract.get("required_sheets") or [])) or "-"),
     ]
     for row_idx, (field_name, value) in enumerate(rows, start=2):
@@ -203,6 +211,11 @@ def _apply_table_header(ws, headers: list[str]) -> Border:
         cell.alignment = header_alignment
         cell.border = thin_border
     return thin_border
+
+
+def _sheet_headers(ws) -> list[str]:
+    row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), ())
+    return [str(value).strip() for value in row if str(value or "").strip()]
 
 
 def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
@@ -596,7 +609,14 @@ def build_xlsx_from_logframe(
 
     _autosize_columns(ws)
     _add_template_meta_sheet(wb, profile)
-    contract = evaluate_export_contract(donor_id=donor_id, toc_payload=toc_payload, workbook_sheetnames=wb.sheetnames)
+    primary_sheet_name = DONOR_XLSX_PRIMARY_SHEET.get(donor_key)
+    primary_sheet_headers = _sheet_headers(wb[primary_sheet_name]) if primary_sheet_name in wb.sheetnames else []
+    contract = evaluate_export_contract(
+        donor_id=donor_id,
+        toc_payload=toc_payload,
+        workbook_sheetnames=wb.sheetnames,
+        workbook_primary_sheet_headers=primary_sheet_headers,
+    )
     _add_export_contract_sheet(wb, contract)
     _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
     _add_critic_findings_sheet(wb, critic_findings or [])

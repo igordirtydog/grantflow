@@ -465,6 +465,10 @@ def _add_export_contract_section(doc: Document, contract: Dict[str, Any]) -> Non
     if isinstance(expected_docx_headings, list) and expected_docx_headings:
         doc.add_paragraph(f"Expected donor headings: {', '.join(str(x) for x in expected_docx_headings)}")
 
+    missing_headers = contract.get("missing_required_primary_sheet_headers")
+    if isinstance(missing_headers, list) and missing_headers:
+        doc.add_paragraph(f"Missing required primary sheet headers: {', '.join(str(x) for x in missing_headers)}")
+
     warnings = contract.get("warnings")
     if isinstance(warnings, list) and warnings:
         doc.add_paragraph(f"Warnings: {', '.join(str(x) for x in warnings)}")

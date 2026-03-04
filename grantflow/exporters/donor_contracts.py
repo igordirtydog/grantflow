@@ -56,6 +56,7 @@ def evaluate_export_contract(
     donor_id: str,
     toc_payload: Dict[str, Any],
     workbook_sheetnames: Optional[Iterable[str]] = None,
+    workbook_primary_sheet_headers: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     donor_key = normalize_export_template_key(donor_id)
     toc_root = normalize_toc_payload(toc_payload if isinstance(toc_payload, dict) else {})
@@ -67,20 +68,32 @@ def evaluate_export_contract(
     present_required_sections = list(profile.get("present_sections") or [])
 
     required_sheets = list(DONOR_XLSX_REQUIRED_SHEETS.get(donor_key, []))
-    workbook_validation_enabled = workbook_sheetnames is not None
+    workbook_validation_enabled = workbook_sheetnames is not None or workbook_primary_sheet_headers is not None
     actual_sheets = [str(x) for x in (workbook_sheetnames or [])] if workbook_validation_enabled else []
     missing_required_sheets = [name for name in required_sheets if name not in actual_sheets] if workbook_validation_enabled else []
 
     expected_docx_headings = list(DONOR_DOCX_EXPECTED_HEADINGS.get(donor_key, []))
     primary_sheet = DONOR_XLSX_PRIMARY_SHEET.get(donor_key)
     primary_headers = list(DONOR_XLSX_PRIMARY_HEADERS.get(donor_key, []))
+    actual_primary_headers = [str(x) for x in (workbook_primary_sheet_headers or [])] if workbook_validation_enabled else []
+    missing_primary_sheet_headers = (
+        [name for name in primary_headers if name not in actual_primary_headers]
+        if workbook_validation_enabled and primary_headers
+        else []
+    )
 
-    status = "pass" if not missing_required_sections and not missing_required_sheets else "warning"
+    status = (
+        "pass"
+        if not missing_required_sections and not missing_required_sheets and not missing_primary_sheet_headers
+        else "warning"
+    )
     warnings: list[str] = []
     if missing_required_sections:
         warnings.append("missing_required_toc_sections")
     if workbook_validation_enabled and missing_required_sheets:
         warnings.append("missing_required_workbook_sheets")
+    if workbook_validation_enabled and missing_primary_sheet_headers:
+        warnings.append("missing_required_primary_sheet_headers")
 
     return {
         "donor_id": str(donor_id or ""),
@@ -95,6 +108,8 @@ def evaluate_export_contract(
         "expected_docx_headings": expected_docx_headings,
         "expected_primary_sheet": primary_sheet,
         "expected_primary_sheet_headers": primary_headers,
+        "actual_primary_sheet_headers": actual_primary_headers,
+        "missing_required_primary_sheet_headers": missing_primary_sheet_headers,
         "workbook_validation_enabled": workbook_validation_enabled,
         "status": status,
         "warnings": warnings,
@@ -107,16 +122,19 @@ def evaluate_export_contract_gate(
     toc_payload: Dict[str, Any],
     policy_mode: str,
     workbook_sheetnames: Optional[Iterable[str]] = None,
+    workbook_primary_sheet_headers: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     contract = evaluate_export_contract(
         donor_id=donor_id,
         toc_payload=toc_payload,
         workbook_sheetnames=workbook_sheetnames,
+        workbook_primary_sheet_headers=workbook_primary_sheet_headers,
     )
     mode = normalize_export_contract_policy_mode(policy_mode)
     contract_status = str(contract.get("status") or "warning").lower()
     missing_required_sections = list(contract.get("missing_required_sections") or [])
     missing_required_sheets = list(contract.get("missing_required_sheets") or [])
+    missing_primary_sheet_headers = list(contract.get("missing_required_primary_sheet_headers") or [])
     warnings = [str(item) for item in (contract.get("warnings") or []) if str(item or "").strip()]
     reasons = list(warnings)
     if not reasons and contract_status != "pass":
@@ -133,6 +151,8 @@ def evaluate_export_contract_gate(
         blocking = mode == "strict" and not passed
         summary = "export_contract_ok" if passed else ",".join(reasons)
         if missing_required_sections:
+            risk_level = "high"
+        elif missing_primary_sheet_headers:
             risk_level = "high"
         elif missing_required_sheets:
             risk_level = "medium"

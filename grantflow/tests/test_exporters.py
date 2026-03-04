@@ -1,4 +1,6 @@
+import json
 from io import BytesIO
+from pathlib import Path
 
 from docx import Document
 from openpyxl import load_workbook
@@ -6,6 +8,14 @@ from openpyxl import load_workbook
 from grantflow.exporters.donor_contracts import evaluate_export_contract
 from grantflow.exporters.excel_builder import build_xlsx_from_logframe
 from grantflow.exporters.word_builder import build_docx_from_toc
+
+
+FIXTURES_DIR = Path(__file__).parent / "fixtures"
+
+
+def _fixture_json(name: str):
+    path = FIXTURES_DIR / name
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _sample_citations():
@@ -329,6 +339,8 @@ def test_excel_export_includes_export_contract_sheet():
     assert "USAID_RF" in str(row_map["Required Workbook Sheets"])
     assert row_map["Expected Primary Sheet"] == "USAID_RF"
     assert "DO ID" in str(row_map["Expected Primary Sheet Headers"])
+    assert "IR Description" in str(row_map["Actual Primary Sheet Headers"])
+    assert row_map["Missing Required Primary Sheet Headers"] == "-"
 
 
 def test_export_contract_docx_mode_skips_workbook_sheet_requirements():
@@ -342,6 +354,37 @@ def test_export_contract_docx_mode_skips_workbook_sheet_requirements():
     assert contract["workbook_validation_enabled"] is False
     assert contract["status"] == "pass"
     assert contract["missing_required_sheets"] == []
+
+
+def test_export_contract_detects_missing_primary_sheet_headers():
+    contract = evaluate_export_contract(
+        donor_id="usaid",
+        toc_payload={
+            "project_goal": "Improve civic services",
+            "development_objectives": [{"do_id": "DO1", "description": "Improved digital delivery"}],
+        },
+        workbook_sheetnames=["LogFrame", "USAID_RF", "Template Meta"],
+        workbook_primary_sheet_headers=["DO ID", "DO Description", "IR ID"],
+    )
+    assert contract["status"] == "warning"
+    assert contract["missing_required_sheets"] == []
+    assert "IR Description" in contract["missing_required_primary_sheet_headers"]
+    assert "missing_required_primary_sheet_headers" in contract["warnings"]
+
+
+def test_export_contract_matches_golden_snapshot():
+    fixture = _fixture_json("export_contract_golden.json")
+    cases = fixture.get("cases") if isinstance(fixture, dict) else None
+    assert isinstance(cases, list) and cases
+    for case in cases:
+        assert isinstance(case, dict)
+        payload = case.get("input")
+        expected = case.get("expected")
+        assert isinstance(payload, dict)
+        assert isinstance(expected, dict)
+        contract = evaluate_export_contract(**payload)
+        for key, value in expected.items():
+            assert contract.get(key) == value
 
 
 def test_exporters_accept_critic_finding_id_alias():

@@ -119,11 +119,17 @@ from grantflow.core.job_runner import InMemoryJobRunner, RedisJobRunner
 from grantflow.core.stores import create_ingest_audit_store_from_env, create_job_store_from_env
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.core.version import __version__
-from grantflow.exporters.donor_contracts import evaluate_export_contract_gate, normalize_export_contract_policy_mode
+from grantflow.exporters.donor_contracts import (
+    DONOR_XLSX_PRIMARY_SHEET,
+    evaluate_export_contract_gate,
+    normalize_export_contract_policy_mode,
+)
 from grantflow.exporters.excel_builder import build_xlsx_from_logframe
+from grantflow.exporters.template_profile import normalize_export_template_key
 from grantflow.exporters.word_builder import build_docx_from_toc
 from grantflow.memory_bank.ingest import ingest_pdf_to_namespace
 from grantflow.memory_bank.vector_store import vector_store
+from openpyxl import load_workbook
 from grantflow.swarm.findings import (
     canonicalize_findings,
     finding_primary_id,
@@ -1439,13 +1445,35 @@ def _evaluate_export_contract_gate(
     donor_id: str,
     toc_draft: dict[str, Any],
     workbook_sheetnames: Optional[list[str]] = None,
+    workbook_primary_sheet_headers: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     return evaluate_export_contract_gate(
         donor_id=donor_id,
         toc_payload=toc_draft,
         policy_mode=_configured_export_contract_policy_mode(),
         workbook_sheetnames=workbook_sheetnames,
+        workbook_primary_sheet_headers=workbook_primary_sheet_headers,
     )
+
+
+def _xlsx_contract_validation_context(
+    xlsx_payload: bytes,
+    *,
+    donor_id: str,
+) -> tuple[list[str], list[str]]:
+    workbook = load_workbook(io.BytesIO(xlsx_payload), data_only=True, read_only=True)
+    try:
+        sheetnames = list(workbook.sheetnames)
+        donor_key = normalize_export_template_key(donor_id)
+        primary_sheet = DONOR_XLSX_PRIMARY_SHEET.get(donor_key)
+        if not primary_sheet or primary_sheet not in workbook.sheetnames:
+            return sheetnames, []
+        sheet = workbook[primary_sheet]
+        header_row = next(sheet.iter_rows(min_row=1, max_row=1, values_only=True), ())
+        headers = [str(value).strip() for value in header_row if str(value or "").strip()]
+        return sheetnames, headers
+    finally:
+        workbook.close()
 
 
 def _attach_export_contract_gate(state: Any) -> Dict[str, Any]:
@@ -7202,8 +7230,14 @@ def export_artifacts(req: ExportRequest, request: Request):
             },
         )
     toc_draft, logframe_draft, donor_id, citations, critic_findings, review_comments = _resolve_export_inputs(req)
+    fmt = (req.format or "").lower()
     export_contract_gate = _evaluate_export_contract_gate(donor_id=donor_id, toc_draft=toc_draft)
-    if req.production_export and not req.allow_unsafe_export and bool(export_contract_gate.get("blocking")):
+    if (
+        req.production_export
+        and not req.allow_unsafe_export
+        and fmt == "docx"
+        and bool(export_contract_gate.get("blocking"))
+    ):
         raise HTTPException(
             status_code=409,
             detail={
@@ -7230,13 +7264,6 @@ def export_artifacts(req: ExportRequest, request: Request):
                 "export_grounding_policy": export_grounding_policy,
             },
         )
-    fmt = (req.format or "").lower()
-    export_headers = {
-        "X-GrantFlow-Export-Contract-Mode": str(export_contract_gate.get("mode") or ""),
-        "X-GrantFlow-Export-Contract-Status": str(export_contract_gate.get("status") or ""),
-        "X-GrantFlow-Export-Contract-Summary": str(export_contract_gate.get("summary") or ""),
-    }
-
     try:
         docx_bytes: Optional[bytes] = None
         xlsx_bytes: Optional[bytes] = None
@@ -7259,6 +7286,37 @@ def export_artifacts(req: ExportRequest, request: Request):
                 critic_findings=critic_findings,
                 review_comments=review_comments,
             )
+
+        if xlsx_bytes is not None:
+            workbook_sheetnames, workbook_primary_sheet_headers = _xlsx_contract_validation_context(
+                xlsx_bytes,
+                donor_id=donor_id,
+            )
+            export_contract_gate = _evaluate_export_contract_gate(
+                donor_id=donor_id,
+                toc_draft=toc_draft,
+                workbook_sheetnames=workbook_sheetnames,
+                workbook_primary_sheet_headers=workbook_primary_sheet_headers,
+            )
+            if req.production_export and not req.allow_unsafe_export and bool(export_contract_gate.get("blocking")):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "reason": "export_contract_policy_block",
+                        "message": (
+                            "Export blocked by strict export contract policy "
+                            "(missing required donor sections/sheets). "
+                            "Set allow_unsafe_export=true to override, or use production_export=false."
+                        ),
+                        "export_contract_gate": export_contract_gate,
+                    },
+                )
+
+        export_headers = {
+            "X-GrantFlow-Export-Contract-Mode": str(export_contract_gate.get("mode") or ""),
+            "X-GrantFlow-Export-Contract-Status": str(export_contract_gate.get("status") or ""),
+            "X-GrantFlow-Export-Contract-Summary": str(export_contract_gate.get("summary") or ""),
+        }
 
         if fmt == "docx" and docx_bytes is not None:
             headers = {

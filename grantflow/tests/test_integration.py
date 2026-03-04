@@ -1,6 +1,7 @@
 # grantflow/tests/test_integration.py
 
 import gzip
+import io
 import json
 import time
 
@@ -2168,6 +2169,60 @@ def test_export_endpoint_blocks_production_export_when_contract_policy_strict_an
     assert overridden.headers["content-type"].startswith(
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
+
+
+def test_export_endpoint_blocks_production_xlsx_when_primary_headers_missing(monkeypatch):
+    from openpyxl import Workbook
+
+    monkeypatch.setattr(api_app_module.config.graph, "export_contract_policy_mode", "strict")
+
+    def _stub_build_xlsx_from_logframe(*_args, **_kwargs):
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "LogFrame"
+        ws.append(["Indicator ID", "Name", "Justification", "Citation", "Baseline", "Target"])
+        usaid_sheet = wb.create_sheet("USAID_RF")
+        usaid_sheet.append(["DO ID", "DO Description"])
+        wb.create_sheet("Template Meta")
+        bio = io.BytesIO()
+        wb.save(bio)
+        bio.seek(0)
+        return bio.read()
+
+    monkeypatch.setattr(api_app_module, "build_xlsx_from_logframe", _stub_build_xlsx_from_logframe)
+
+    payload = {
+        "state": {
+            "donor_id": "usaid",
+            "toc_draft": {
+                "toc": {
+                    "project_goal": "Improve civic services",
+                    "development_objectives": [
+                        {"do_id": "DO1", "description": "Improved digital delivery", "intermediate_results": []}
+                    ],
+                }
+            },
+            "logframe_draft": {"indicators": []},
+        }
+    }
+
+    blocked = client.post("/export", json={"payload": payload, "format": "xlsx", "production_export": True})
+    assert blocked.status_code == 409
+    detail = blocked.json()["detail"]
+    assert detail["reason"] == "export_contract_policy_block"
+    gate = detail["export_contract_gate"]
+    assert gate["mode"] == "strict"
+    assert gate["blocking"] is True
+    assert gate["status"] == "warning"
+    assert "missing_required_primary_sheet_headers" in (gate.get("reasons") or [])
+    assert "IR ID" in (gate.get("missing_required_primary_sheet_headers") or [])
+
+    non_production = client.post("/export", json={"payload": payload, "format": "xlsx"})
+    assert non_production.status_code == 200
+    assert non_production.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert non_production.headers.get("x-grantflow-export-contract-status") == "warning"
 
 
 def test_export_endpoint_blocks_when_export_claim_support_policy_strict_and_below_threshold(monkeypatch):
