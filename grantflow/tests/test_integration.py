@@ -60,7 +60,7 @@ def test_health_endpoint():
     assert diagnostics["job_store"]["mode"] in {"inmem", "sqlite"}
     assert diagnostics["hitl_store"]["mode"] in {"inmem", "sqlite"}
     assert diagnostics["ingest_store"]["mode"] in {"inmem", "sqlite"}
-    assert diagnostics["job_runner"]["mode"] in {"background_tasks", "inmemory_queue"}
+    assert diagnostics["job_runner"]["mode"] in {"background_tasks", "inmemory_queue", "redis_queue"}
     assert isinstance(diagnostics["job_runner"]["queue_enabled"], bool)
     assert isinstance(diagnostics["job_runner"]["queue"]["queue_size"], int)
     assert isinstance(diagnostics["auth"]["api_key_configured"], bool)
@@ -530,7 +530,7 @@ def test_ready_endpoint():
     checks = body["checks"]
     assert checks["vector_store"]["backend"] in {"chroma", "memory"}
     assert checks["vector_store"]["ready"] is True
-    assert checks["job_runner"]["mode"] in {"background_tasks", "inmemory_queue"}
+    assert checks["job_runner"]["mode"] in {"background_tasks", "inmemory_queue", "redis_queue"}
     assert isinstance(checks["job_runner"]["ready"], bool)
     assert isinstance(checks["job_runner"]["queue"]["queue_size"], int)
     preflight_policy = checks["preflight_grounding_policy"]
@@ -10960,6 +10960,58 @@ def test_generate_returns_503_when_inmemory_queue_is_full(monkeypatch):
         json={
             "donor_id": "usaid",
             "input_context": {"project": "Queue full", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 503
+    assert "Job queue is full" in str(response.json()["detail"])
+
+
+def test_generate_uses_redis_queue_dispatch_when_enabled(monkeypatch):
+    captured: dict = {}
+
+    def _submit_stub(fn, *args, **kwargs):
+        captured["fn"] = fn
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return True
+
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", _submit_stub)
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Redis queue dispatch", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    job_id = body["job_id"]
+
+    assert captured["fn"] == api_app_module._run_pipeline_to_completion
+    assert captured["args"][0] == job_id
+    queued_state = captured["args"][1]
+    assert queued_state["donor_id"] == "usaid"
+
+    status_resp = client.get(f"/status/{job_id}")
+    assert status_resp.status_code == 200
+    assert status_resp.json()["status"] == "accepted"
+
+
+def test_generate_returns_503_when_redis_queue_is_unavailable(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.JOB_RUNNER, "submit", lambda *args, **kwargs: False)
+
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Redis queue unavailable", "country": "Kenya"},
             "llm_mode": False,
             "hitl_enabled": False,
         },

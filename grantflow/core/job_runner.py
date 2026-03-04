@@ -1,12 +1,74 @@
 from __future__ import annotations
 
+import importlib
+import json
 import queue
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
+from urllib.parse import quote, urlparse, urlunparse
+
+try:
+    from redis import Redis as RedisClient
+except Exception as exc:  # pragma: no cover - import surface depends on installed extras
+    RedisClient = None
+    REDIS_IMPORT_ERROR: Optional[Exception] = exc
+else:
+    REDIS_IMPORT_ERROR = None
 
 
 TaskCallable = Callable[..., None]
+
+
+def task_name_for_callable(fn: TaskCallable) -> str:
+    module = str(getattr(fn, "__module__", "") or "__main__").strip() or "__main__"
+    qualname = str(getattr(fn, "__qualname__", getattr(fn, "__name__", "task")) or "task")
+    return f"{module}:{qualname}"
+
+
+def callable_from_task_name(task_name: str) -> Optional[TaskCallable]:
+    token = str(task_name or "").strip()
+    if ":" not in token:
+        return None
+    module_name, qualname = token.split(":", 1)
+    module_name = module_name.strip()
+    qualname = qualname.strip()
+    if not module_name or not qualname:
+        return None
+    try:
+        target: Any = importlib.import_module(module_name)
+    except Exception:
+        return None
+    for attr in qualname.split("."):
+        if not attr or attr == "<locals>":
+            return None
+        if not hasattr(target, attr):
+            return None
+        target = getattr(target, attr)
+    return target if callable(target) else None
+
+
+def _mask_redis_url(url: str) -> str:
+    parsed = urlparse(str(url or ""))
+    if not parsed.scheme:
+        return "redis://***"
+    username = parsed.username
+    password = parsed.password
+    host = parsed.hostname or ""
+    port = parsed.port
+    netloc = ""
+    if username:
+        netloc += quote(username, safe="")
+        netloc += ":***" if password is not None else ""
+        netloc += "@"
+    elif password is not None:
+        netloc += ":***@"
+    netloc += host
+    if port is not None:
+        netloc += f":{port}"
+    path = parsed.path or "/0"
+    return urlunparse((parsed.scheme, netloc, path, "", "", ""))
 
 
 @dataclass
@@ -87,6 +149,7 @@ class InMemoryJobRunner:
             running = bool(self._started)
             active_workers = sum(1 for t in self._threads if t.is_alive())
         return {
+            "backend": "inmemory",
             "running": running,
             "worker_count": self.worker_count,
             "active_workers": active_workers,
@@ -113,3 +176,247 @@ class InMemoryJobRunner:
                     self._completed += 1
             finally:
                 self._queue.task_done()
+
+
+class RedisJobRunner:
+    def __init__(
+        self,
+        worker_count: int = 2,
+        queue_maxsize: int = 200,
+        *,
+        redis_url: str = "redis://127.0.0.1:6379/0",
+        queue_name: str = "grantflow:jobs",
+        pop_timeout_seconds: float = 1.0,
+        reconnect_sleep_seconds: float = 0.25,
+        allowed_import_prefixes: tuple[str, ...] = ("grantflow.",),
+        redis_client_factory: Optional[Callable[[str], Any]] = None,
+    ) -> None:
+        self.worker_count = max(1, int(worker_count))
+        self.queue_maxsize = max(1, int(queue_maxsize))
+        self.redis_url = str(redis_url or "redis://127.0.0.1:6379/0")
+        self.queue_name = str(queue_name or "grantflow:jobs")
+        self.pop_timeout_seconds = max(0.1, float(pop_timeout_seconds))
+        self.reconnect_sleep_seconds = max(0.05, float(reconnect_sleep_seconds))
+        self.allowed_import_prefixes = tuple(
+            str(p or "").strip() for p in allowed_import_prefixes if str(p or "").strip()
+        )
+        self._redis_client_factory = redis_client_factory
+        self._client: Any = None
+        self._threads: list[threading.Thread] = []
+        self._lock = threading.Lock()
+        self._started = False
+        self._submitted = 0
+        self._completed = 0
+        self._failed = 0
+        self._last_error: Optional[str] = None
+        self._task_registry: dict[str, TaskCallable] = {}
+
+    def start(self) -> None:
+        with self._lock:
+            if self._started:
+                return
+            self._started = True
+            self._threads = []
+            for idx in range(self.worker_count):
+                worker = threading.Thread(
+                    target=self._worker_loop,
+                    name=f"grantflow-redis-job-runner-{idx + 1}",
+                    daemon=True,
+                )
+                worker.start()
+                self._threads.append(worker)
+
+    def stop(self, timeout_seconds: float = 2.0) -> None:
+        with self._lock:
+            if not self._started:
+                return
+            threads = list(self._threads)
+            self._started = False
+        for worker in threads:
+            worker.join(timeout=max(0.0, float(timeout_seconds)))
+        with self._lock:
+            self._threads = []
+
+    def submit(self, fn: TaskCallable, *args: Any, **kwargs: Any) -> bool:
+        if not callable(fn):
+            raise TypeError("Job runner task must be callable")
+        self.start()
+        task_name = task_name_for_callable(fn)
+        payload: dict[str, Any] = {
+            "task_name": task_name,
+            "args": list(args),
+            "kwargs": dict(kwargs),
+        }
+        try:
+            encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise TypeError("Redis job runner arguments must be JSON-serializable") from exc
+
+        with self._lock:
+            self._task_registry[task_name] = fn
+
+        client = self._ensure_client()
+        if client is None:
+            return False
+        try:
+            current_size = int(client.llen(self.queue_name))
+            if current_size >= self.queue_maxsize:
+                return False
+            client.rpush(self.queue_name, encoded)
+        except Exception as exc:
+            self._record_error(exc)
+            return False
+        with self._lock:
+            self._submitted += 1
+        return True
+
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._started
+
+    def diagnostics(self) -> Dict[str, Any]:
+        with self._lock:
+            submitted = int(self._submitted)
+            completed = int(self._completed)
+            failed = int(self._failed)
+            running = bool(self._started)
+            active_workers = sum(1 for t in self._threads if t.is_alive())
+            last_error = self._last_error
+        redis_available, availability_error = self._redis_available()
+        queue_size = self._redis_queue_size()
+        if queue_size is None:
+            queue_size = -1
+        if availability_error:
+            last_error = availability_error
+        return {
+            "backend": "redis",
+            "running": running,
+            "worker_count": self.worker_count,
+            "active_workers": active_workers,
+            "queue_maxsize": self.queue_maxsize,
+            "queue_size": queue_size,
+            "submitted_count": submitted,
+            "completed_count": completed,
+            "failed_count": failed,
+            "redis_url": _mask_redis_url(self.redis_url),
+            "queue_name": self.queue_name,
+            "redis_available": redis_available,
+            "last_error": last_error,
+        }
+
+    def _ensure_client(self) -> Any:
+        with self._lock:
+            client = self._client
+        if client is not None:
+            return client
+        if REDIS_IMPORT_ERROR is not None and self._redis_client_factory is None:
+            self._record_error(REDIS_IMPORT_ERROR)
+            return None
+        try:
+            if self._redis_client_factory is not None:
+                client = self._redis_client_factory(self.redis_url)
+            else:
+                assert RedisClient is not None
+                client = RedisClient.from_url(self.redis_url, decode_responses=False)
+        except Exception as exc:
+            self._record_error(exc)
+            return None
+        with self._lock:
+            self._client = client
+        return client
+
+    def _redis_available(self) -> tuple[bool, Optional[str]]:
+        client = self._ensure_client()
+        if client is None:
+            with self._lock:
+                return False, self._last_error
+        try:
+            ping = getattr(client, "ping", None)
+            if callable(ping):
+                ping()
+            return True, None
+        except Exception as exc:
+            self._record_error(exc)
+            return False, str(exc)
+
+    def _redis_queue_size(self) -> Optional[int]:
+        client = self._ensure_client()
+        if client is None:
+            return None
+        try:
+            return int(client.llen(self.queue_name))
+        except Exception as exc:
+            self._record_error(exc)
+            return None
+
+    def _record_error(self, exc: Exception) -> None:
+        with self._lock:
+            self._last_error = str(exc)
+
+    def _resolve_task_callable(self, task_name: str) -> Optional[TaskCallable]:
+        with self._lock:
+            fn = self._task_registry.get(task_name)
+        if callable(fn):
+            return fn
+        module_name = str(task_name.split(":", 1)[0] if ":" in task_name else "")
+        if self.allowed_import_prefixes and not any(
+            module_name.startswith(prefix) for prefix in self.allowed_import_prefixes
+        ):
+            return None
+        resolved = callable_from_task_name(task_name)
+        if callable(resolved):
+            with self._lock:
+                self._task_registry[task_name] = resolved
+            return resolved
+        return None
+
+    def _worker_loop(self) -> None:
+        while True:
+            with self._lock:
+                if not self._started:
+                    break
+            client = self._ensure_client()
+            if client is None:
+                time.sleep(self.reconnect_sleep_seconds)
+                continue
+            try:
+                item = client.blpop(self.queue_name, timeout=max(1, int(round(self.pop_timeout_seconds))))
+            except Exception as exc:
+                self._record_error(exc)
+                time.sleep(self.reconnect_sleep_seconds)
+                continue
+            if not item:
+                continue
+            raw_payload: Any = item
+            if isinstance(item, (list, tuple)) and len(item) >= 2:
+                raw_payload = item[1]
+            if isinstance(raw_payload, (bytes, bytearray)):
+                decoded_payload = raw_payload.decode("utf-8", errors="replace")
+            else:
+                decoded_payload = str(raw_payload)
+            try:
+                payload = json.loads(decoded_payload)
+            except Exception:
+                with self._lock:
+                    self._failed += 1
+                continue
+            task_name = str(payload.get("task_name") or "").strip()
+            args = payload.get("args", [])
+            kwargs = payload.get("kwargs", {})
+            if not task_name or not isinstance(args, list) or not isinstance(kwargs, dict):
+                with self._lock:
+                    self._failed += 1
+                continue
+            fn = self._resolve_task_callable(task_name)
+            if fn is None:
+                with self._lock:
+                    self._failed += 1
+                continue
+            try:
+                fn(*tuple(args), **kwargs)
+            except Exception:
+                with self._lock:
+                    self._failed += 1
+            else:
+                with self._lock:
+                    self._completed += 1

@@ -112,7 +112,7 @@ from grantflow.api.security import (
 )
 from grantflow.api.webhooks import send_job_webhook_event
 from grantflow.core.config import config
-from grantflow.core.job_runner import InMemoryJobRunner
+from grantflow.core.job_runner import InMemoryJobRunner, RedisJobRunner
 from grantflow.core.stores import create_ingest_audit_store_from_env, create_job_store_from_env
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.core.version import __version__
@@ -147,11 +147,6 @@ from grantflow.swarm.state_contract import (
 
 JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
-JOB_RUNNER = InMemoryJobRunner(
-    worker_count=int(getattr(config.job_runner, "worker_count", 2) or 2),
-    queue_maxsize=int(getattr(config.job_runner, "queue_maxsize", 200) or 200),
-)
-
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
 REVIEW_COMMENT_SECTIONS = {"toc", "logframe", "general"}
@@ -161,7 +156,7 @@ REVIEW_COMMENT_DEFAULT_SLA_HOURS = 72
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 MAX_IDEMPOTENCY_RECORDS = 300
 MAX_GLOBAL_IDEMPOTENCY_RECORDS = 1000
-JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue"}
+JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue", "redis_queue"}
 STATUS_WEBHOOK_EVENTS = {
     "running": "job.started",
     "pending_hitl": "job.pending_hitl",
@@ -212,6 +207,31 @@ def _uses_inmemory_queue_runner() -> bool:
     return _job_runner_mode() == "inmemory_queue"
 
 
+def _uses_redis_queue_runner() -> bool:
+    return _job_runner_mode() == "redis_queue"
+
+
+def _uses_queue_runner() -> bool:
+    return _uses_inmemory_queue_runner() or _uses_redis_queue_runner()
+
+
+def _build_job_runner():
+    worker_count = int(getattr(config.job_runner, "worker_count", 2) or 2)
+    queue_maxsize = int(getattr(config.job_runner, "queue_maxsize", 200) or 200)
+    if _uses_redis_queue_runner():
+        return RedisJobRunner(
+            worker_count=worker_count,
+            queue_maxsize=queue_maxsize,
+            redis_url=str(getattr(config.job_runner, "redis_url", "redis://127.0.0.1:6379/0") or ""),
+            queue_name=str(getattr(config.job_runner, "redis_queue_name", "grantflow:jobs") or ""),
+            pop_timeout_seconds=float(getattr(config.job_runner, "redis_pop_timeout_seconds", 1.0) or 1.0),
+        )
+    return InMemoryJobRunner(worker_count=worker_count, queue_maxsize=queue_maxsize)
+
+
+JOB_RUNNER = _build_job_runner()
+
+
 def _job_store_mode() -> str:
     return "sqlite" if getattr(JOB_STORE, "db_path", None) else "inmem"
 
@@ -239,12 +259,12 @@ def _validate_store_backend_alignment() -> None:
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI) -> AsyncIterator[None]:
     _validate_store_backend_alignment()
-    if _uses_inmemory_queue_runner():
+    if _uses_queue_runner():
         JOB_RUNNER.start()
     try:
         yield
     finally:
-        if _uses_inmemory_queue_runner():
+        if _uses_queue_runner():
             JOB_RUNNER.stop()
 
 
@@ -261,11 +281,11 @@ def _utcnow_iso() -> str:
 
 
 def _dispatch_pipeline_task(background_tasks: BackgroundTasks, fn: Callable[..., None], *args: Any) -> str:
-    if _uses_inmemory_queue_runner():
+    if _uses_queue_runner():
         accepted = JOB_RUNNER.submit(fn, *args)
         if not accepted:
             raise HTTPException(status_code=503, detail="Job queue is full. Retry shortly.")
-        return "inmemory_queue"
+        return _job_runner_mode()
     background_tasks.add_task(fn, *args)
     return "background_tasks"
 
@@ -3791,7 +3811,7 @@ def _health_diagnostics() -> dict[str, Any]:
         "ingest_store": {"mode": ingest_store_mode},
         "job_runner": {
             "mode": _job_runner_mode(),
-            "queue_enabled": _uses_inmemory_queue_runner(),
+            "queue_enabled": _uses_queue_runner(),
             "queue": JOB_RUNNER.diagnostics(),
         },
         "auth": {
@@ -3914,6 +3934,8 @@ def readiness_check():
     job_runner_ready = True
     if _uses_inmemory_queue_runner():
         job_runner_ready = bool(job_runner_diag.get("running"))
+    elif _uses_redis_queue_runner():
+        job_runner_ready = bool(job_runner_diag.get("running")) and bool(job_runner_diag.get("redis_available"))
     ready = bool(vector_ready.get("ready")) and job_runner_ready
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
