@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import importlib
 import json
+import pickle
 import queue
 import threading
 import time
+from base64 import b64decode, b64encode
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
 from urllib.parse import quote, urlparse, urlunparse
@@ -249,13 +251,13 @@ class RedisJobRunner:
         task_name = task_name_for_callable(fn)
         payload: dict[str, Any] = {
             "task_name": task_name,
-            "args": list(args),
-            "kwargs": dict(kwargs),
+            "args_b64": b64encode(pickle.dumps(tuple(args), protocol=pickle.HIGHEST_PROTOCOL)).decode("ascii"),
+            "kwargs_b64": b64encode(pickle.dumps(dict(kwargs), protocol=pickle.HIGHEST_PROTOCOL)).decode("ascii"),
         }
         try:
             encoded = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-        except (TypeError, ValueError) as exc:
-            raise TypeError("Redis job runner arguments must be JSON-serializable") from exc
+        except (TypeError, ValueError, pickle.PickleError) as exc:
+            raise TypeError("Redis job runner arguments must be serializable") from exc
 
         with self._lock:
             self._task_registry[task_name] = fn
@@ -407,9 +409,20 @@ class RedisJobRunner:
                     self._failed += 1
                 continue
             task_name = str(payload.get("task_name") or "").strip()
-            args = payload.get("args", [])
-            kwargs = payload.get("kwargs", {})
-            if not task_name or not isinstance(args, list) or not isinstance(kwargs, dict):
+            args_b64 = payload.get("args_b64")
+            kwargs_b64 = payload.get("kwargs_b64")
+            if not task_name or not isinstance(args_b64, str) or not isinstance(kwargs_b64, str):
+                with self._lock:
+                    self._failed += 1
+                continue
+            try:
+                args = pickle.loads(b64decode(args_b64.encode("ascii")))
+                kwargs = pickle.loads(b64decode(kwargs_b64.encode("ascii")))
+            except Exception:
+                with self._lock:
+                    self._failed += 1
+                continue
+            if not isinstance(args, tuple) or not isinstance(kwargs, dict):
                 with self._lock:
                     self._failed += 1
                 continue
@@ -419,7 +432,7 @@ class RedisJobRunner:
                     self._failed += 1
                 continue
             try:
-                fn(*tuple(args), **kwargs)
+                fn(*args, **kwargs)
             except Exception:
                 with self._lock:
                     self._failed += 1

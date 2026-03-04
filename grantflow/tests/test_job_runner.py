@@ -50,6 +50,11 @@ class _AlwaysFullRedisClient(_FakeRedisClient):
         return 999999
 
 
+class _OpaqueObject:
+    def __init__(self, value: int) -> None:
+        self.value = int(value)
+
+
 def _wait_until(predicate, timeout_s: float = 1.5) -> bool:
     deadline = time.time() + timeout_s
     while time.time() < deadline:
@@ -131,6 +136,27 @@ def test_redis_job_runner_executes_tasks_with_fake_client():
     assert diag["redis_available"] is True
     assert diag["completed_count"] >= 1
     assert diag["failed_count"] == 0
+    runner.stop()
+
+
+def test_redis_job_runner_supports_non_json_serializable_args():
+    observed: list[int] = []
+
+    def _task(obj: _OpaqueObject) -> None:
+        observed.append(int(obj.value))
+
+    fake_client = _FakeRedisClient()
+    runner = RedisJobRunner(
+        worker_count=1,
+        queue_maxsize=8,
+        redis_url="redis://local-test/0",
+        queue_name="grantflow:test:jobs:opaque",
+        pop_timeout_seconds=0.1,
+        redis_client_factory=lambda _url: fake_client,
+    )
+
+    assert runner.submit(_task, _OpaqueObject(42)) is True
+    assert _wait_until(lambda: observed == [42])
     runner.stop()
 
 
