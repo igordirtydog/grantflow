@@ -10986,6 +10986,87 @@ def test_resume_requires_checkpoint_decision_before_running_again():
     assert "pending approval" in resume.json()["detail"]
 
 
+def test_resume_rejects_canceled_checkpoint():
+    checkpoint_id = api_app_module.hitl_manager.create_checkpoint(
+        stage="toc",
+        state={"donor_id": "usaid", "input_context": {"project": "Canceled checkpoint", "country": "Kenya"}},
+        donor_id="usaid",
+    )
+    assert api_app_module.hitl_manager.cancel(checkpoint_id, "Canceled externally")
+
+    job_id = f"resume-canceled-checkpoint-{int(time.time() * 1_000_000)}"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "pending_hitl",
+            "state": {
+                "donor_id": "usaid",
+                "input_context": {"project": "Canceled checkpoint", "country": "Kenya"},
+                "hitl_pending": True,
+            },
+            "hitl_enabled": True,
+            "checkpoint_id": checkpoint_id,
+            "checkpoint_stage": "toc",
+            "resume_from": "mel",
+        },
+    )
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 409
+    assert "approved or rejected" in str(resume.json().get("detail") or "")
+
+
+def test_hitl_approve_reject_conflict_after_finalized_checkpoint():
+    checkpoint_id = api_app_module.hitl_manager.create_checkpoint(
+        stage="toc",
+        state={"donor_id": "usaid", "input_context": {"project": "Decision conflict", "country": "Kenya"}},
+        donor_id="usaid",
+    )
+
+    first = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": checkpoint_id, "approved": True, "feedback": "Looks good"},
+    )
+    assert first.status_code == 200
+    assert first.json()["status"] == "approved"
+
+    conflict = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": checkpoint_id, "approved": False, "feedback": "Actually reject"},
+    )
+    assert conflict.status_code == 409
+    assert "already finalized" in str(conflict.json().get("detail") or "")
+
+
+def test_pause_for_hitl_replaces_stale_stage_checkpoint_reference():
+    stale_checkpoint_id = api_app_module.hitl_manager.create_checkpoint(
+        stage="logframe",
+        state={"donor_id": "usaid", "input_context": {"project": "Stale checkpoint", "country": "Kenya"}},
+        donor_id="usaid",
+    )
+
+    job_id = f"pause-stale-checkpoint-{int(time.time() * 1_000_000)}"
+    state = {
+        "donor_id": "usaid",
+        "input_context": {"project": "Stale checkpoint", "country": "Kenya"},
+        "hitl_enabled": True,
+        "hitl_pending": True,
+        "hitl_checkpoint_id": stale_checkpoint_id,
+    }
+    api_app_module._pause_for_hitl(job_id, state, stage="toc", resume_from="mel")
+
+    job = api_app_module._get_job(job_id)
+    assert job is not None
+    assert job["status"] == "pending_hitl"
+    assert job["checkpoint_stage"] == "toc"
+    assert job["checkpoint_id"] != stale_checkpoint_id
+
+    stale = api_app_module.hitl_manager.get_checkpoint(stale_checkpoint_id)
+    assert stale is not None
+    stale_status = getattr(stale.get("status"), "value", stale.get("status"))
+    assert stale_status == "canceled"
+
+
 def test_resume_clears_hitl_runtime_flags_before_relaunch(monkeypatch):
     response = client.post(
         "/generate",

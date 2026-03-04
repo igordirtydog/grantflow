@@ -2386,6 +2386,11 @@ def _record_hitl_feedback_in_state(state: dict, checkpoint: Dict[str, Any]) -> N
     state["hitl_feedback"] = feedback
 
 
+def _checkpoint_status_token(checkpoint: Dict[str, Any]) -> str:
+    raw = checkpoint.get("status")
+    return str(getattr(raw, "value", raw) or "").strip().lower()
+
+
 def _state_grounding_gate(state: Any) -> Dict[str, Any]:
     if not isinstance(state, dict):
         return {}
@@ -3584,7 +3589,15 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
     checkpoint_id = existing_checkpoint_id
     if checkpoint_id:
         checkpoint = hitl_manager.get_checkpoint(checkpoint_id)
-        if not checkpoint:
+        checkpoint_stage = str(checkpoint.get("stage") or "").strip().lower() if isinstance(checkpoint, dict) else ""
+        checkpoint_status = _checkpoint_status_token(checkpoint) if isinstance(checkpoint, dict) else ""
+        if not checkpoint or checkpoint_status != HITLStatus.PENDING.value or checkpoint_stage != stage:
+            if (
+                isinstance(checkpoint, dict)
+                and checkpoint_status == HITLStatus.PENDING.value
+                and checkpoint_id
+            ):
+                hitl_manager.cancel(checkpoint_id, "Superseded by new HITL checkpoint")
             checkpoint_id = None
     if not checkpoint_id:
         checkpoint_id = hitl_manager.create_checkpoint(stage, state, donor_id)
@@ -3810,25 +3823,30 @@ def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
 
 
 def _resume_target_from_checkpoint(checkpoint: Dict[str, Any], default_resume_from: str | None) -> HITLStartAt:
-    stage = checkpoint.get("stage")
-    status = checkpoint.get("status")
+    stage = str(checkpoint.get("stage") or "").strip().lower()
+    status = _checkpoint_status_token(checkpoint)
 
-    if status == HITLStatus.APPROVED:
+    if status == HITLStatus.APPROVED.value:
         if stage == "toc":
             return "mel"
         if stage == "logframe":
             return "critic"
 
-    if status == HITLStatus.REJECTED:
+    if status == HITLStatus.REJECTED.value:
         if stage == "toc":
             return "architect"
         if stage == "logframe":
             return "mel"
 
-    if default_resume_from in {"start", "architect", "mel", "critic"}:
+    if status in {HITLStatus.APPROVED.value, HITLStatus.REJECTED.value} and default_resume_from in {
+        "start",
+        "architect",
+        "mel",
+        "critic",
+    }:
         return default_resume_from  # type: ignore[return-value]
 
-    raise ValueError("Checkpoint is not ready for resume")
+    raise ValueError("Checkpoint must be approved or rejected before resume")
 
 
 def _clear_hitl_runtime_state(state: dict, *, clear_pending: bool) -> None:
@@ -5551,8 +5569,16 @@ async def resume_job(
     checkpoint = hitl_manager.get_checkpoint(checkpoint_id)
     if not checkpoint:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
-    if checkpoint.get("status") == HITLStatus.PENDING:
+    checkpoint_status = _checkpoint_status_token(checkpoint)
+    if checkpoint_status == HITLStatus.PENDING.value:
         raise HTTPException(status_code=409, detail="Checkpoint is still pending approval")
+    if checkpoint_status not in {HITLStatus.APPROVED.value, HITLStatus.REJECTED.value}:
+        raise HTTPException(status_code=409, detail="Checkpoint must be approved or rejected before resume")
+
+    checkpoint_stage = str(checkpoint.get("stage") or "").strip().lower()
+    job_checkpoint_stage = str(job.get("checkpoint_stage") or "").strip().lower()
+    if checkpoint_stage and job_checkpoint_stage and checkpoint_stage != job_checkpoint_stage:
+        raise HTTPException(status_code=409, detail="Checkpoint stage does not match job pending stage")
 
     state = job.get("state")
     if not isinstance(state, dict):
@@ -5575,13 +5601,13 @@ async def resume_job(
         resume_from=start_at,
         checkpoint_id=None,
         checkpoint_stage=None,
-        checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
+        checkpoint_status=checkpoint_status,
     )
     _record_job_event(
         job_id,
         "resume_requested",
         checkpoint_id=str(checkpoint_id),
-        checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
+        checkpoint_status=checkpoint_status,
         resuming_from=start_at,
         request_id=request_id_token,
     )
@@ -5597,8 +5623,8 @@ async def resume_job(
             state=state,
             resume_from=job.get("resume_from"),
             checkpoint_id=checkpoint_id,
-            checkpoint_stage=checkpoint.get("stage"),
-            checkpoint_status=getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
+            checkpoint_stage=checkpoint_stage,
+            checkpoint_status=checkpoint_status,
         )
         _record_job_event(
             job_id,
@@ -5622,7 +5648,7 @@ async def resume_job(
         "job_id": job_id,
         "resuming_from": start_at,
         "checkpoint_id": checkpoint_id,
-        "checkpoint_status": getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
+        "checkpoint_status": checkpoint_status,
     }
     if request_id_token:
         response["request_id"] = request_id_token
@@ -6918,15 +6944,33 @@ def approve_checkpoint(
     if not checkpoint:
         raise HTTPException(status_code=404, detail="Checkpoint not found")
     _ensure_checkpoint_tenant_write_access(request, checkpoint)
+    current_status = _checkpoint_status_token(checkpoint)
+    target_status = HITLStatus.APPROVED.value if req.approved else HITLStatus.REJECTED.value
+    if current_status != HITLStatus.PENDING.value:
+        if current_status == target_status:
+            response = {"status": target_status, "checkpoint_id": req.checkpoint_id, "already_decided": True}
+            if request_id_token:
+                response["request_id"] = request_id_token
+            _store_global_idempotency_response(
+                scope="hitl_approve",
+                request_id=request_id_token,
+                fingerprint=idempotency_fingerprint,
+                response=response,
+                persisted=True,
+            )
+            return response
+        raise HTTPException(status_code=409, detail=f"Checkpoint already finalized with status: {current_status}")
     actor = _finding_actor_from_request(request)
     job_id_for_checkpoint, _job_for_checkpoint = _find_job_by_checkpoint_id(req.checkpoint_id)
 
     if req.approved:
-        hitl_manager.approve(req.checkpoint_id, feedback)
-        response = {"status": "approved", "checkpoint_id": req.checkpoint_id}
+        changed = hitl_manager.approve(req.checkpoint_id, feedback)
+        response = {"status": HITLStatus.APPROVED.value, "checkpoint_id": req.checkpoint_id}
     else:
-        hitl_manager.reject(req.checkpoint_id, feedback)
-        response = {"status": "rejected", "checkpoint_id": req.checkpoint_id}
+        changed = hitl_manager.reject(req.checkpoint_id, feedback)
+        response = {"status": HITLStatus.REJECTED.value, "checkpoint_id": req.checkpoint_id}
+    if not changed:
+        raise HTTPException(status_code=409, detail="Checkpoint transition failed due to concurrent update")
     if job_id_for_checkpoint:
         _record_job_event(
             str(job_id_for_checkpoint),

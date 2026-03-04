@@ -119,7 +119,13 @@ class HITLCheckpoint:
             checkpoint = self._checkpoints.get(checkpoint_id)
             return copy.deepcopy(checkpoint) if checkpoint is not None else None
 
-    def approve(self, checkpoint_id: str, feedback: Optional[str] = None) -> bool:
+    @staticmethod
+    def _status_value(value: Any) -> str:
+        token = getattr(value, "value", value)
+        return str(token or "").strip().lower()
+
+    def _transition(self, checkpoint_id: str, *, next_status: HITLStatus, feedback: Optional[str]) -> bool:
+        allowed_current = {HITLStatus.PENDING.value, next_status.value}
         if self._use_sqlite:
             with self._lock:
                 with self._connect() as conn:
@@ -127,60 +133,37 @@ class HITLCheckpoint:
                         """
                         UPDATE hitl_checkpoints
                         SET status = ?, feedback = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
+                        WHERE id = ? AND status IN (?, ?)
                         """,
-                        (HITLStatus.APPROVED.value, feedback, checkpoint_id),
+                        (
+                            next_status.value,
+                            feedback,
+                            checkpoint_id,
+                            HITLStatus.PENDING.value,
+                            next_status.value,
+                        ),
                     )
                     return cur.rowcount > 0
 
         with self._lock:
-            if checkpoint_id not in self._checkpoints:
+            checkpoint = self._checkpoints.get(checkpoint_id)
+            if checkpoint is None:
                 return False
-            self._checkpoints[checkpoint_id]["status"] = HITLStatus.APPROVED
-            self._checkpoints[checkpoint_id]["feedback"] = feedback
+            current = self._status_value(checkpoint.get("status"))
+            if current not in allowed_current:
+                return False
+            checkpoint["status"] = next_status
+            checkpoint["feedback"] = feedback
             return True
+
+    def approve(self, checkpoint_id: str, feedback: Optional[str] = None) -> bool:
+        return self._transition(checkpoint_id, next_status=HITLStatus.APPROVED, feedback=feedback)
 
     def reject(self, checkpoint_id: str, feedback: str) -> bool:
-        if self._use_sqlite:
-            with self._lock:
-                with self._connect() as conn:
-                    cur = conn.execute(
-                        """
-                        UPDATE hitl_checkpoints
-                        SET status = ?, feedback = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                        """,
-                        (HITLStatus.REJECTED.value, feedback, checkpoint_id),
-                    )
-                    return cur.rowcount > 0
-
-        with self._lock:
-            if checkpoint_id not in self._checkpoints:
-                return False
-            self._checkpoints[checkpoint_id]["status"] = HITLStatus.REJECTED
-            self._checkpoints[checkpoint_id]["feedback"] = feedback
-            return True
+        return self._transition(checkpoint_id, next_status=HITLStatus.REJECTED, feedback=feedback)
 
     def cancel(self, checkpoint_id: str, feedback: Optional[str] = None) -> bool:
-        if self._use_sqlite:
-            with self._lock:
-                with self._connect() as conn:
-                    cur = conn.execute(
-                        """
-                        UPDATE hitl_checkpoints
-                        SET status = ?, feedback = ?, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = ?
-                        """,
-                        (HITLStatus.CANCELED.value, feedback, checkpoint_id),
-                    )
-                    return cur.rowcount > 0
-
-        with self._lock:
-            if checkpoint_id not in self._checkpoints:
-                return False
-            self._checkpoints[checkpoint_id]["status"] = HITLStatus.CANCELED
-            self._checkpoints[checkpoint_id]["feedback"] = feedback
-            return True
+        return self._transition(checkpoint_id, next_status=HITLStatus.CANCELED, feedback=feedback)
 
     def is_approved(self, checkpoint_id: str) -> bool:
         if self._use_sqlite:
