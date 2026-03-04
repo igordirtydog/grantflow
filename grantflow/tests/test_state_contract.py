@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from grantflow.swarm.nodes.discovery import validate_input_richness
 from grantflow.swarm.state_contract import (
+    GrantFlowStateModel,
     build_graph_state,
     normalize_state_contract,
     normalize_donor_token,
@@ -195,3 +196,19 @@ def test_normalize_helpers_handle_non_dict_inputs_safely():
     assert normalize_donor_token(None) == ""
     assert normalize_input_context(None) == {}
     assert normalize_input_context({"project": "Water", 1: "x"}) == {"project": "Water", "1": "x"}
+
+
+def test_state_model_accepts_normalized_contract_with_runtime_extras():
+    state = normalize_state_contract(
+        {
+            "donor": "USAID",
+            "input": {"project": "Water"},
+            "llm_mode": "true",
+            "runtime_only_key": {"x": 1},
+        }
+    )
+    model = GrantFlowStateModel.model_validate(state)
+    dumped = model.model_dump()
+    assert dumped["donor_id"] == "usaid"
+    assert dumped["input_context"]["project"] == "Water"
+    assert dumped["runtime_only_key"] == {"x": 1}

@@ -1951,6 +1951,9 @@ def _build_generate_preflight(
 def _set_job(job_id: str, payload: Dict[str, Any]) -> None:
     previous = JOB_STORE.get(job_id)
     next_payload = dict(payload)
+    state_payload = next_payload.get("state")
+    if isinstance(state_payload, dict):
+        normalize_state_contract(state_payload)
 
     if previous and previous.get("status") == "canceled" and next_payload.get("status") != "canceled":
         return
@@ -1976,6 +1979,9 @@ def _update_job(job_id: str, **patch: Any) -> Dict[str, Any]:
     if previous and previous.get("status") == "canceled" and "status" in patch and patch.get("status") != "canceled":
         return previous
     next_patch = dict(patch)
+    state_patch = next_patch.get("state")
+    if isinstance(state_patch, dict):
+        normalize_state_contract(state_patch)
     merged_preview = dict(previous or {})
     merged_preview.update(next_patch)
     merged_preview = _append_job_event_records(previous, merged_preview)

@@ -3,6 +3,8 @@ from __future__ import annotations
 import re
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, TypedDict, cast
 
+from pydantic import BaseModel, ConfigDict, Field
+
 
 class GrantFlowState(TypedDict, total=False):
     donor_id: str
@@ -26,6 +28,34 @@ class GrantFlowState(TypedDict, total=False):
     hitl_pending: bool
     hitl_checkpoints: list[str]
     errors: list[str]
+
+
+class GrantFlowStateModel(BaseModel):
+    """Runtime state contract with permissive extras for graph-local keys."""
+
+    model_config = ConfigDict(extra="allow", arbitrary_types_allowed=True)
+
+    donor_id: str = ""
+    donor: str = ""
+    tenant_id: str = ""
+    rag_namespace: str = ""
+    retrieval_namespace: str = ""
+    donor_strategy: Any = None
+    strategy: Any = None
+    input_context: dict[str, Any] = Field(default_factory=dict)
+    input: dict[str, Any] = Field(default_factory=dict)
+    llm_mode: bool = False
+    iteration: int = 0
+    iteration_count: int = 0
+    max_iterations: int = 3
+    quality_score: float = 0.0
+    critic_score: float = 0.0
+    needs_revision: bool = False
+    critic_notes: dict[str, Any] = Field(default_factory=dict)
+    critic_feedback_history: list[str] = Field(default_factory=list)
+    hitl_pending: bool = False
+    hitl_checkpoints: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
 
 
 def _as_bool(value: Any, default: bool = False) -> bool:
@@ -268,5 +298,7 @@ def normalize_state_contract(state: MutableMapping[str, Any]) -> GrantFlowState:
 
     state["critic_feedback_history"] = _as_str_list(state.get("critic_feedback_history"))
     state["errors"] = _as_str_list(state.get("errors"))
+    # Validate typed state contract (including permissive extra runtime keys).
+    GrantFlowStateModel.model_validate(state)
 
     return cast(GrantFlowState, state)

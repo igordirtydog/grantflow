@@ -10,6 +10,7 @@ from enum import Enum
 from typing import Any, Dict, Optional
 
 from grantflow.core.strategies.factory import DonorFactory
+from grantflow.swarm.state_contract import normalize_state_contract
 
 RUNTIME_STATE_KEYS = {"strategy", "donor_strategy"}
 DEFAULT_SQLITE_BUSY_TIMEOUT_MS = 5000
@@ -69,8 +70,10 @@ def prepare_state_for_storage(state: Any) -> Any:
     if not isinstance(state, dict):
         return sanitize_jsonable(state)
 
+    normalized_state = copy.deepcopy(state)
+    normalize_state_contract(normalized_state)
     stored_state: Dict[str, Any] = {}
-    for key, value in state.items():
+    for key, value in normalized_state.items():
         if key in RUNTIME_STATE_KEYS:
             continue
         stored_state[str(key)] = sanitize_jsonable(value)
@@ -90,7 +93,16 @@ def restore_state_from_storage(state: Any) -> Any:
             return restored
         restored["donor_strategy"] = strategy
         restored["strategy"] = strategy
+    normalize_state_contract(restored)
     return restored
+
+
+def _normalize_state_in_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    out = copy.deepcopy(payload)
+    state = out.get("state")
+    if isinstance(state, dict):
+        normalize_state_contract(state)
+    return out
 
 
 def prepare_job_payload_for_storage(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -176,15 +188,17 @@ class InMemoryJobStore:
         self._lock = threading.Lock()
 
     def set(self, job_id: str, payload: Dict[str, Any]) -> None:
+        normalized_payload = _normalize_state_in_payload(payload)
         with self._lock:
-            self._jobs[job_id] = copy.deepcopy(payload)
+            self._jobs[job_id] = copy.deepcopy(normalized_payload)
 
     def update(self, job_id: str, **patch: Any) -> Dict[str, Any]:
         with self._lock:
             current = copy.deepcopy(self._jobs.get(job_id, {}))
             current.update(patch)
-            self._jobs[job_id] = copy.deepcopy(current)
-            return copy.deepcopy(current)
+            normalized = _normalize_state_in_payload(current)
+            self._jobs[job_id] = copy.deepcopy(normalized)
+            return copy.deepcopy(normalized)
 
     def get(self, job_id: str) -> Optional[Dict[str, Any]]:
         with self._lock:

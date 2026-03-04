@@ -1,9 +1,42 @@
 import json
 import sqlite3
 
-from grantflow.core.stores import SQLiteIngestAuditStore, SQLiteJobStore, open_sqlite_connection
+from grantflow.core.stores import InMemoryJobStore, SQLiteIngestAuditStore, SQLiteJobStore, open_sqlite_connection
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.swarm.hitl import HITLCheckpoint, HITLStatus
+
+
+def test_inmemory_job_store_normalizes_state_contract_on_set_and_update():
+    store = InMemoryJobStore()
+    store.set(
+        "job-inmem-1",
+        {
+            "status": "accepted",
+            "state": {
+                "donor": "USAID",
+                "input": {"project": "Legacy input", "country": "Kenya"},
+                "llm_mode": "true",
+                "max_iterations": "0",
+            },
+        },
+    )
+    restored = store.get("job-inmem-1")
+    assert restored is not None
+    assert restored["state"]["donor_id"] == "usaid"
+    assert restored["state"]["donor"] == "usaid"
+    assert restored["state"]["input_context"]["project"] == "Legacy input"
+    assert restored["state"]["input"]["country"] == "Kenya"
+    assert restored["state"]["llm_mode"] is True
+    assert restored["state"]["max_iterations"] == 1
+
+    updated = store.update(
+        "job-inmem-1",
+        state={"donor": "EU", "input": {"project": "Digital governance", "country": "Moldova"}},
+    )
+    assert updated["state"]["donor_id"] == "eu"
+    assert updated["state"]["donor"] == "eu"
+    assert updated["state"]["input_context"]["project"] == "Digital governance"
+    assert updated["state"]["input"]["country"] == "Moldova"
 
 
 def test_sqlite_job_store_persists_json_and_rehydrates_strategy(tmp_path):
@@ -38,6 +71,40 @@ def test_sqlite_job_store_persists_json_and_rehydrates_strategy(tmp_path):
     raw_payload = json.loads(row[0])
     assert "strategy" not in raw_payload["state"]
     assert "donor_strategy" not in raw_payload["state"]
+
+
+def test_sqlite_job_store_get_restores_legacy_state_aliases(tmp_path):
+    db_path = tmp_path / "grantflow_state.db"
+    store = SQLiteJobStore(str(db_path))
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute(
+            """
+            INSERT INTO jobs (job_id, payload_json, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """,
+            (
+                "job-legacy",
+                json.dumps(
+                    {
+                        "status": "accepted",
+                        "state": {
+                            "donor": "USAID",
+                            "input": {"project": "Legacy state", "country": "Kenya"},
+                            "llm_mode": "false",
+                        },
+                    }
+                ),
+            ),
+        )
+
+    restored = store.get("job-legacy")
+    assert restored is not None
+    assert restored["state"]["donor_id"] == "usaid"
+    assert restored["state"]["donor"] == "usaid"
+    assert restored["state"]["input_context"]["project"] == "Legacy state"
+    assert restored["state"]["input"]["country"] == "Kenya"
+    assert restored["state"]["strategy"].get_rag_collection() == "usaid_ads201"
+    assert restored["state"]["donor_strategy"].get_rag_collection() == "usaid_ads201"
 
 
 def test_sqlite_job_store_update_merges_and_restores(tmp_path):
