@@ -538,6 +538,31 @@ def test_citation_grounding_context_flags_non_retrieval_dominance_when_retrieval
     assert "non_retrieval_citations_dominate_when_retrieval_enabled" in ctx["weak_grounding_reasons"]
 
 
+def test_citation_grounding_context_flags_low_retrieval_metadata_completeness():
+    state = {
+        "architect_retrieval": {"enabled": True, "hits_count": 5},
+        "citations": [
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-1",
+                "retrieval_rank": 1,
+                "retrieval_confidence": 0.9,
+                "citation_confidence": 0.9,
+            },
+            {"citation_type": "rag_claim_support", "doc_id": "doc-2", "citation_confidence": 0.9},
+            {"citation_type": "rag_claim_support", "doc_id": "doc-3", "citation_confidence": 0.9},
+            {"citation_type": "rag_claim_support", "doc_id": "doc-4", "citation_confidence": 0.9},
+            {"citation_type": "rag_claim_support", "doc_id": "doc-5", "citation_confidence": 0.9},
+        ],
+    }
+    ctx = _citation_grounding_context(state)
+    assert ctx["retrieval_grounded_citation_count"] == 5
+    assert ctx["retrieval_metadata_complete_citation_count"] == 1
+    assert ctx["retrieval_metadata_complete_rate"] == 0.2
+    assert ctx["weak_grounding"] is True
+    assert "retrieval_metadata_completeness_below_min" in ctx["weak_grounding_reasons"]
+
+
 def test_combine_critic_scores_caps_llm_penalty_in_weak_grounding_context():
     state = {
         "architect_retrieval": {"enabled": True, "hits_count": 0},

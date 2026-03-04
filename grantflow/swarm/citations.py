@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Dict, Iterable
+
+from grantflow.swarm.state_contract import normalize_rag_namespace
 
 RETRIEVAL_GROUNDED_CITATION_TYPES = frozenset(
     {
@@ -20,10 +23,69 @@ def _jsonable(value: Any) -> Any:
     return str(value)
 
 
+def _coerce_positive_int(value: Any) -> int | None:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _coerce_probability(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    bounded = max(0.0, min(1.0, parsed))
+    return round(bounded, 4)
+
+
+def _stable_synthetic_doc_id(record: Dict[str, Any]) -> str:
+    namespace_normalized = normalize_rag_namespace(record.get("namespace_normalized") or record.get("namespace"))
+    source = str(record.get("source") or "").strip()
+    page = str(record.get("page") or "").strip()
+    page_start = str(record.get("page_start") or "").strip()
+    page_end = str(record.get("page_end") or "").strip()
+    statement_path = str(record.get("statement_path") or "").strip()
+    used_for = str(record.get("used_for") or "").strip()
+    label = str(record.get("label") or "").strip()
+    excerpt = str(record.get("excerpt") or "").strip()[:120]
+    seed = "|".join(
+        [
+            namespace_normalized,
+            source,
+            page,
+            page_start,
+            page_end,
+            statement_path,
+            used_for,
+            label,
+            excerpt,
+        ]
+    )
+    digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:12]
+    ns_part = namespace_normalized or "unknown"
+    return f"synthetic::{ns_part}::{digest}"
+
+
 def normalize_citation(record: Dict[str, Any]) -> Dict[str, Any]:
     normalized: Dict[str, Any] = {}
     for key, value in record.items():
         normalized[str(key)] = _jsonable(value)
+
+    namespace = str(normalized.get("namespace") or "").strip()
+    namespace_normalized = normalize_rag_namespace(
+        str(normalized.get("namespace_normalized") or "").strip() or namespace
+    )
+    if namespace:
+        normalized["namespace"] = namespace
+    elif namespace_normalized:
+        normalized["namespace"] = namespace_normalized
+    if namespace_normalized:
+        normalized["namespace_normalized"] = namespace_normalized
+
     doc_id = str(normalized.get("doc_id") or "").strip()
     chunk_id = str(normalized.get("chunk_id") or "").strip()
     if not doc_id and chunk_id:
@@ -31,23 +93,34 @@ def normalize_citation(record: Dict[str, Any]) -> Dict[str, Any]:
     elif doc_id and not chunk_id:
         normalized["chunk_id"] = doc_id
 
-    if normalized.get("retrieval_rank") in (None, ""):
-        fallback_rank = normalized.get("rank")
-        try:
-            normalized_rank = int(fallback_rank) if fallback_rank is not None else None
-        except (TypeError, ValueError):
-            normalized_rank = None
-        if normalized_rank is not None:
-            normalized["retrieval_rank"] = normalized_rank
+    retrieval_rank = (
+        _coerce_positive_int(normalized.get("retrieval_rank"))
+        or _coerce_positive_int(normalized.get("rank"))
+        or _coerce_positive_int(normalized.get("evidence_rank"))
+    )
+    if retrieval_rank is not None:
+        normalized["retrieval_rank"] = retrieval_rank
+        normalized.setdefault("evidence_rank", retrieval_rank)
 
-    if normalized.get("retrieval_confidence") in (None, ""):
-        fallback_conf = normalized.get("citation_confidence")
-        try:
-            normalized_conf = float(fallback_conf) if fallback_conf is not None else None
-        except (TypeError, ValueError):
-            normalized_conf = None
-        if normalized_conf is not None:
-            normalized["retrieval_confidence"] = normalized_conf
+    retrieval_confidence = (
+        _coerce_probability(normalized.get("retrieval_confidence"))
+        or _coerce_probability(normalized.get("citation_confidence"))
+        or _coerce_probability(normalized.get("evidence_score"))
+    )
+    if retrieval_confidence is not None:
+        normalized["retrieval_confidence"] = retrieval_confidence
+        normalized.setdefault("evidence_score", retrieval_confidence)
+
+    citation_confidence = _coerce_probability(normalized.get("citation_confidence"))
+    if citation_confidence is not None:
+        normalized["citation_confidence"] = citation_confidence
+
+    if is_retrieval_grounded_citation_type(normalized.get("citation_type")) and not citation_has_doc_id(normalized):
+        synthetic_doc_id = _stable_synthetic_doc_id(normalized)
+        normalized["doc_id"] = synthetic_doc_id
+        normalized.setdefault("chunk_id", synthetic_doc_id)
+        normalized["doc_id_synthetic"] = True
+
     return normalized
 
 
@@ -110,10 +183,13 @@ def citation_has_retrieval_metadata(record: Dict[str, Any]) -> bool:
 
 
 def _citation_key(record: Dict[str, Any]) -> tuple[Any, ...]:
+    namespace_key = str(record.get("namespace_normalized") or "").strip().lower()
+    if not namespace_key:
+        namespace_key = normalize_rag_namespace(record.get("namespace"))
     return (
         record.get("stage"),
         record.get("citation_type"),
-        record.get("namespace"),
+        namespace_key,
         record.get("doc_id"),
         record.get("source"),
         record.get("page"),

@@ -95,6 +95,7 @@ curl -s http://127.0.0.1:8000/ready
 
 ```bash
 export GRANTFLOW_GROUNDING_GATE_MODE=warn
+export GRANTFLOW_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE=0.60
 export GRANTFLOW_PREFLIGHT_GROUNDING_POLICY_MODE=warn
 export GRANTFLOW_PREFLIGHT_GROUNDING_HIGH_RISK_COVERAGE_THRESHOLD=0.50
 export GRANTFLOW_PREFLIGHT_GROUNDING_MEDIUM_RISK_COVERAGE_THRESHOLD=0.80
@@ -104,6 +105,7 @@ export GRANTFLOW_PREFLIGHT_GROUNDING_MIN_UPLOADS=3
 Notes:
 - `GRANTFLOW_PREFLIGHT_GROUNDING_POLICY_MODE` controls preflight block behavior (`off|warn|strict`) and is separate from pipeline critic gate mode.
 - If `GRANTFLOW_PREFLIGHT_GROUNDING_POLICY_MODE` is not set, it falls back to `GRANTFLOW_GROUNDING_GATE_MODE`.
+- `GRANTFLOW_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE` controls how strict critic grounding is about retrieval metadata completeness (`doc_id` + rank + confidence on retrieval-grounded citations).
 - `strict_preflight=true` blocks when either readiness risk or grounding risk is `high`.
 
 ### 4.1) (Optional) Configure runtime grounded quality gate

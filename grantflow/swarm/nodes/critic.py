@@ -12,6 +12,7 @@ from grantflow.swarm.critic_llm_policy import is_advisory_llm_message as _is_adv
 from grantflow.swarm.critic_llm_policy import llm_finding_policy_class as _llm_finding_policy_class
 from grantflow.swarm.critic_rules import CriticFatalFlaw, evaluate_rule_based_critic
 from grantflow.swarm.citations import (
+    citation_has_retrieval_metadata,
     citation_traceability_status,
     is_fallback_namespace_citation_type,
     is_non_retrieval_citation_type,
@@ -40,6 +41,7 @@ WEAK_GROUNDING_MIN_CITATIONS_FOR_CALIBRATION = 5
 WEAK_GROUNDING_LOW_CONFIDENCE_RATIO_THRESHOLD = 0.75
 WEAK_GROUNDING_FALLBACK_RATIO_THRESHOLD = 0.6
 WEAK_GROUNDING_TRACEABILITY_GAP_RATIO_THRESHOLD = 0.6
+WEAK_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE = 0.6
 ADVISORY_ONLY_LLM_SCORE_MAX_PENALTY = 0.75
 ADVISORY_GROUNDING_MIN_THRESHOLD_HIT_RATE = 0.5
 ADVISORY_GROUNDING_MAX_ARCHITECT_RAG_LOW_RATIO = 0.5
@@ -274,6 +276,7 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
     traceability_complete_count = 0
     traceability_partial_count = 0
     traceability_missing_count = 0
+    retrieval_metadata_complete_count = 0
     architect_traceability_gap_count = 0
     architect_citation_count = 0
     for citation in citations:
@@ -304,6 +307,8 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
             traceability_missing_count += 1
             if str(citation.get("stage") or "") == "architect":
                 architect_traceability_gap_count += 1
+        if is_retrieval_grounded_citation_type(citation_type) and citation_has_retrieval_metadata(citation):
+            retrieval_metadata_complete_count += 1
         confidence = citation.get("citation_confidence")
         try:
             conf_value = float(confidence) if confidence is not None else None
@@ -329,6 +334,9 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
     weak_rag_or_fallback_ratio = round(weak_rag_or_fallback_count / citation_count, 4) if citation_count else None
     non_retrieval_ratio = round(non_retrieval_count / citation_count, 4) if citation_count else None
     retrieval_grounded_ratio = round(retrieval_grounded_count / citation_count, 4) if citation_count else None
+    retrieval_metadata_complete_rate = (
+        round(retrieval_metadata_complete_count / retrieval_grounded_count, 4) if retrieval_grounded_count else None
+    )
     traceability_gap_count = traceability_partial_count + traceability_missing_count
     traceability_gap_ratio = round(traceability_gap_count / citation_count, 4) if citation_count else None
     architect_traceability_gap_ratio = (
@@ -363,6 +371,13 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         and traceability_gap_ratio >= WEAK_GROUNDING_TRACEABILITY_GAP_RATIO_THRESHOLD
     ):
         weak_grounding_reasons.append("citation_traceability_gaps_dominate")
+    if (
+        retrieval_enabled
+        and retrieval_grounded_count > 0
+        and retrieval_metadata_complete_rate is not None
+        and retrieval_metadata_complete_rate < WEAK_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE
+    ):
+        weak_grounding_reasons.append("retrieval_metadata_completeness_below_min")
 
     return {
         "citation_count": citation_count,
@@ -377,6 +392,8 @@ def _citation_grounding_context(state: Dict[str, Any]) -> Dict[str, Any]:
         "traceability_missing_citation_count": traceability_missing_count,
         "traceability_gap_citation_count": traceability_gap_count,
         "traceability_gap_ratio": traceability_gap_ratio,
+        "retrieval_metadata_complete_citation_count": retrieval_metadata_complete_count,
+        "retrieval_metadata_complete_rate": retrieval_metadata_complete_rate,
         "architect_traceability_gap_citation_count": architect_traceability_gap_count,
         "architect_traceability_gap_ratio": architect_traceability_gap_ratio,
         "low_confidence_ratio": low_confidence_ratio,
@@ -535,6 +552,14 @@ def red_team_critic(state: Dict[str, Any]) -> Dict[str, Any]:
                 WEAK_GROUNDING_TRACEABILITY_GAP_RATIO_THRESHOLD,
             )
             or WEAK_GROUNDING_TRACEABILITY_GAP_RATIO_THRESHOLD
+        ),
+        min_retrieval_metadata_complete_rate=float(
+            getattr(
+                config.graph,
+                "grounding_min_retrieval_metadata_complete_rate",
+                WEAK_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE,
+            )
+            or WEAK_GROUNDING_MIN_RETRIEVAL_METADATA_COMPLETE_RATE
         ),
     )
     if grounding_gate.get("blocking"):

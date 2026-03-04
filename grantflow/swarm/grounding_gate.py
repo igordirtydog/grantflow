@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Dict
 
 from grantflow.swarm.citations import (
+    citation_has_retrieval_metadata,
     citation_traceability_status,
     is_fallback_namespace_citation_type,
     is_non_retrieval_citation_type,
@@ -19,6 +20,7 @@ def evaluate_grounding_gate(
     max_weak_rag_or_fallback_ratio: float = 0.6,
     max_low_confidence_ratio: float = 0.75,
     max_traceability_gap_ratio: float = 0.6,
+    min_retrieval_metadata_complete_rate: float = 0.6,
 ) -> Dict[str, Any]:
     mode_normalized = str(mode or "warn").strip().lower()
     if mode_normalized not in {"off", "warn", "strict"}:
@@ -36,6 +38,7 @@ def evaluate_grounding_gate(
     traceability_complete_count = 0
     traceability_partial_count = 0
     traceability_missing_count = 0
+    retrieval_metadata_complete_count = 0
 
     for citation in citations:
         if not isinstance(citation, dict):
@@ -59,6 +62,8 @@ def evaluate_grounding_gate(
             traceability_partial_count += 1
         else:
             traceability_missing_count += 1
+        if is_retrieval_grounded_citation_type(citation_type) and citation_has_retrieval_metadata(citation):
+            retrieval_metadata_complete_count += 1
         confidence = citation.get("citation_confidence")
         try:
             conf_value = float(confidence) if confidence is not None else None
@@ -96,6 +101,11 @@ def evaluate_grounding_gate(
     traceability_gap_ratio = (
         round(traceability_gap_count / citation_count, 4) if citation_count and traceability_gap_count else 0.0
     )
+    retrieval_metadata_complete_rate = (
+        round(retrieval_metadata_complete_count / retrieval_grounded_count, 4)
+        if retrieval_grounded_count and retrieval_metadata_complete_count
+        else (0.0 if retrieval_grounded_count else None)
+    )
 
     reasons: list[str] = []
     if architect_retrieval_enabled and architect_retrieval_hits_count == 0:
@@ -110,6 +120,13 @@ def evaluate_grounding_gate(
             reasons.append("low_confidence_citations_dominate")
         if traceability_gap_ratio >= max_traceability_gap_ratio:
             reasons.append("citation_traceability_gaps_dominate")
+        if (
+            architect_retrieval_enabled
+            and retrieval_grounded_count > 0
+            and retrieval_metadata_complete_rate is not None
+            and retrieval_metadata_complete_rate < min_retrieval_metadata_complete_rate
+        ):
+            reasons.append("retrieval_metadata_completeness_below_min")
 
     passed = mode_normalized == "off" or not reasons
     blocking = mode_normalized == "strict" and not passed
@@ -133,6 +150,8 @@ def evaluate_grounding_gate(
         "traceability_complete_citation_count": traceability_complete_count,
         "traceability_partial_citation_count": traceability_partial_count,
         "traceability_missing_citation_count": traceability_missing_count,
+        "retrieval_metadata_complete_citation_count": retrieval_metadata_complete_count,
+        "retrieval_metadata_complete_rate": retrieval_metadata_complete_rate,
         "traceability_gap_citation_count": traceability_gap_count,
         "traceability_gap_ratio": traceability_gap_ratio,
         "weak_rag_or_fallback_ratio": weak_rag_or_fallback_ratio,
@@ -146,5 +165,6 @@ def evaluate_grounding_gate(
             "max_weak_rag_or_fallback_ratio": max_weak_rag_or_fallback_ratio,
             "max_low_confidence_ratio": max_low_confidence_ratio,
             "max_traceability_gap_ratio": max_traceability_gap_ratio,
+            "min_retrieval_metadata_complete_rate": min_retrieval_metadata_complete_rate,
         },
     }

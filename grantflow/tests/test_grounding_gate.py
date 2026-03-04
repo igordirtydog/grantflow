@@ -75,3 +75,56 @@ def test_grounding_gate_strict_blocks_on_weak_signals():
     assert gate["passed"] is False
     assert gate["blocking"] is True
     assert gate["severity"] == "high"
+
+
+def test_grounding_gate_warn_mode_flags_low_retrieval_metadata_completeness():
+    state = {
+        "citations": [
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-1",
+                "source": "policy.pdf",
+                "retrieval_rank": 1,
+                "retrieval_confidence": 0.9,
+                "citation_confidence": 0.9,
+            },
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-2",
+                "source": "policy.pdf",
+                "citation_confidence": 0.9,
+            },
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-3",
+                "source": "policy.pdf",
+                "citation_confidence": 0.9,
+            },
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-4",
+                "source": "policy.pdf",
+                "citation_confidence": 0.9,
+            },
+            {
+                "citation_type": "rag_claim_support",
+                "doc_id": "doc-5",
+                "source": "policy.pdf",
+                "citation_confidence": 0.9,
+            },
+        ],
+        "architect_retrieval": {"enabled": True, "hits_count": 5},
+    }
+    gate = evaluate_grounding_gate(
+        state,
+        mode="warn",
+        min_citations_for_calibration=5,
+        min_retrieval_metadata_complete_rate=0.8,
+    )
+    assert gate["mode"] == "warn"
+    assert gate["passed"] is False
+    assert gate["blocking"] is False
+    assert gate["retrieval_grounded_citation_count"] == 5
+    assert gate["retrieval_metadata_complete_citation_count"] == 1
+    assert gate["retrieval_metadata_complete_rate"] == 0.2
+    assert "retrieval_metadata_completeness_below_min" in gate["reasons"]
