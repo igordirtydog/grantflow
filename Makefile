@@ -5,7 +5,8 @@ EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
 GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
 GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
-GROUNDED_MAX_NON_RETRIEVAL ?= 0.35
+GROUNDED_MAX_NON_RETRIEVAL ?= 0.25
+GROUNDED_MIN_RETRIEVAL_GROUNDED ?= 0.75
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
@@ -31,5 +32,6 @@ eval-grounded-ab:
 		--b-label architect_rag_off \
 		--guard-donors $(GROUNDED_GUARD_DONORS) \
 		--max-a-non-retrieval-rate $(GROUNDED_MAX_NON_RETRIEVAL) \
+		--min-a-retrieval-grounded-rate $(GROUNDED_MIN_RETRIEVAL_GROUNDED) \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json

@@ -298,13 +298,26 @@ def _format_text(payload: dict[str, Any]) -> str:
                 for item in failures:
                     if not isinstance(item, dict):
                         continue
-                    lines.append(
-                        (
-                            f"- FAIL {item.get('donor_id')}: "
-                            f"a_non_retrieval_rate_avg={item.get('a_non_retrieval_rate_avg')} "
-                            f"threshold={item.get('max_allowed_non_retrieval_rate')}"
+                    kind = str(item.get("kind") or "")
+                    donor_id = item.get("donor_id")
+                    if kind == "max_a_non_retrieval_rate":
+                        lines.append(
+                            (
+                                f"- FAIL {donor_id}: "
+                                f"a_non_retrieval_rate_avg={item.get('observed')} "
+                                f"max_allowed={item.get('threshold')}"
+                            )
                         )
-                    )
+                    elif kind == "min_a_retrieval_grounded_rate":
+                        lines.append(
+                            (
+                                f"- FAIL {donor_id}: "
+                                f"a_retrieval_grounded_rate_avg={item.get('observed')} "
+                                f"min_required={item.get('threshold')}"
+                            )
+                        )
+                    else:
+                        lines.append(f"- FAIL {donor_id}: {item}")
         missing_donors = guard.get("missing_donors")
         if isinstance(missing_donors, list) and missing_donors:
             lines.append(f"- Missing donors in matched set: {', '.join(str(x) for x in missing_donors)}")
@@ -331,8 +344,9 @@ def _evaluate_guard(
     payload: dict[str, Any],
     guard_donors: list[str],
     max_a_non_retrieval_rate: float | None,
+    min_a_retrieval_grounded_rate: float | None,
 ) -> dict[str, Any]:
-    if not guard_donors or max_a_non_retrieval_rate is None:
+    if not guard_donors or (max_a_non_retrieval_rate is None and min_a_retrieval_grounded_rate is None):
         return {"status": "not_configured", "guard_donors": guard_donors}
 
     donor_summary = payload.get("donor_summary")
@@ -344,24 +358,45 @@ def _evaluate_guard(
         if not isinstance(row, dict):
             missing.append(donor_id)
             continue
-        rate = _as_float(row.get("a_non_retrieval_rate_avg"))
-        if rate is None:
-            missing.append(donor_id)
-            continue
-        if rate > max_a_non_retrieval_rate + EPSILON:
-            failures.append(
-                {
-                    "donor_id": donor_id,
-                    "a_non_retrieval_rate_avg": round(rate, 4),
-                    "max_allowed_non_retrieval_rate": round(max_a_non_retrieval_rate, 4),
-                }
-            )
+        if max_a_non_retrieval_rate is not None:
+            rate = _as_float(row.get("a_non_retrieval_rate_avg"))
+            if rate is None:
+                missing.append(donor_id)
+                continue
+            if rate > max_a_non_retrieval_rate + EPSILON:
+                failures.append(
+                    {
+                        "donor_id": donor_id,
+                        "kind": "max_a_non_retrieval_rate",
+                        "observed": round(rate, 4),
+                        "threshold": round(max_a_non_retrieval_rate, 4),
+                    }
+                )
+        if min_a_retrieval_grounded_rate is not None:
+            rate = _as_float(row.get("a_retrieval_grounded_rate_avg"))
+            if rate is None:
+                missing.append(donor_id)
+                continue
+            if rate + EPSILON < min_a_retrieval_grounded_rate:
+                failures.append(
+                    {
+                        "donor_id": donor_id,
+                        "kind": "min_a_retrieval_grounded_rate",
+                        "observed": round(rate, 4),
+                        "threshold": round(min_a_retrieval_grounded_rate, 4),
+                    }
+                )
 
     status = "failed" if failures else "passed"
     return {
         "status": status,
         "guard_donors": guard_donors,
-        "max_a_non_retrieval_rate": round(max_a_non_retrieval_rate, 4),
+        "max_a_non_retrieval_rate": (
+            round(max_a_non_retrieval_rate, 4) if max_a_non_retrieval_rate is not None else None
+        ),
+        "min_a_retrieval_grounded_rate": (
+            round(min_a_retrieval_grounded_rate, 4) if min_a_retrieval_grounded_rate is not None else None
+        ),
         "checked_donors": len(guard_donors) - len(missing),
         "missing_donors": missing,
         "failures": failures,
@@ -388,6 +423,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Fail when donor A avg non_retrieval_citation_rate exceeds this threshold (0..1).",
     )
+    parser.add_argument(
+        "--min-a-retrieval-grounded-rate",
+        type=float,
+        default=None,
+        help="Fail when donor A avg retrieval_grounded_citation_rate drops below this threshold (0..1).",
+    )
     return parser.parse_args(argv)
 
 
@@ -405,6 +446,7 @@ def main(argv: list[str] | None = None) -> int:
         payload=payload,
         guard_donors=_parse_guard_donors(args.guard_donors),
         max_a_non_retrieval_rate=args.max_a_non_retrieval_rate,
+        min_a_retrieval_grounded_rate=args.min_a_retrieval_grounded_rate,
     )
     payload["guard"] = guard_payload
     text_report = _format_text(payload)
