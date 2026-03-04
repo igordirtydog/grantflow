@@ -1409,6 +1409,61 @@ def _public_job_preflight_payload(job: Dict[str, Any]) -> Optional[Dict[str, Any
     return cast(Dict[str, Any], payload) if isinstance(payload, dict) else None
 
 
+def _rule_check_status_by_code(rule_checks: list[Dict[str, Any]], code: str) -> str:
+    rank = {"unknown": 0, "pass": 1, "warn": 2, "fail": 3}
+    best = "unknown"
+    target = str(code or "").strip().upper()
+    for row in rule_checks:
+        if not isinstance(row, dict):
+            continue
+        row_code = str(row.get("code") or "").strip().upper()
+        if row_code != target:
+            continue
+        status = str(row.get("status") or "").strip().lower()
+        if status not in {"pass", "warn", "fail"}:
+            continue
+        if rank[status] > rank[best]:
+            best = status
+    return best
+
+
+def _toc_text_quality_summary(rule_checks: list[Dict[str, Any]], critic_flaws: list[Dict[str, Any]]) -> Dict[str, Any]:
+    placeholder_codes = {"TOC_PLACEHOLDER_CONTENT", "TOC_PLACEHOLDER_CONTENT_CRITICAL"}
+    repetition_codes = {"TOC_BOILERPLATE_REPETITION", "TOC_BOILERPLATE_REPETITION_CRITICAL"}
+    placeholder_finding_count = 0
+    repetition_finding_count = 0
+    for flaw in critic_flaws:
+        if not isinstance(flaw, dict):
+            continue
+        code = str(flaw.get("code") or "").strip().upper()
+        if code in placeholder_codes:
+            placeholder_finding_count += 1
+        if code in repetition_codes:
+            repetition_finding_count += 1
+
+    placeholder_check_status = _rule_check_status_by_code(rule_checks, "TOC_TEXT_COMPLETENESS")
+    repetition_check_status = _rule_check_status_by_code(rule_checks, "TOC_NARRATIVE_DIVERSITY")
+    issues_total = placeholder_finding_count + repetition_finding_count
+
+    if "fail" in {placeholder_check_status, repetition_check_status}:
+        risk_level = "high"
+    elif "warn" in {placeholder_check_status, repetition_check_status} or issues_total > 0:
+        risk_level = "medium"
+    elif placeholder_check_status == "pass" or repetition_check_status == "pass":
+        risk_level = "low"
+    else:
+        risk_level = "unknown"
+
+    return {
+        "risk_level": risk_level,
+        "issues_total": issues_total,
+        "placeholder_finding_count": placeholder_finding_count,
+        "repetition_finding_count": repetition_finding_count,
+        "placeholder_check_status": placeholder_check_status,
+        "repetition_check_status": repetition_check_status,
+    }
+
+
 def public_job_quality_payload(
     job_id: str,
     job: Dict[str, Any],
@@ -1571,6 +1626,10 @@ def public_job_quality_payload(
     readiness_payload = _public_job_quality_readiness_payload(job, ingest_inventory_rows)
     preflight_payload = _public_job_preflight_payload(job)
     export_contract_gate = _state_export_contract_gate(state_dict)
+    toc_text_quality = _toc_text_quality_summary(
+        [row for row in rule_checks if isinstance(row, dict)],
+        [row for row in critic_flaws if isinstance(row, dict)],
+    )
     traceability_gap = traceability_partial + traceability_missing
     architect_claim_paths = {
         str(c.get("statement_path") or "").strip()
@@ -1867,6 +1926,7 @@ def public_job_quality_payload(
         "export_contract": sanitize_for_public_response(export_contract_gate),
         "preflight": preflight_payload,
         "readiness": readiness_payload,
+        "toc_text_quality": toc_text_quality,
     }
 
 

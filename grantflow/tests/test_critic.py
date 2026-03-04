@@ -279,6 +279,85 @@ def test_rule_based_critic_fails_when_toc_text_is_placeholder_dominant():
     assert any(f["code"] == "TOC_PLACEHOLDER_CONTENT_CRITICAL" for f in flaws)
 
 
+def test_rule_based_critic_warns_when_toc_narrative_is_boilerplate_repeated():
+    repeated_description = (
+        "Program implementation delivers measurable governance improvements through repeatable capacity cycles "
+        "and standardized compliance checkpoints across institutions."
+    )
+    state = {
+        "input_context": {"project": "AI governance training", "country": "Kazakhstan"},
+        "draft_versions": [
+            {"version_id": "toc_v1", "sequence": 1, "section": "toc", "content": {}},
+            {"version_id": "logframe_v1", "sequence": 2, "section": "logframe", "content": {}},
+        ],
+        "toc_validation": {"valid": True, "errors": [], "schema_name": "GenericTOC"},
+        "toc_draft": {
+            "toc": {
+                "project_goal": "Improve accountability and service quality across ministries.",
+                "development_objectives": [
+                    {"do_id": "DO1", "description": repeated_description},
+                    {"do_id": "DO2", "description": repeated_description},
+                    {"do_id": "DO3", "description": repeated_description},
+                ],
+            }
+        },
+        "logframe_draft": {"indicators": [{"indicator_id": "IND_001", "baseline": "0", "target": "60"}]},
+        "citations": [
+            {"stage": "architect", "used_for": "toc_claim", "statement_path": "toc.project_goal", "label": "doc"},
+            {"stage": "mel", "used_for": "IND_001", "label": "doc"},
+        ],
+    }
+
+    report = evaluate_rule_based_critic(state)
+    checks = [c.model_dump() if hasattr(c, "model_dump") else c.dict() for c in report.checks]
+    flaws = [f.model_dump() if hasattr(f, "model_dump") else f.dict() for f in report.fatal_flaws]
+
+    assert any(c["code"] == "TOC_NARRATIVE_DIVERSITY" and c["status"] == "warn" for c in checks)
+    assert any(f["code"] == "TOC_BOILERPLATE_REPETITION" for f in flaws)
+
+
+def test_rule_based_critic_passes_toc_narrative_diversity_when_descriptions_are_distinct():
+    state = {
+        "input_context": {"project": "AI governance training", "country": "Kazakhstan"},
+        "draft_versions": [
+            {"version_id": "toc_v1", "sequence": 1, "section": "toc", "content": {}},
+            {"version_id": "logframe_v1", "sequence": 2, "section": "logframe", "content": {}},
+        ],
+        "toc_validation": {"valid": True, "errors": [], "schema_name": "GenericTOC"},
+        "toc_draft": {
+            "toc": {
+                "project_goal": "Improve accountability and service quality across ministries.",
+                "development_objectives": [
+                    {
+                        "do_id": "DO1",
+                        "description": "Civil service units adopt common AI governance standards with enforceable review gates.",
+                    },
+                    {
+                        "do_id": "DO2",
+                        "description": "Training programs build procurement and risk-audit skills for department focal points.",
+                    },
+                    {
+                        "do_id": "DO3",
+                        "description": "Interagency reporting mechanisms publish quarterly transparency and incident response metrics.",
+                    },
+                ],
+            }
+        },
+        "logframe_draft": {"indicators": [{"indicator_id": "IND_001", "baseline": "0", "target": "60"}]},
+        "citations": [
+            {"stage": "architect", "used_for": "toc_claim", "statement_path": "toc.project_goal", "label": "doc"},
+            {"stage": "mel", "used_for": "IND_001", "label": "doc"},
+        ],
+    }
+
+    report = evaluate_rule_based_critic(state)
+    checks = [c.model_dump() if hasattr(c, "model_dump") else c.dict() for c in report.checks]
+    flaws = [f.model_dump() if hasattr(f, "model_dump") else f.dict() for f in report.fatal_flaws]
+
+    assert any(c["code"] == "TOC_NARRATIVE_DIVERSITY" and c["status"] == "pass" for c in checks)
+    assert not any(f["code"] == "TOC_BOILERPLATE_REPETITION" for f in flaws)
+
+
 def test_rule_based_critic_warns_when_some_logframe_baseline_target_are_placeholders():
     state = {
         "input_context": {"project": "AI governance training", "country": "Kazakhstan"},

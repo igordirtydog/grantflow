@@ -64,6 +64,9 @@ TOC_CLAIM_TEXT_KEYS = {
     "assumptions",
     "critical_assumptions",
 }
+TOC_REPETITION_MIN_TEXT_LEN = 40
+TOC_REPETITION_WARN_MAX_REPEAT_COUNT = 3
+TOC_REPETITION_WARN_RATIO_THRESHOLD = 0.5
 
 
 class CriticFatalFlaw(BaseModel):
@@ -245,6 +248,20 @@ def _collect_toc_claim_text_scalars(payload: Any, *, max_items: int = 240) -> li
     return out
 
 
+def _toc_repetition_key(value: Any) -> Optional[str]:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < TOC_REPETITION_MIN_TEXT_LEN or " " not in text:
+        return None
+    text = re.sub(r"[^a-z0-9 ]+", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) < TOC_REPETITION_MIN_TEXT_LEN:
+        return None
+    return text
+
+
 def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
     checks: List[RuleCheckResult] = []
     flaws: List[CriticFatalFlaw] = []
@@ -361,6 +378,67 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
                     status="pass",
                     section="toc",
                     detail="No placeholder text detected in ToC fields",
+                )
+            )
+        repetition_groups: Dict[str, Dict[str, Any]] = {}
+        repetition_candidates = 0
+        for value in toc_text_values:
+            key = _toc_repetition_key(value)
+            if not key:
+                continue
+            repetition_candidates += 1
+            row = repetition_groups.get(key)
+            if row is None:
+                repetition_groups[key] = {"count": 1, "sample": str(value).strip()}
+            else:
+                row["count"] = int(row.get("count") or 0) + 1
+        repeated_groups = [row for row in repetition_groups.values() if int(row.get("count") or 0) >= 2]
+        repeated_group_count = len(repeated_groups)
+        repeated_occurrence_count = sum(int(row.get("count") or 0) for row in repeated_groups)
+        max_repeat_count = max((int(row.get("count") or 0) for row in repeated_groups), default=0)
+        repeated_ratio = _safe_ratio(repeated_occurrence_count, repetition_candidates) if repetition_candidates else 0.0
+        if repeated_group_count and (
+            max_repeat_count >= TOC_REPETITION_WARN_MAX_REPEAT_COUNT
+            or repeated_ratio >= TOC_REPETITION_WARN_RATIO_THRESHOLD
+        ):
+            repeated_samples = sorted(
+                [str(row.get("sample") or "").strip() for row in repeated_groups if str(row.get("sample") or "").strip()],
+                key=len,
+                reverse=True,
+            )
+            sample = (repeated_samples[0][:96] + "...") if repeated_samples else ""
+            detail = (
+                f"repeated_groups={repeated_group_count}; repeated_occurrences={repeated_occurrence_count}; "
+                f"max_repeat_count={max_repeat_count}; ratio={repeated_ratio:.0%}; sample={sample or '-'}"
+            )
+            checks.append(
+                RuleCheckResult(
+                    code="TOC_NARRATIVE_DIVERSITY",
+                    status="warn",
+                    section="toc",
+                    detail=detail,
+                )
+            )
+            _add_flaw(
+                flaws,
+                code="TOC_BOILERPLATE_REPETITION",
+                severity="low",
+                section="toc",
+                state=state,
+                message="Theory of Change contains repeated boilerplate narrative across multiple sections.",
+                fix_hint="Diversify repeated objective/result descriptions with section-specific, evidence-grounded wording.",
+            )
+        else:
+            checks.append(
+                RuleCheckResult(
+                    code="TOC_NARRATIVE_DIVERSITY",
+                    status="pass",
+                    section="toc",
+                    detail=(
+                        "No significant repeated boilerplate narrative detected"
+                        if repetition_candidates
+                        else "Not enough narrative text to evaluate repetition"
+                    ),
                 )
             )
 

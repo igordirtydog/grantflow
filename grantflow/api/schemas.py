@@ -550,6 +550,17 @@ class JobQualityReadinessSummaryPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobQualityToCTextQualitySummaryPublicResponse(BaseModel):
+    risk_level: str
+    issues_total: int
+    placeholder_finding_count: int
+    repetition_finding_count: int
+    placeholder_check_status: Optional[str] = None
+    repetition_check_status: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobQualityExportContractPublicResponse(BaseModel):
     mode: Optional[str] = None
     status: Optional[str] = None
@@ -584,6 +595,7 @@ class JobQualitySummaryPublicResponse(BaseModel):
     mel_grounding_policy: Optional[Dict[str, Any]] = None
     export_contract: Optional[JobQualityExportContractPublicResponse] = None
     readiness: Optional[JobQualityReadinessSummaryPublicResponse] = None
+    toc_text_quality: Optional[JobQualityToCTextQualitySummaryPublicResponse] = None
 
     model_config = ConfigDict(extra="allow")
 

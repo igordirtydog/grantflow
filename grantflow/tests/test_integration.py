@@ -4156,6 +4156,85 @@ def test_quality_summary_readiness_emits_namespace_empty_and_low_coverage_warnin
     assert "ARCHITECT_RETRIEVAL_NO_HITS" in warning_codes
 
 
+def test_quality_summary_exposes_toc_text_quality_aggregate():
+    job_id = "quality-job-toc-text"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {
+                "donor_id": "usaid",
+                "quality_score": 8.2,
+                "critic_score": 8.2,
+                "needs_revision": False,
+                "toc_draft": {"toc": {"brief": "Sample ToC"}},
+                "critic_notes": {
+                    "engine": "rules",
+                    "rule_score": 8.2,
+                    "llm_score": None,
+                    "rule_checks": [
+                        {"code": "TOC_TEXT_COMPLETENESS", "status": "warn", "section": "toc"},
+                        {"code": "TOC_NARRATIVE_DIVERSITY", "status": "warn", "section": "toc"},
+                    ],
+                    "fatal_flaws": [
+                        {
+                            "finding_id": "tt1",
+                            "status": "open",
+                            "severity": "low",
+                            "section": "toc",
+                            "code": "TOC_PLACEHOLDER_CONTENT",
+                            "message": "ToC contains placeholder text.",
+                        },
+                        {
+                            "finding_id": "tt2",
+                            "status": "open",
+                            "severity": "low",
+                            "section": "toc",
+                            "code": "TOC_BOILERPLATE_REPETITION",
+                            "message": "ToC contains repeated boilerplate narrative.",
+                        },
+                    ],
+                },
+                "citations": [],
+            },
+            "job_events": [
+                {
+                    "event_id": "tq1",
+                    "ts": "2026-02-24T10:00:00+00:00",
+                    "type": "status_changed",
+                    "to_status": "accepted",
+                    "status": "accepted",
+                },
+                {
+                    "event_id": "tq2",
+                    "ts": "2026-02-24T10:00:05+00:00",
+                    "type": "status_changed",
+                    "to_status": "running",
+                    "status": "running",
+                },
+                {
+                    "event_id": "tq3",
+                    "ts": "2026-02-24T10:01:00+00:00",
+                    "type": "status_changed",
+                    "to_status": "done",
+                    "status": "done",
+                },
+            ],
+        },
+    )
+
+    response = client.get(f"/status/{job_id}/quality")
+    assert response.status_code == 200
+    body = response.json()
+    toc_text_quality = body.get("toc_text_quality") or {}
+    assert toc_text_quality["risk_level"] == "medium"
+    assert toc_text_quality["issues_total"] == 2
+    assert toc_text_quality["placeholder_finding_count"] == 1
+    assert toc_text_quality["repetition_finding_count"] == 1
+    assert toc_text_quality["placeholder_check_status"] == "warn"
+    assert toc_text_quality["repetition_check_status"] == "warn"
+
+
 def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     api_app_module.JOB_STORE.set(
         "portfolio-job-1",
@@ -5735,6 +5814,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert "JobEventPublicResponse" in schemas
     assert "JobMetricsPublicResponse" in schemas
     assert "JobQualitySummaryPublicResponse" in schemas
+    assert "JobQualityToCTextQualitySummaryPublicResponse" in schemas
     assert "JobCriticPublicResponse" in schemas
     assert "CriticFindingsListPublicResponse" in schemas
     assert "CriticFindingsListFiltersPublicResponse" in schemas
