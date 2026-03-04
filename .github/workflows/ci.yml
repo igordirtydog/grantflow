@@ -152,6 +152,8 @@ jobs:
             --max-a-non-retrieval-rate 0.25 \
             --min-a-retrieval-grounded-rate 0.75 \
             --max-a-traceability-gap-rate 0.10 \
+            --min-a-non-retrieval-improvement-vs-b 0.25 \
+            --min-a-retrieval-grounded-improvement-vs-b 0.25 \
             --text-out eval-artifacts/grounded-ab-diff.txt \
             --json-out eval-artifacts/grounded-ab-diff.json
 

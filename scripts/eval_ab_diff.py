@@ -342,6 +342,22 @@ def _format_text(payload: dict[str, Any]) -> str:
                                 f"max_allowed={item.get('threshold')}"
                             )
                         )
+                    elif kind == "min_a_non_retrieval_improvement_vs_b":
+                        lines.append(
+                            (
+                                f"- FAIL {donor_id}: "
+                                f"(b-a) non_retrieval_rate improvement={item.get('observed')} "
+                                f"min_required={item.get('threshold')}"
+                            )
+                        )
+                    elif kind == "min_a_retrieval_grounded_improvement_vs_b":
+                        lines.append(
+                            (
+                                f"- FAIL {donor_id}: "
+                                f"(a-b) retrieval_grounded_rate improvement={item.get('observed')} "
+                                f"min_required={item.get('threshold')}"
+                            )
+                        )
                     else:
                         lines.append(f"- FAIL {donor_id}: {item}")
         missing_donors = guard.get("missing_donors")
@@ -372,11 +388,15 @@ def _evaluate_guard(
     max_a_non_retrieval_rate: float | None,
     min_a_retrieval_grounded_rate: float | None,
     max_a_traceability_gap_rate: float | None,
+    min_a_non_retrieval_improvement_vs_b: float | None,
+    min_a_retrieval_grounded_improvement_vs_b: float | None,
 ) -> dict[str, Any]:
     if not guard_donors or (
         max_a_non_retrieval_rate is None
         and min_a_retrieval_grounded_rate is None
         and max_a_traceability_gap_rate is None
+        and min_a_non_retrieval_improvement_vs_b is None
+        and min_a_retrieval_grounded_improvement_vs_b is None
     ):
         return {"status": "not_configured", "guard_donors": guard_donors}
 
@@ -431,6 +451,36 @@ def _evaluate_guard(
                         "threshold": round(max_a_traceability_gap_rate, 4),
                     }
                 )
+        if min_a_non_retrieval_improvement_vs_b is not None:
+            rate = _as_float(row.get("delta_non_retrieval_rate_b_minus_a"))
+            if rate is None:
+                missing.append(donor_id)
+                continue
+            if rate + EPSILON < min_a_non_retrieval_improvement_vs_b:
+                failures.append(
+                    {
+                        "donor_id": donor_id,
+                        "kind": "min_a_non_retrieval_improvement_vs_b",
+                        "observed": round(rate, 4),
+                        "threshold": round(min_a_non_retrieval_improvement_vs_b, 4),
+                    }
+                )
+        if min_a_retrieval_grounded_improvement_vs_b is not None:
+            a_rate = _as_float(row.get("a_retrieval_grounded_rate_avg"))
+            b_rate = _as_float(row.get("b_retrieval_grounded_rate_avg"))
+            if a_rate is None or b_rate is None:
+                missing.append(donor_id)
+                continue
+            improvement = a_rate - b_rate
+            if improvement + EPSILON < min_a_retrieval_grounded_improvement_vs_b:
+                failures.append(
+                    {
+                        "donor_id": donor_id,
+                        "kind": "min_a_retrieval_grounded_improvement_vs_b",
+                        "observed": round(improvement, 4),
+                        "threshold": round(min_a_retrieval_grounded_improvement_vs_b, 4),
+                    }
+                )
 
     status = "failed" if failures else "passed"
     return {
@@ -444,6 +494,16 @@ def _evaluate_guard(
         ),
         "max_a_traceability_gap_rate": (
             round(max_a_traceability_gap_rate, 4) if max_a_traceability_gap_rate is not None else None
+        ),
+        "min_a_non_retrieval_improvement_vs_b": (
+            round(min_a_non_retrieval_improvement_vs_b, 4)
+            if min_a_non_retrieval_improvement_vs_b is not None
+            else None
+        ),
+        "min_a_retrieval_grounded_improvement_vs_b": (
+            round(min_a_retrieval_grounded_improvement_vs_b, 4)
+            if min_a_retrieval_grounded_improvement_vs_b is not None
+            else None
         ),
         "checked_donors": len(guard_donors) - len(missing),
         "missing_donors": missing,
@@ -483,6 +543,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Fail when donor A avg traceability_gap_citation_rate exceeds this threshold (0..1).",
     )
+    parser.add_argument(
+        "--min-a-non-retrieval-improvement-vs-b",
+        type=float,
+        default=None,
+        help="Fail when donor-level (B - A) non_retrieval_citation_rate lift is below this threshold.",
+    )
+    parser.add_argument(
+        "--min-a-retrieval-grounded-improvement-vs-b",
+        type=float,
+        default=None,
+        help="Fail when donor-level (A - B) retrieval_grounded_citation_rate lift is below this threshold.",
+    )
     return parser.parse_args(argv)
 
 
@@ -502,6 +574,8 @@ def main(argv: list[str] | None = None) -> int:
         max_a_non_retrieval_rate=args.max_a_non_retrieval_rate,
         min_a_retrieval_grounded_rate=args.min_a_retrieval_grounded_rate,
         max_a_traceability_gap_rate=args.max_a_traceability_gap_rate,
+        min_a_non_retrieval_improvement_vs_b=args.min_a_non_retrieval_improvement_vs_b,
+        min_a_retrieval_grounded_improvement_vs_b=args.min_a_retrieval_grounded_improvement_vs_b,
     )
     payload["guard"] = guard_payload
     text_report = _format_text(payload)

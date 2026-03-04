@@ -21,12 +21,18 @@ def test_eval_ab_diff_guard_pass_and_fail():
         "donor_summary": {
             "usaid": {
                 "a_non_retrieval_rate_avg": 0.2,
+                "b_non_retrieval_rate_avg": 0.6,
+                "delta_non_retrieval_rate_b_minus_a": 0.4,
                 "a_retrieval_grounded_rate_avg": 0.8,
+                "b_retrieval_grounded_rate_avg": 0.4,
                 "a_traceability_gap_rate_avg": 0.05,
             },
             "worldbank": {
                 "a_non_retrieval_rate_avg": 0.5,
+                "b_non_retrieval_rate_avg": 0.55,
+                "delta_non_retrieval_rate_b_minus_a": 0.05,
                 "a_retrieval_grounded_rate_avg": 0.6,
+                "b_retrieval_grounded_rate_avg": 0.58,
                 "a_traceability_gap_rate_avg": 0.2,
             },
         }
@@ -38,6 +44,8 @@ def test_eval_ab_diff_guard_pass_and_fail():
         max_a_non_retrieval_rate=0.35,
         min_a_retrieval_grounded_rate=0.7,
         max_a_traceability_gap_rate=0.1,
+        min_a_non_retrieval_improvement_vs_b=0.2,
+        min_a_retrieval_grounded_improvement_vs_b=0.2,
     )
     assert passed["status"] == "passed"
     assert passed["failures"] == []
@@ -48,13 +56,17 @@ def test_eval_ab_diff_guard_pass_and_fail():
         max_a_non_retrieval_rate=0.35,
         min_a_retrieval_grounded_rate=0.7,
         max_a_traceability_gap_rate=0.1,
+        min_a_non_retrieval_improvement_vs_b=0.2,
+        min_a_retrieval_grounded_improvement_vs_b=0.2,
     )
     assert failed["status"] == "failed"
-    assert len(failed["failures"]) == 3
+    assert len(failed["failures"]) == 5
     failure_keys = {(row["donor_id"], row["kind"]) for row in failed["failures"]}
     assert ("worldbank", "max_a_non_retrieval_rate") in failure_keys
     assert ("worldbank", "min_a_retrieval_grounded_rate") in failure_keys
     assert ("worldbank", "max_a_traceability_gap_rate") in failure_keys
+    assert ("worldbank", "min_a_non_retrieval_improvement_vs_b") in failure_keys
+    assert ("worldbank", "min_a_retrieval_grounded_improvement_vs_b") in failure_keys
 
 
 def test_eval_ab_diff_guard_tracks_missing_donors():
@@ -64,7 +76,10 @@ def test_eval_ab_diff_guard_tracks_missing_donors():
         "donor_summary": {
             "usaid": {
                 "a_non_retrieval_rate_avg": 0.1,
+                "b_non_retrieval_rate_avg": 0.5,
+                "delta_non_retrieval_rate_b_minus_a": 0.4,
                 "a_retrieval_grounded_rate_avg": 0.9,
+                "b_retrieval_grounded_rate_avg": 0.4,
                 "a_traceability_gap_rate_avg": 0.0,
             }
         }
@@ -75,6 +90,8 @@ def test_eval_ab_diff_guard_tracks_missing_donors():
         max_a_non_retrieval_rate=0.35,
         min_a_retrieval_grounded_rate=0.7,
         max_a_traceability_gap_rate=0.1,
+        min_a_non_retrieval_improvement_vs_b=0.2,
+        min_a_retrieval_grounded_improvement_vs_b=0.2,
     )
     assert guard["status"] == "passed"
     assert guard["missing_donors"] == ["giz"]
@@ -88,6 +105,8 @@ def test_eval_ab_diff_guard_not_configured_without_thresholds():
         max_a_non_retrieval_rate=None,
         min_a_retrieval_grounded_rate=None,
         max_a_traceability_gap_rate=None,
+        min_a_non_retrieval_improvement_vs_b=None,
+        min_a_retrieval_grounded_improvement_vs_b=None,
     )
     assert guard["status"] == "not_configured"
 

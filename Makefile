@@ -8,6 +8,8 @@ GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
 GROUNDED_MAX_NON_RETRIEVAL ?= 0.25
 GROUNDED_MIN_RETRIEVAL_GROUNDED ?= 0.75
 GROUNDED_MAX_TRACEABILITY_GAP ?= 0.10
+GROUNDED_MIN_NON_RETRIEVAL_IMPROVEMENT ?= 0.25
+GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT ?= 0.25
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
@@ -35,5 +37,7 @@ eval-grounded-ab:
 		--max-a-non-retrieval-rate $(GROUNDED_MAX_NON_RETRIEVAL) \
 		--min-a-retrieval-grounded-rate $(GROUNDED_MIN_RETRIEVAL_GROUNDED) \
 		--max-a-traceability-gap-rate $(GROUNDED_MAX_TRACEABILITY_GAP) \
+		--min-a-non-retrieval-improvement-vs-b $(GROUNDED_MIN_NON_RETRIEVAL_IMPROVEMENT) \
+		--min-a-retrieval-grounded-improvement-vs-b $(GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT) \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-diff.json
