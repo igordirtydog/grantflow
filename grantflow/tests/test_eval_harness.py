@@ -314,6 +314,21 @@ def test_eval_harness_runtime_overrides_apply_to_cases_without_mutating_original
     assert "architect_rag_enabled" not in source_cases[1]
 
 
+def test_eval_harness_runtime_overrides_can_disable_architect_rag_without_mutating_original():
+    source_cases = [
+        {"case_id": "c1", "donor_id": "usaid", "llm_mode": False, "architect_rag_enabled": True},
+        {"case_id": "c2", "donor_id": "eu"},
+    ]
+    overridden = apply_runtime_overrides_to_cases(
+        source_cases,
+        force_no_architect_rag=True,
+    )
+    assert overridden is not source_cases
+    assert all(bool(case.get("architect_rag_enabled")) is False for case in overridden)
+    assert source_cases[0]["architect_rag_enabled"] is True
+    assert "architect_rag_enabled" not in source_cases[1]
+
+
 def test_build_initial_state_uses_canonical_state_contract():
     state = harness.build_initial_state(
         {
@@ -414,6 +429,7 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     assert payload["suite_label"] == "llm-eval"
     assert payload["runtime_overrides"]["force_llm"] is True
     assert payload["runtime_overrides"]["force_architect_rag"] is False
+    assert payload["runtime_overrides"]["force_no_architect_rag"] is False
     assert payload["runtime_overrides"]["skip_expectations"] is True
     assert payload["runtime_overrides"]["donor_filters"] == ["usaid"]
     assert payload["runtime_overrides"]["case_filters"] == ["stub"]
@@ -428,6 +444,55 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     text = text_out.read_text(encoding="utf-8")
     assert "Suite: llm-eval" in text
     assert "Expectations: skipped" in text
+
+
+def test_eval_harness_cli_supports_force_no_architect_rag(tmp_path, monkeypatch):
+    json_out = tmp_path / "ab-report.json"
+    text_out = tmp_path / "ab-report.txt"
+
+    monkeypatch.setattr(
+        harness,
+        "load_eval_cases",
+        lambda fixtures_dir=None, case_files=None: [
+            {"case_id": "stub", "donor_id": "usaid", "llm_mode": False, "architect_rag_enabled": True}
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run_eval_suite(cases, *, suite_label=None, skip_expectations=False):
+        captured["cases"] = cases
+        return {
+            "suite_label": suite_label or "baseline",
+            "expectations_skipped": bool(skip_expectations),
+            "case_count": 1,
+            "passed_count": 1,
+            "failed_count": 0,
+            "all_passed": True,
+            "cases": [],
+        }
+
+    monkeypatch.setattr(harness, "run_eval_suite", fake_run_eval_suite)
+
+    exit_code = harness.main(
+        [
+            "--suite-label",
+            "grounded-ab-b",
+            "--force-no-architect-rag",
+            "--skip-expectations",
+            "--json-out",
+            str(json_out),
+            "--text-out",
+            str(text_out),
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["runtime_overrides"]["force_architect_rag"] is False
+    assert payload["runtime_overrides"]["force_no_architect_rag"] is True
+    captured_cases = captured["cases"]
+    assert isinstance(captured_cases, list) and captured_cases
+    assert captured_cases[0]["architect_rag_enabled"] is False
 
 
 def test_eval_harness_cli_supports_cases_file_argument(tmp_path):

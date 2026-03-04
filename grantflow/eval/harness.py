@@ -184,8 +184,9 @@ def apply_runtime_overrides_to_cases(
     *,
     force_llm: bool = False,
     force_architect_rag: bool = False,
+    force_no_architect_rag: bool = False,
 ) -> list[dict[str, Any]]:
-    if not (force_llm or force_architect_rag):
+    if not (force_llm or force_architect_rag or force_no_architect_rag):
         return cases
     overridden: list[dict[str, Any]] = []
     for case in cases:
@@ -194,6 +195,8 @@ def apply_runtime_overrides_to_cases(
             next_case["llm_mode"] = True
         if force_architect_rag:
             next_case["architect_rag_enabled"] = True
+        if force_no_architect_rag:
+            next_case["architect_rag_enabled"] = False
         overridden.append(next_case)
     return overridden
 
@@ -1209,10 +1212,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Override fixture settings and run all cases with llm_mode=true.",
     )
-    parser.add_argument(
+    architect_rag_group = parser.add_mutually_exclusive_group()
+    architect_rag_group.add_argument(
         "--force-architect-rag",
         action="store_true",
         help="Override fixture settings and run all cases with architect_rag_enabled=true.",
+    )
+    architect_rag_group.add_argument(
+        "--force-no-architect-rag",
+        action="store_true",
+        help="Override fixture settings and run all cases with architect_rag_enabled=false.",
     )
     parser.add_argument(
         "--skip-expectations",
@@ -1291,11 +1300,13 @@ def main(argv: list[str] | None = None) -> int:
         cases,
         force_llm=bool(args.force_llm),
         force_architect_rag=bool(args.force_architect_rag),
+        force_no_architect_rag=bool(args.force_no_architect_rag),
     )
     suite = run_eval_suite(cases, suite_label=args.suite_label, skip_expectations=bool(args.skip_expectations))
     suite["runtime_overrides"] = {
         "force_llm": bool(args.force_llm),
         "force_architect_rag": bool(args.force_architect_rag),
+        "force_no_architect_rag": bool(args.force_no_architect_rag),
     }
     suite["runtime_overrides"]["skip_expectations"] = bool(args.skip_expectations)
     suite["runtime_overrides"]["donor_filters"] = donor_filters

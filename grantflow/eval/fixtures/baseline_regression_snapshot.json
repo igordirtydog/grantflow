@@ -200,7 +200,7 @@
         "architect_fallback_claim_ratio": 0.0,
         "architect_key_claim_coverage_ratio": 1.0,
         "architect_threshold_hit_rate": 1.0,
-        "citation_confidence_avg": 0.7029,
+        "citation_confidence_avg": 0.7099,
         "citations_total": 18,
         "critic_score": 8.75,
         "draft_version_count": 2,

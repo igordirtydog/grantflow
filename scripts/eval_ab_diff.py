@@ -1,0 +1,326 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any, Dict, Iterable
+
+
+HIGHER_IS_BETTER_METRICS: dict[str, str] = {
+    "quality_score": "quality_score",
+    "critic_score": "critic_score",
+    "retrieval_grounded_citation_rate": "retrieval_grounded_rate",
+    "retrieval_metadata_complete_citation_rate": "retrieval_metadata_complete_rate",
+    "retrieval_rank_present_citation_rate": "retrieval_rank_present_rate",
+    "doc_id_present_citation_rate": "doc_id_present_rate",
+}
+
+LOWER_IS_BETTER_METRICS: dict[str, str] = {
+    "non_retrieval_citation_rate": "non_retrieval_rate",
+    "traceability_gap_citation_rate": "traceability_gap_rate",
+    "fallback_namespace_citation_count": "fallback_namespace_count",
+}
+
+EPSILON = 1e-9
+
+
+def _as_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _avg(values: Iterable[float]) -> float | None:
+    rows = [float(v) for v in values]
+    if not rows:
+        return None
+    return round(sum(rows) / len(rows), 4)
+
+
+def _load_json(path: Path) -> dict[str, Any]:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _case_map(suite: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for row in suite.get("cases") or []:
+        if not isinstance(row, dict):
+            continue
+        case_id = str(row.get("case_id") or "").strip()
+        if not case_id:
+            continue
+        out[case_id] = row
+    return out
+
+
+def _metric_delta_report(
+    *,
+    metric_key: str,
+    metric_label: str,
+    matched_cases: list[tuple[str, dict[str, Any], dict[str, Any]]],
+    higher_is_better: bool,
+) -> dict[str, Any]:
+    a_values: list[float] = []
+    b_values: list[float] = []
+    improved = 0
+    worsened = 0
+    unchanged = 0
+    for _, case_a, case_b in matched_cases:
+        metrics_a = case_a.get("metrics") if isinstance(case_a.get("metrics"), dict) else {}
+        metrics_b = case_b.get("metrics") if isinstance(case_b.get("metrics"), dict) else {}
+        value_a = _as_float(metrics_a.get(metric_key))
+        value_b = _as_float(metrics_b.get(metric_key))
+        if value_a is None or value_b is None:
+            continue
+        a_values.append(value_a)
+        b_values.append(value_b)
+        delta = value_b - value_a
+        if abs(delta) <= EPSILON:
+            unchanged += 1
+            continue
+        if higher_is_better:
+            if delta > 0:
+                improved += 1
+            else:
+                worsened += 1
+        else:
+            if delta < 0:
+                improved += 1
+            else:
+                worsened += 1
+
+    avg_a = _avg(a_values)
+    avg_b = _avg(b_values)
+    delta_avg = None if avg_a is None or avg_b is None else round(avg_b - avg_a, 4)
+    return {
+        "metric_key": metric_key,
+        "metric_label": metric_label,
+        "higher_is_better": higher_is_better,
+        "a_avg": avg_a,
+        "b_avg": avg_b,
+        "delta_b_minus_a": delta_avg,
+        "observed_case_count": len(a_values),
+        "improved_case_count": improved,
+        "worsened_case_count": worsened,
+        "unchanged_case_count": unchanged,
+    }
+
+
+def _build_diff_payload(
+    *,
+    suite_a: dict[str, Any],
+    suite_b: dict[str, Any],
+    a_label: str,
+    b_label: str,
+) -> dict[str, Any]:
+    map_a = _case_map(suite_a)
+    map_b = _case_map(suite_b)
+    ids_a = set(map_a.keys())
+    ids_b = set(map_b.keys())
+    matched_ids = sorted(ids_a & ids_b)
+    missing_in_a = sorted(ids_b - ids_a)
+    missing_in_b = sorted(ids_a - ids_b)
+
+    matched_cases: list[tuple[str, dict[str, Any], dict[str, Any]]] = [
+        (case_id, map_a[case_id], map_b[case_id]) for case_id in matched_ids
+    ]
+
+    metric_summary: Dict[str, Dict[str, Any]] = {}
+    for metric_key, metric_label in HIGHER_IS_BETTER_METRICS.items():
+        metric_summary[metric_key] = _metric_delta_report(
+            metric_key=metric_key,
+            metric_label=metric_label,
+            matched_cases=matched_cases,
+            higher_is_better=True,
+        )
+    for metric_key, metric_label in LOWER_IS_BETTER_METRICS.items():
+        metric_summary[metric_key] = _metric_delta_report(
+            metric_key=metric_key,
+            metric_label=metric_label,
+            matched_cases=matched_cases,
+            higher_is_better=False,
+        )
+
+    donor_rows: Dict[str, Dict[str, list[float]]] = {}
+    for _, case_a, case_b in matched_cases:
+        donor_id = str(case_a.get("donor_id") or case_b.get("donor_id") or "unknown")
+        donor_row = donor_rows.setdefault(
+            donor_id,
+            {
+                "a_non_retrieval_rate": [],
+                "b_non_retrieval_rate": [],
+                "a_retrieval_grounded_rate": [],
+                "b_retrieval_grounded_rate": [],
+            },
+        )
+        metrics_a = case_a.get("metrics") if isinstance(case_a.get("metrics"), dict) else {}
+        metrics_b = case_b.get("metrics") if isinstance(case_b.get("metrics"), dict) else {}
+        a_non_retrieval = _as_float(metrics_a.get("non_retrieval_citation_rate"))
+        b_non_retrieval = _as_float(metrics_b.get("non_retrieval_citation_rate"))
+        a_retrieval_grounded = _as_float(metrics_a.get("retrieval_grounded_citation_rate"))
+        b_retrieval_grounded = _as_float(metrics_b.get("retrieval_grounded_citation_rate"))
+        if a_non_retrieval is not None:
+            donor_row["a_non_retrieval_rate"].append(a_non_retrieval)
+        if b_non_retrieval is not None:
+            donor_row["b_non_retrieval_rate"].append(b_non_retrieval)
+        if a_retrieval_grounded is not None:
+            donor_row["a_retrieval_grounded_rate"].append(a_retrieval_grounded)
+        if b_retrieval_grounded is not None:
+            donor_row["b_retrieval_grounded_rate"].append(b_retrieval_grounded)
+
+    donor_summary: Dict[str, Dict[str, Any]] = {}
+    for donor_id, row in sorted(donor_rows.items()):
+        a_non_retrieval_avg = _avg(row["a_non_retrieval_rate"])
+        b_non_retrieval_avg = _avg(row["b_non_retrieval_rate"])
+        a_retrieval_grounded_avg = _avg(row["a_retrieval_grounded_rate"])
+        b_retrieval_grounded_avg = _avg(row["b_retrieval_grounded_rate"])
+        donor_summary[donor_id] = {
+            "a_non_retrieval_rate_avg": a_non_retrieval_avg,
+            "b_non_retrieval_rate_avg": b_non_retrieval_avg,
+            "delta_non_retrieval_rate_b_minus_a": (
+                round(b_non_retrieval_avg - a_non_retrieval_avg, 4)
+                if a_non_retrieval_avg is not None and b_non_retrieval_avg is not None
+                else None
+            ),
+            "a_retrieval_grounded_rate_avg": a_retrieval_grounded_avg,
+            "b_retrieval_grounded_rate_avg": b_retrieval_grounded_avg,
+            "delta_retrieval_grounded_rate_b_minus_a": (
+                round(b_retrieval_grounded_avg - a_retrieval_grounded_avg, 4)
+                if a_retrieval_grounded_avg is not None and b_retrieval_grounded_avg is not None
+                else None
+            ),
+        }
+
+    case_deltas: list[dict[str, Any]] = []
+    for case_id, case_a, case_b in matched_cases:
+        metrics_a = case_a.get("metrics") if isinstance(case_a.get("metrics"), dict) else {}
+        metrics_b = case_b.get("metrics") if isinstance(case_b.get("metrics"), dict) else {}
+        a_non_retrieval = _as_float(metrics_a.get("non_retrieval_citation_rate"))
+        b_non_retrieval = _as_float(metrics_b.get("non_retrieval_citation_rate"))
+        a_retrieval_grounded = _as_float(metrics_a.get("retrieval_grounded_citation_rate"))
+        b_retrieval_grounded = _as_float(metrics_b.get("retrieval_grounded_citation_rate"))
+        case_deltas.append(
+            {
+                "case_id": case_id,
+                "donor_id": str(case_a.get("donor_id") or case_b.get("donor_id") or "unknown"),
+                "a_non_retrieval_rate": a_non_retrieval,
+                "b_non_retrieval_rate": b_non_retrieval,
+                "delta_non_retrieval_rate_b_minus_a": (
+                    round(b_non_retrieval - a_non_retrieval, 4)
+                    if a_non_retrieval is not None and b_non_retrieval is not None
+                    else None
+                ),
+                "a_retrieval_grounded_rate": a_retrieval_grounded,
+                "b_retrieval_grounded_rate": b_retrieval_grounded,
+                "delta_retrieval_grounded_rate_b_minus_a": (
+                    round(b_retrieval_grounded - a_retrieval_grounded, 4)
+                    if a_retrieval_grounded is not None and b_retrieval_grounded is not None
+                    else None
+                ),
+            }
+        )
+
+    return {
+        "labels": {"a": a_label, "b": b_label},
+        "suite_a_label": str(suite_a.get("suite_label") or ""),
+        "suite_b_label": str(suite_b.get("suite_label") or ""),
+        "suite_a_case_count": len(ids_a),
+        "suite_b_case_count": len(ids_b),
+        "matched_case_count": len(matched_ids),
+        "missing_in_a": missing_in_a,
+        "missing_in_b": missing_in_b,
+        "metric_summary": metric_summary,
+        "donor_summary": donor_summary,
+        "case_deltas": case_deltas,
+    }
+
+
+def _format_text(payload: dict[str, Any]) -> str:
+    labels = payload.get("labels") if isinstance(payload.get("labels"), dict) else {}
+    a_label = str(labels.get("a") or "A")
+    b_label = str(labels.get("b") or "B")
+    lines = [
+        "GrantFlow grounded A/B diff",
+        f"Labels: A={a_label} | B={b_label}",
+        (
+            f"Cases: matched={int(payload.get('matched_case_count') or 0)} "
+            f"A_total={int(payload.get('suite_a_case_count') or 0)} "
+            f"B_total={int(payload.get('suite_b_case_count') or 0)}"
+        ),
+    ]
+
+    metric_summary = payload.get("metric_summary")
+    if isinstance(metric_summary, dict) and metric_summary:
+        lines.append("")
+        lines.append("Metric deltas (B - A)")
+        ordered_metrics = sorted(
+            (row for row in metric_summary.values() if isinstance(row, dict)),
+            key=lambda row: str(row.get("metric_key") or ""),
+        )
+        for row in ordered_metrics:
+            lines.append(
+                (
+                    f"- {row.get('metric_key')}: "
+                    f"{a_label}={row.get('a_avg')} {b_label}={row.get('b_avg')} "
+                    f"delta={row.get('delta_b_minus_a')} "
+                    f"improved={int(row.get('improved_case_count') or 0)} "
+                    f"worsened={int(row.get('worsened_case_count') or 0)} "
+                    f"unchanged={int(row.get('unchanged_case_count') or 0)}"
+                )
+            )
+
+    donor_summary = payload.get("donor_summary")
+    if isinstance(donor_summary, dict) and donor_summary:
+        lines.append("")
+        lines.append("Donor grounding deltas (B - A)")
+        for donor_id in sorted(donor_summary):
+            row = donor_summary.get(donor_id)
+            if not isinstance(row, dict):
+                continue
+            lines.append(
+                (
+                    f"- {donor_id}: non_retrieval_delta={row.get('delta_non_retrieval_rate_b_minus_a')} "
+                    f"retrieval_grounded_delta={row.get('delta_retrieval_grounded_rate_b_minus_a')}"
+                )
+            )
+
+    return "\n".join(lines)
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Compare two GrantFlow eval suite JSON reports (A/B diff).")
+    parser.add_argument("--a-json", type=Path, required=True, help="Path to suite A JSON report.")
+    parser.add_argument("--b-json", type=Path, required=True, help="Path to suite B JSON report.")
+    parser.add_argument("--a-label", type=str, default="A", help="Display label for suite A.")
+    parser.add_argument("--b-label", type=str, default="B", help="Display label for suite B.")
+    parser.add_argument("--json-out", type=Path, default=None, help="Write diff JSON report to this path.")
+    parser.add_argument("--text-out", type=Path, default=None, help="Write diff text report to this path.")
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    suite_a = _load_json(args.a_json)
+    suite_b = _load_json(args.b_json)
+    payload = _build_diff_payload(
+        suite_a=suite_a,
+        suite_b=suite_b,
+        a_label=str(args.a_label),
+        b_label=str(args.b_label),
+    )
+    text_report = _format_text(payload)
+    print(text_report)
+    if args.json_out is not None:
+        args.json_out.parent.mkdir(parents=True, exist_ok=True)
+        args.json_out.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    if args.text_out is not None:
+        args.text_out.parent.mkdir(parents=True, exist_ok=True)
+        args.text_out.write_text(text_report + "\n", encoding="utf-8")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

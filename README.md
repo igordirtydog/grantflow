@@ -284,6 +284,30 @@ python -m grantflow.eval.harness \
   --suite-label grounded-eval \
   --text-out eval-artifacts/grounded-eval-report.txt \
   --json-out eval-artifacts/grounded-eval-report.json
+
+# Grounded A/B (architect RAG on vs off, metrics-only)
+python -m grantflow.eval.harness \
+  --cases-file grantflow/eval/cases/grounded_cases.json \
+  --suite-label grounded-ab-a \
+  --skip-expectations \
+  --text-out eval-artifacts/grounded-ab-a-report.txt \
+  --json-out eval-artifacts/grounded-ab-a-report.json
+
+python -m grantflow.eval.harness \
+  --cases-file grantflow/eval/cases/grounded_cases.json \
+  --suite-label grounded-ab-b \
+  --skip-expectations \
+  --force-no-architect-rag \
+  --text-out eval-artifacts/grounded-ab-b-report.txt \
+  --json-out eval-artifacts/grounded-ab-b-report.json
+
+python scripts/eval_ab_diff.py \
+  --a-json eval-artifacts/grounded-ab-a-report.json \
+  --b-json eval-artifacts/grounded-ab-b-report.json \
+  --a-label architect_rag_on \
+  --b-label architect_rag_off \
+  --text-out eval-artifacts/grounded-ab-diff.txt \
+  --json-out eval-artifacts/grounded-ab-diff.json
 ```
 
 CI uploads the same files as the `eval-report` artifact.
