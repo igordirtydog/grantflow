@@ -760,6 +760,56 @@ class PortfolioReviewWorkflowTrendsPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class PortfolioReviewWorkflowSLATrendsFiltersPublicResponse(BaseModel):
+    donor_id: Optional[str] = None
+    status: Optional[str] = None
+    hitl_enabled: Optional[bool] = None
+    warning_level: Optional[str] = None
+    grounding_risk_level: Optional[str] = None
+    toc_text_risk_level: Optional[str] = None
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PortfolioReviewWorkflowSLATrendsPublicResponse(BaseModel):
+    job_count: int
+    jobs_with_overdue: int
+    jobs_without_overdue: int
+    generated_at: str
+    filters: PortfolioReviewWorkflowSLATrendsFiltersPublicResponse
+    bucket_granularity: str = "day"
+    bucket_count: int = 0
+    time_window_start: Optional[str] = None
+    time_window_end: Optional[str] = None
+    overdue_finding_count: int = 0
+    overdue_comment_count: int = 0
+    overdue_total: int = 0
+    unresolved_total: int = 0
+    breach_rate: Optional[float] = None
+    avg_overdue_per_job: Optional[float] = None
+    avg_overdue_per_active_job: Optional[float] = None
+    top_severity: Optional[str] = None
+    top_severity_count: Optional[int] = None
+    top_section: Optional[str] = None
+    top_section_count: Optional[int] = None
+    top_donor_id: Optional[str] = None
+    top_donor_overdue_count: Optional[int] = None
+    donor_overdue_counts: Dict[str, int]
+    job_overdue_counts: Dict[str, int]
+    total_series: list[JobReviewWorkflowSLATrendPointPublicResponse]
+    severity_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+    section_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+    donor_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PortfolioMetricsFiltersPublicResponse(BaseModel):
     donor_id: Optional[str] = None
     status: Optional[str] = None
