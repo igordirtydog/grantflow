@@ -285,6 +285,8 @@ If runtime grounded gate export pass policy is enabled (`GRANTFLOW_EXPORT_REQUIR
   - `donor_id`, `tenant_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`
 - `GET /portfolio/quality` and `/portfolio/quality/export` support filters:
   - `donor_id`, `tenant_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`, `finding_status`, `finding_severity`
+- `GET /portfolio/review-workflow` and `/portfolio/review-workflow/export` support filters:
+  - `donor_id`, `tenant_id`, `status`, `hitl_enabled`, `warning_level`, `grounding_risk_level`, `toc_text_risk_level`, `event_type`, `finding_id`, `finding_code`, `finding_section`, `comment_status`, `workflow_state`, `overdue_after_hours`
 - `POST /hitl/approve`, `GET /hitl/pending` (`tenant_id` supported)
 - `POST /ingest`, `GET /ingest/recent`, `GET /ingest/inventory`, `GET /ingest/inventory/export`
   - `tenant_id` supported on ingest and ingest read endpoints

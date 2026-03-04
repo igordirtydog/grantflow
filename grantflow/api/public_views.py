@@ -3798,6 +3798,256 @@ def public_portfolio_quality_payload(
     }
 
 
+def public_portfolio_review_workflow_payload(
+    jobs_by_id: Dict[str, Dict[str, Any]],
+    *,
+    donor_id: Optional[str] = None,
+    status: Optional[str] = None,
+    hitl_enabled: Optional[bool] = None,
+    warning_level: Optional[str] = None,
+    grounding_risk_level: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
+    event_type: Optional[str] = None,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+) -> Dict[str, Any]:
+    warning_level_filter = _normalize_warning_level_filter(warning_level)
+    grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
+    toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
+    workflow_state_filter = _normalize_review_workflow_state_filter(workflow_state)
+    event_type_filter = str(event_type or "").strip() or None
+    finding_id_filter = str(finding_id or "").strip() or None
+    finding_code_filter = str(finding_code or "").strip() or None
+    finding_section_filter = str(finding_section or "").strip().lower() or None
+    comment_status_filter = str(comment_status or "").strip().lower() or None
+    overdue_after_hours_value = (
+        int(overdue_after_hours)
+        if isinstance(overdue_after_hours, int) and overdue_after_hours > 0
+        else REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS
+    )
+
+    filtered: list[tuple[str, Dict[str, Any]]] = []
+    for job_id, job in jobs_by_id.items():
+        if not isinstance(job, dict):
+            continue
+        job_status = str(job.get("status") or "")
+        job_donor = _job_donor_id(job)
+        job_hitl = bool(job.get("hitl_enabled"))
+        if donor_id and job_donor != donor_id:
+            continue
+        if status and job_status != status:
+            continue
+        if hitl_enabled is not None and job_hitl != hitl_enabled:
+            continue
+        if warning_level_filter is not None and _job_warning_level(job) != warning_level_filter:
+            continue
+        if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
+            continue
+        if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
+            continue
+        filtered.append((str(job_id), job))
+
+    finding_status_counts: Dict[str, int] = {"open": 0, "acknowledged": 0, "resolved": 0}
+    finding_severity_counts: Dict[str, int] = {"high": 0, "medium": 0, "low": 0}
+    comment_status_counts: Dict[str, int] = {}
+    timeline_event_type_counts: Dict[str, int] = {}
+    timeline_kind_counts: Dict[str, int] = {}
+    timeline_section_counts: Dict[str, int] = {}
+    timeline_status_counts: Dict[str, int] = {}
+    donor_event_counts: Dict[str, int] = {}
+    job_event_counts: Dict[str, int] = {}
+
+    finding_count = 0
+    comment_count = 0
+    linked_comment_count = 0
+    orphan_linked_comment_count = 0
+    open_finding_count = 0
+    acknowledged_finding_count = 0
+    resolved_finding_count = 0
+    pending_finding_count = 0
+    overdue_finding_count = 0
+    open_comment_count = 0
+    resolved_comment_count = 0
+    pending_comment_count = 0
+    overdue_comment_count = 0
+    timeline_event_count = 0
+    jobs_with_activity = 0
+    jobs_with_overdue = 0
+    activity_dt_values: list[datetime] = []
+
+    latest_timeline_all: list[Dict[str, Any]] = []
+    latest_timeline_limit = 200
+
+    def _merge_counts(target: Dict[str, int], source: Any) -> None:
+        if not isinstance(source, dict):
+            return
+        for key, count in source.items():
+            token = str(key or "").strip().lower() or "unknown"
+            target[token] = int(target.get(token) or 0) + _coerce_int(count, default=0)
+
+    for job_id, job in filtered:
+        workflow_payload = public_job_review_workflow_payload(
+            job_id,
+            job,
+            event_type=event_type_filter,
+            finding_id=finding_id_filter,
+            finding_code=finding_code_filter,
+            finding_section=finding_section_filter,
+            comment_status=comment_status_filter,
+            workflow_state=workflow_state_filter,
+            overdue_after_hours=overdue_after_hours_value,
+        )
+        summary = workflow_payload.get("summary")
+        summary_dict = summary if isinstance(summary, dict) else {}
+        timeline = workflow_payload.get("timeline")
+        timeline_rows = [row for row in timeline if isinstance(row, dict)] if isinstance(timeline, list) else []
+
+        donor_token = _job_donor_id(job, default="unknown")
+        job_timeline_event_count = _coerce_int(
+            summary_dict.get("timeline_event_count"),
+            default=len(timeline_rows),
+        )
+        job_event_counts[str(job_id)] = job_timeline_event_count
+        donor_event_counts[donor_token] = int(donor_event_counts.get(donor_token) or 0) + job_timeline_event_count
+        timeline_event_count += job_timeline_event_count
+        if job_timeline_event_count > 0:
+            jobs_with_activity += 1
+
+        job_overdue_total = _coerce_int(summary_dict.get("overdue_finding_count")) + _coerce_int(
+            summary_dict.get("overdue_comment_count")
+        )
+        if job_overdue_total > 0:
+            jobs_with_overdue += 1
+
+        finding_count += _coerce_int(summary_dict.get("finding_count"))
+        comment_count += _coerce_int(summary_dict.get("comment_count"))
+        linked_comment_count += _coerce_int(summary_dict.get("linked_comment_count"))
+        orphan_linked_comment_count += _coerce_int(summary_dict.get("orphan_linked_comment_count"))
+        open_finding_count += _coerce_int(summary_dict.get("open_finding_count"))
+        acknowledged_finding_count += _coerce_int(summary_dict.get("acknowledged_finding_count"))
+        resolved_finding_count += _coerce_int(summary_dict.get("resolved_finding_count"))
+        pending_finding_count += _coerce_int(summary_dict.get("pending_finding_count"))
+        overdue_finding_count += _coerce_int(summary_dict.get("overdue_finding_count"))
+        open_comment_count += _coerce_int(summary_dict.get("open_comment_count"))
+        resolved_comment_count += _coerce_int(summary_dict.get("resolved_comment_count"))
+        pending_comment_count += _coerce_int(summary_dict.get("pending_comment_count"))
+        overdue_comment_count += _coerce_int(summary_dict.get("overdue_comment_count"))
+
+        _merge_counts(finding_status_counts, summary_dict.get("finding_status_counts"))
+        _merge_counts(finding_severity_counts, summary_dict.get("finding_severity_counts"))
+        _merge_counts(comment_status_counts, summary_dict.get("comment_status_counts"))
+
+        summary_last_activity_dt = _parse_event_ts(summary_dict.get("last_activity_at"))
+        if summary_last_activity_dt is not None:
+            activity_dt_values.append(summary_last_activity_dt)
+
+        for row in timeline_rows:
+            event_type_key = str(row.get("type") or "").strip().lower() or "unknown"
+            timeline_event_type_counts[event_type_key] = int(timeline_event_type_counts.get(event_type_key) or 0) + 1
+
+            kind_key = str(row.get("kind") or "").strip().lower() or "unknown"
+            timeline_kind_counts[kind_key] = int(timeline_kind_counts.get(kind_key) or 0) + 1
+
+            section_key = str(row.get("section") or "").strip().lower() or "unknown"
+            timeline_section_counts[section_key] = int(timeline_section_counts.get(section_key) or 0) + 1
+
+            status_key = str(row.get("status") or "").strip().lower() or "unknown"
+            timeline_status_counts[status_key] = int(timeline_status_counts.get(status_key) or 0) + 1
+
+            row_ts_dt = _parse_event_ts(row.get("ts"))
+            if row_ts_dt is not None:
+                activity_dt_values.append(row_ts_dt)
+
+            timeline_item = dict(row)
+            timeline_item["job_id"] = str(job_id)
+            timeline_item["donor_id"] = donor_token
+            latest_timeline_all.append(timeline_item)
+
+    latest_timeline_all.sort(key=lambda row: str(row.get("ts") or ""), reverse=True)
+    latest_timeline = latest_timeline_all[:latest_timeline_limit]
+    latest_timeline_truncated = len(latest_timeline_all) > latest_timeline_limit
+
+    top_event_type = None
+    top_event_type_count = -1
+    for key, total in timeline_event_type_counts.items():
+        if int(total) > top_event_type_count:
+            top_event_type = key
+            top_event_type_count = int(total)
+
+    top_donor_id = None
+    top_donor_event_count = -1
+    for key, total in donor_event_counts.items():
+        if int(total) > top_donor_event_count:
+            top_donor_id = key
+            top_donor_event_count = int(total)
+
+    last_activity_at = max(activity_dt_values).isoformat() if activity_dt_values else None
+    job_count = len(filtered)
+    jobs_without_activity = max(0, job_count - jobs_with_activity)
+    jobs_without_overdue = max(0, job_count - jobs_with_overdue)
+
+    return {
+        "job_count": job_count,
+        "jobs_with_activity": jobs_with_activity,
+        "jobs_without_activity": jobs_without_activity,
+        "jobs_with_overdue": jobs_with_overdue,
+        "jobs_without_overdue": jobs_without_overdue,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": {
+            "donor_id": donor_id,
+            "status": status,
+            "hitl_enabled": hitl_enabled,
+            "warning_level": warning_level_filter,
+            "grounding_risk_level": grounding_risk_filter,
+            "toc_text_risk_level": toc_text_risk_filter,
+            "event_type": event_type_filter,
+            "finding_id": finding_id_filter,
+            "finding_code": finding_code_filter,
+            "finding_section": finding_section_filter,
+            "comment_status": comment_status_filter,
+            "workflow_state": workflow_state_filter,
+            "overdue_after_hours": overdue_after_hours_value,
+        },
+        "summary": {
+            "finding_count": finding_count,
+            "comment_count": comment_count,
+            "linked_comment_count": linked_comment_count,
+            "orphan_linked_comment_count": orphan_linked_comment_count,
+            "open_finding_count": open_finding_count,
+            "acknowledged_finding_count": acknowledged_finding_count,
+            "resolved_finding_count": resolved_finding_count,
+            "pending_finding_count": pending_finding_count,
+            "overdue_finding_count": overdue_finding_count,
+            "open_comment_count": open_comment_count,
+            "resolved_comment_count": resolved_comment_count,
+            "pending_comment_count": pending_comment_count,
+            "overdue_comment_count": overdue_comment_count,
+            "finding_status_counts": finding_status_counts,
+            "finding_severity_counts": finding_severity_counts,
+            "comment_status_counts": dict(sorted(comment_status_counts.items())),
+            "timeline_event_count": timeline_event_count,
+            "last_activity_at": last_activity_at,
+        },
+        "top_event_type": top_event_type,
+        "top_event_type_count": top_event_type_count if top_event_type is not None else None,
+        "top_donor_id": top_donor_id,
+        "top_donor_event_count": top_donor_event_count if top_donor_id is not None else None,
+        "timeline_event_type_counts": dict(sorted(timeline_event_type_counts.items())),
+        "timeline_kind_counts": dict(sorted(timeline_kind_counts.items())),
+        "timeline_section_counts": dict(sorted(timeline_section_counts.items())),
+        "timeline_status_counts": dict(sorted(timeline_status_counts.items())),
+        "donor_event_counts": dict(sorted(donor_event_counts.items())),
+        "job_event_counts": dict(sorted(job_event_counts.items())),
+        "latest_timeline_limit": latest_timeline_limit,
+        "latest_timeline_truncated": latest_timeline_truncated,
+        "latest_timeline": latest_timeline,
+    }
+
+
 def public_portfolio_review_workflow_trends_payload(
     jobs_by_id: Dict[str, Dict[str, Any]],
     *,
@@ -4231,6 +4481,10 @@ def public_portfolio_quality_csv_text(payload: Dict[str, Any]) -> str:
 
 
 def public_portfolio_metrics_csv_text(payload: Dict[str, Any]) -> str:
+    return csv_text_from_mapping(payload)
+
+
+def public_portfolio_review_workflow_csv_text(payload: Dict[str, Any]) -> str:
     return csv_text_from_mapping(payload)
 
 

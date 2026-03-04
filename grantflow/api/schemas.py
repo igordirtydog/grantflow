@@ -713,6 +713,57 @@ class JobGroundingGatePublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class PortfolioReviewWorkflowFiltersPublicResponse(BaseModel):
+    donor_id: Optional[str] = None
+    status: Optional[str] = None
+    hitl_enabled: Optional[bool] = None
+    warning_level: Optional[str] = None
+    grounding_risk_level: Optional[str] = None
+    toc_text_risk_level: Optional[str] = None
+    event_type: Optional[str] = None
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PortfolioReviewWorkflowTimelineEventPublicResponse(ReviewWorkflowTimelineEventPublicResponse):
+    job_id: Optional[str] = None
+    donor_id: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class PortfolioReviewWorkflowPublicResponse(BaseModel):
+    job_count: int
+    jobs_with_activity: int
+    jobs_without_activity: int
+    jobs_with_overdue: int
+    jobs_without_overdue: int
+    generated_at: str
+    filters: PortfolioReviewWorkflowFiltersPublicResponse
+    summary: JobReviewWorkflowSummaryPublicResponse
+    top_event_type: Optional[str] = None
+    top_event_type_count: Optional[int] = None
+    top_donor_id: Optional[str] = None
+    top_donor_event_count: Optional[int] = None
+    timeline_event_type_counts: Dict[str, int]
+    timeline_kind_counts: Dict[str, int]
+    timeline_section_counts: Dict[str, int]
+    timeline_status_counts: Dict[str, int]
+    donor_event_counts: Dict[str, int]
+    job_event_counts: Dict[str, int]
+    latest_timeline_limit: int = 200
+    latest_timeline_truncated: bool = False
+    latest_timeline: list[PortfolioReviewWorkflowTimelineEventPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class PortfolioReviewWorkflowTrendsFiltersPublicResponse(BaseModel):
     donor_id: Optional[str] = None
     status: Optional[str] = None

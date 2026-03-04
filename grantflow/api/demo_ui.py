@@ -682,17 +682,27 @@ def render_demo_ui_html() -> str:
             </div>
             <div class="row4" style="margin-top:10px;">
               <div style="align-self:end;">
+                <button id="exportPortfolioReviewWorkflowJsonBtn" class="ghost">Workflow JSON</button>
+              </div>
+              <div style="align-self:end;">
+                <button id="exportPortfolioReviewWorkflowCsvBtn" class="ghost">Workflow CSV</button>
+              </div>
+              <div style="align-self:end;">
                 <button id="exportPortfolioReviewWorkflowTrendsJsonBtn" class="ghost">Workflow Trends JSON</button>
               </div>
               <div style="align-self:end;">
                 <button id="exportPortfolioReviewWorkflowTrendsCsvBtn" class="ghost">Workflow Trends CSV</button>
               </div>
+            </div>
+            <div class="row4" style="margin-top:10px;">
               <div style="align-self:end;">
                 <button id="exportPortfolioReviewWorkflowSlaTrendsJsonBtn" class="ghost">Workflow SLA Trends JSON</button>
               </div>
               <div style="align-self:end;">
                 <button id="exportPortfolioReviewWorkflowSlaTrendsCsvBtn" class="ghost">Workflow SLA Trends CSV</button>
               </div>
+              <div style="align-self:end;"></div>
+              <div style="align-self:end;"></div>
             </div>
             <div class="row" style="margin-top:10px;">
               <div>
@@ -838,6 +848,21 @@ def render_demo_ui_html() -> str:
             </div>
             <div style="margin-top:10px;">
               <pre id="portfolioQualityJson">{}</pre>
+            </div>
+            <div style="margin-top:14px;">
+              <label>Portfolio Review Workflow Snapshot</label>
+              <div class="sub" style="margin-top:4px;">Current workflow backlog, status mix, and latest timeline events across filtered jobs.</div>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <button id="portfolioReviewWorkflowBtn" class="ghost">Load Portfolio Workflow</button>
+              <button id="copyPortfolioReviewWorkflowJsonBtn" class="ghost">Copy Workflow JSON</button>
+              <button id="downloadPortfolioReviewWorkflowJsonBtn" class="ghost">Export Workflow JSON</button>
+              <button id="downloadPortfolioReviewWorkflowCsvBtn" class="secondary">Export Workflow CSV</button>
+            </div>
+            <div id="portfolioReviewWorkflowSummaryLine" class="footer-note mono">portfolio workflow: findings=- · comments=- · overdue=- · events=- · active_jobs=-/-</div>
+            <div class="list" id="portfolioReviewWorkflowList" style="margin-top:10px;"></div>
+            <div style="margin-top:10px;">
+              <pre id="portfolioReviewWorkflowJson">{}</pre>
             </div>
             <div style="margin-top:14px;">
               <label>Portfolio Review Workflow Trends</label>
@@ -1588,6 +1613,7 @@ def render_demo_ui_html() -> str:
         groundingKpiPolicyReasonsList: $("groundingKpiPolicyReasonsList"),
         portfolioMetricsJson: $("portfolioMetricsJson"),
         portfolioQualityJson: $("portfolioQualityJson"),
+        portfolioReviewWorkflowJson: $("portfolioReviewWorkflowJson"),
         portfolioReviewWorkflowTrendsJson: $("portfolioReviewWorkflowTrendsJson"),
         portfolioReviewWorkflowSlaTrendsJson: $("portfolioReviewWorkflowSlaTrendsJson"),
         criticJson: $("criticJson"),
@@ -1655,6 +1681,8 @@ def render_demo_ui_html() -> str:
         portfolioMetricsCards: $("portfolioMetricsCards"),
         portfolioQualityCards: $("portfolioQualityCards"),
         portfolioWarningMetaLine: $("portfolioWarningMetaLine"),
+        portfolioReviewWorkflowSummaryLine: $("portfolioReviewWorkflowSummaryLine"),
+        portfolioReviewWorkflowList: $("portfolioReviewWorkflowList"),
         portfolioReviewWorkflowTrendsSummaryLine: $("portfolioReviewWorkflowTrendsSummaryLine"),
         portfolioReviewWorkflowTrendSparkline: $("portfolioReviewWorkflowTrendSparkline"),
         portfolioReviewWorkflowTrendsList: $("portfolioReviewWorkflowTrendsList"),
@@ -1741,6 +1769,7 @@ def render_demo_ui_html() -> str:
         criticBulkClearFiltersBtn: $("criticBulkClearFiltersBtn"),
         qualityBtn: $("qualityBtn"),
         portfolioBtn: $("portfolioBtn"),
+        portfolioReviewWorkflowBtn: $("portfolioReviewWorkflowBtn"),
         portfolioReviewWorkflowTrendsBtn: $("portfolioReviewWorkflowTrendsBtn"),
         portfolioReviewWorkflowSlaTrendsBtn: $("portfolioReviewWorkflowSlaTrendsBtn"),
         portfolioClearBtn: $("portfolioClearBtn"),
@@ -1751,6 +1780,9 @@ def render_demo_ui_html() -> str:
         copyPortfolioQualityJsonBtn: $("copyPortfolioQualityJsonBtn"),
         downloadPortfolioQualityJsonBtn: $("downloadPortfolioQualityJsonBtn"),
         downloadPortfolioQualityCsvBtn: $("downloadPortfolioQualityCsvBtn"),
+        copyPortfolioReviewWorkflowJsonBtn: $("copyPortfolioReviewWorkflowJsonBtn"),
+        downloadPortfolioReviewWorkflowJsonBtn: $("downloadPortfolioReviewWorkflowJsonBtn"),
+        downloadPortfolioReviewWorkflowCsvBtn: $("downloadPortfolioReviewWorkflowCsvBtn"),
         copyPortfolioReviewWorkflowTrendsJsonBtn: $("copyPortfolioReviewWorkflowTrendsJsonBtn"),
         downloadPortfolioReviewWorkflowTrendsJsonBtn: $("downloadPortfolioReviewWorkflowTrendsJsonBtn"),
         downloadPortfolioReviewWorkflowTrendsCsvBtn: $("downloadPortfolioReviewWorkflowTrendsCsvBtn"),
@@ -1763,6 +1795,8 @@ def render_demo_ui_html() -> str:
         exportPortfolioMetricsCsvBtn: $("exportPortfolioMetricsCsvBtn"),
         exportPortfolioQualityJsonBtn: $("exportPortfolioQualityJsonBtn"),
         exportPortfolioQualityCsvBtn: $("exportPortfolioQualityCsvBtn"),
+        exportPortfolioReviewWorkflowJsonBtn: $("exportPortfolioReviewWorkflowJsonBtn"),
+        exportPortfolioReviewWorkflowCsvBtn: $("exportPortfolioReviewWorkflowCsvBtn"),
         exportPortfolioReviewWorkflowTrendsJsonBtn: $("exportPortfolioReviewWorkflowTrendsJsonBtn"),
         exportPortfolioReviewWorkflowTrendsCsvBtn: $("exportPortfolioReviewWorkflowTrendsCsvBtn"),
         exportPortfolioReviewWorkflowSlaTrendsJsonBtn: $("exportPortfolioReviewWorkflowSlaTrendsJsonBtn"),
@@ -4151,6 +4185,7 @@ def render_demo_ui_html() -> str:
           refreshReviewWorkflowTrends(),
           refreshReviewWorkflowSla(),
           refreshReviewWorkflowSlaTrends(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -4299,6 +4334,91 @@ def render_demo_ui_html() -> str:
             <div class="sub" style="margin-top:6px;">${escapeHtml(`top_status=${topStatus}`)}</div>
           `;
           els.reviewWorkflowTrendsList.appendChild(div);
+        }
+      }
+
+      function renderPortfolioReviewWorkflow(body) {
+        const summary = body?.summary && typeof body.summary === "object" ? body.summary : {};
+        const findingCount = Number(summary?.finding_count || 0);
+        const commentCount = Number(summary?.comment_count || 0);
+        const overdueTotal = Number(summary?.overdue_finding_count || 0) + Number(summary?.overdue_comment_count || 0);
+        const timelineEventCount = Number(summary?.timeline_event_count || 0);
+        const jobsWithActivity = Number(body?.jobs_with_activity || 0);
+        const jobCount = Number(body?.job_count || 0);
+        const topEventType = String(body?.top_event_type || "-");
+        const topDonor = String(body?.top_donor_id || "-");
+        if (els.portfolioReviewWorkflowSummaryLine) {
+          els.portfolioReviewWorkflowSummaryLine.textContent =
+            `portfolio workflow: findings=${findingCount} · comments=${commentCount} · overdue=${overdueTotal} · events=${timelineEventCount} · active_jobs=${jobsWithActivity}/${jobCount}`;
+        }
+
+        const listEl = els.portfolioReviewWorkflowList;
+        if (!listEl) return;
+        listEl.innerHTML = "";
+
+        const typeCounts = body?.timeline_event_type_counts && typeof body.timeline_event_type_counts === "object"
+          ? body.timeline_event_type_counts
+          : {};
+        const donorCounts = body?.donor_event_counts && typeof body.donor_event_counts === "object"
+          ? body.donor_event_counts
+          : {};
+        const latestTimeline = Array.isArray(body?.latest_timeline) ? body.latest_timeline : [];
+
+        const summaryCard = document.createElement("div");
+        summaryCard.className = "item";
+        summaryCard.innerHTML = `
+          <div class="title mono">${escapeHtml(`top_type=${topEventType} · top_donor=${topDonor}`)}</div>
+          <div class="sub">${escapeHtml(`open_findings=${Number(summary?.open_finding_count || 0)} · ack=${Number(summary?.acknowledged_finding_count || 0)} · resolved=${Number(summary?.resolved_finding_count || 0)}`)}</div>
+          <div class="sub" style="margin-top:6px;">${escapeHtml(`open_comments=${Number(summary?.open_comment_count || 0)} · resolved_comments=${Number(summary?.resolved_comment_count || 0)}`)}</div>
+        `;
+        listEl.appendChild(summaryCard);
+
+        const topTypeRows = Object.entries(typeCounts)
+          .map(([key, count]) => ({ key: String(key || "-"), count: Number(count || 0) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 4);
+        const topDonorRows = Object.entries(donorCounts)
+          .map(([key, count]) => ({ key: String(key || "-"), count: Number(count || 0) }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 4);
+
+        const typesCard = document.createElement("div");
+        typesCard.className = "item";
+        const typeTokens = topTypeRows.length
+          ? topTypeRows.map((row) => `${row.key}=${row.count}`).join(" · ")
+          : "none";
+        const donorTokens = topDonorRows.length
+          ? topDonorRows.map((row) => `${row.key}=${row.count}`).join(" · ")
+          : "none";
+        typesCard.innerHTML = `
+          <div class="title mono">${escapeHtml(`event_types: ${typeTokens}`)}</div>
+          <div class="sub">${escapeHtml(`donors: ${donorTokens}`)}</div>
+        `;
+        listEl.appendChild(typesCard);
+
+        const latestRows = latestTimeline.slice(0, 5);
+        if (!latestRows.length) {
+          const empty = document.createElement("div");
+          empty.className = "item";
+          empty.innerHTML = `<div class="sub">No workflow timeline rows for current filters.</div>`;
+          listEl.appendChild(empty);
+          return;
+        }
+        for (const row of latestRows) {
+          const ts = String(row?.ts || "-");
+          const type = String(row?.type || "-");
+          const kind = String(row?.kind || "-");
+          const section = String(row?.section || "-");
+          const status = String(row?.status || "-");
+          const donorId = String(row?.donor_id || "-");
+          const jobId = String(row?.job_id || "-");
+          const item = document.createElement("div");
+          item.className = "item";
+          item.innerHTML = `
+            <div class="title mono">${escapeHtml(`${ts} · ${type} · ${kind}`)}</div>
+            <div class="sub">${escapeHtml(`donor=${donorId} · job=${jobId} · section=${section} · status=${status}`)}</div>
+          `;
+          listEl.appendChild(item);
         }
       }
 
@@ -5450,7 +5570,7 @@ def render_demo_ui_html() -> str:
         return q ? `?${q}` : "";
       }
 
-      function buildPortfolioReviewWorkflowTrendsQueryString() {
+      function buildPortfolioReviewWorkflowQueryString() {
         const baseQuery = buildPortfolioFilterQueryString();
         const params = new URLSearchParams(baseQuery.startsWith("?") ? baseQuery.slice(1) : "");
         if (els.reviewWorkflowEventTypeFilter.value) params.set("event_type", els.reviewWorkflowEventTypeFilter.value);
@@ -5475,6 +5595,10 @@ def render_demo_ui_html() -> str:
         }
         const q = params.toString();
         return q ? `?${q}` : "";
+      }
+
+      function buildPortfolioReviewWorkflowTrendsQueryString() {
+        return buildPortfolioReviewWorkflowQueryString();
       }
 
       function buildPortfolioReviewWorkflowSlaTrendsQueryString() {
@@ -5628,6 +5752,15 @@ def render_demo_ui_html() -> str:
         return body;
       }
 
+      async function refreshPortfolioReviewWorkflow() {
+        persistUiState();
+        const q = buildPortfolioReviewWorkflowQueryString();
+        const body = await apiFetch(`/portfolio/review-workflow${q}`);
+        renderPortfolioReviewWorkflow(body);
+        setJson(els.portfolioReviewWorkflowJson, body);
+        return body;
+      }
+
       async function refreshPortfolioReviewWorkflowTrends() {
         persistUiState();
         const q = buildPortfolioReviewWorkflowTrendsQueryString();
@@ -5650,6 +5783,7 @@ def render_demo_ui_html() -> str:
         const results = await Promise.allSettled([
           refreshPortfolioMetrics(),
           refreshPortfolioQuality(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -5682,7 +5816,6 @@ def render_demo_ui_html() -> str:
           refreshReviewWorkflowSla(),
           refreshReviewWorkflowSlaTrends(),
           refreshReviewWorkflowSlaProfile(),
-          refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
       }
 
@@ -5716,6 +5849,16 @@ def render_demo_ui_html() -> str:
           text = (els.portfolioMetricsJson?.textContent || "").trim();
         }
         if (!text || text === "{}") throw new Error("Load portfolio metrics first");
+        return text;
+      }
+
+      async function ensurePortfolioReviewWorkflowLoaded() {
+        let text = (els.portfolioReviewWorkflowJson?.textContent || "").trim();
+        if (!text || text === "{}") {
+          await refreshPortfolioReviewWorkflow();
+          text = (els.portfolioReviewWorkflowJson?.textContent || "").trim();
+        }
+        if (!text || text === "{}") throw new Error("Load portfolio workflow first");
         return text;
       }
 
@@ -5972,6 +6115,14 @@ def render_demo_ui_html() -> str:
         await navigator.clipboard.writeText(text);
       }
 
+      async function copyPortfolioReviewWorkflowJson() {
+        const text = await ensurePortfolioReviewWorkflowLoaded();
+        if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
+          throw new Error("Clipboard API is not available in this browser");
+        }
+        await navigator.clipboard.writeText(text);
+      }
+
       async function copyPortfolioReviewWorkflowTrendsJson() {
         const text = await ensurePortfolioReviewWorkflowTrendsLoaded();
         if (!navigator.clipboard || typeof navigator.clipboard.writeText !== "function") {
@@ -6034,6 +6185,26 @@ def render_demo_ui_html() -> str:
       async function downloadPortfolioMetricsCsv() {
         await ensurePortfolioMetricsLoaded();
         await exportPortfolioAggregate("/portfolio/metrics/export", "csv", "grantflow_portfolio_metrics.csv");
+      }
+
+      async function downloadPortfolioReviewWorkflowJson() {
+        await ensurePortfolioReviewWorkflowLoaded();
+        await exportPortfolioAggregate(
+          "/portfolio/review-workflow/export",
+          "json",
+          "grantflow_portfolio_review_workflow.json",
+          buildPortfolioReviewWorkflowQueryString
+        );
+      }
+
+      async function downloadPortfolioReviewWorkflowCsv() {
+        await ensurePortfolioReviewWorkflowLoaded();
+        await exportPortfolioAggregate(
+          "/portfolio/review-workflow/export",
+          "csv",
+          "grantflow_portfolio_review_workflow.csv",
+          buildPortfolioReviewWorkflowQueryString
+        );
       }
 
       async function downloadPortfolioReviewWorkflowTrendsJson() {
@@ -6296,6 +6467,7 @@ def render_demo_ui_html() -> str:
           refreshComments(),
           refreshReviewWorkflow(),
           refreshReviewWorkflowTrends(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -6321,6 +6493,7 @@ def render_demo_ui_html() -> str:
           refreshCritic(),
           refreshReviewWorkflow(),
           refreshReviewWorkflowTrends(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -6359,6 +6532,7 @@ def render_demo_ui_html() -> str:
           refreshCritic(),
           refreshReviewWorkflow(),
           refreshReviewWorkflowTrends(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -6379,6 +6553,7 @@ def render_demo_ui_html() -> str:
           refreshComments(),
           refreshReviewWorkflow(),
           refreshReviewWorkflowTrends(),
+          refreshPortfolioReviewWorkflow(),
           refreshPortfolioReviewWorkflowTrends(),
           refreshPortfolioReviewWorkflowSlaTrends(),
         ]);
@@ -6481,6 +6656,9 @@ def render_demo_ui_html() -> str:
         els.portfolioBtn.addEventListener("click", () => {
           refreshPortfolioBundle().catch(showError);
         });
+        els.portfolioReviewWorkflowBtn.addEventListener("click", () => {
+          refreshPortfolioReviewWorkflow().catch(showError);
+        });
         els.portfolioReviewWorkflowTrendsBtn.addEventListener("click", () => {
           refreshPortfolioReviewWorkflowTrends().catch(showError);
         });
@@ -6521,6 +6699,12 @@ def render_demo_ui_html() -> str:
         els.exportPortfolioQualityCsvBtn.addEventListener("click", () =>
           downloadPortfolioQualityCsv().catch((err) => showError(err))
         );
+        els.exportPortfolioReviewWorkflowJsonBtn.addEventListener("click", () =>
+          downloadPortfolioReviewWorkflowJson().catch((err) => showError(err))
+        );
+        els.exportPortfolioReviewWorkflowCsvBtn.addEventListener("click", () =>
+          downloadPortfolioReviewWorkflowCsv().catch((err) => showError(err))
+        );
         els.exportPortfolioReviewWorkflowTrendsJsonBtn.addEventListener("click", () =>
           downloadPortfolioReviewWorkflowTrendsJson().catch((err) => showError(err))
         );
@@ -6541,6 +6725,15 @@ def render_demo_ui_html() -> str:
         );
         els.downloadPortfolioQualityCsvBtn.addEventListener("click", () =>
           downloadPortfolioQualityCsv().catch((err) => showError(err))
+        );
+        els.copyPortfolioReviewWorkflowJsonBtn.addEventListener("click", () =>
+          copyPortfolioReviewWorkflowJson().catch((err) => showError(err))
+        );
+        els.downloadPortfolioReviewWorkflowJsonBtn.addEventListener("click", () =>
+          downloadPortfolioReviewWorkflowJson().catch((err) => showError(err))
+        );
+        els.downloadPortfolioReviewWorkflowCsvBtn.addEventListener("click", () =>
+          downloadPortfolioReviewWorkflowCsv().catch((err) => showError(err))
         );
         els.copyPortfolioReviewWorkflowTrendsJsonBtn.addEventListener("click", () =>
           copyPortfolioReviewWorkflowTrendsJson().catch((err) => showError(err))
@@ -6568,6 +6761,7 @@ def render_demo_ui_html() -> str:
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
             refreshReviewWorkflowSlaProfile(),
+            refreshPortfolioReviewWorkflow(),
             refreshPortfolioReviewWorkflowTrends(),
             refreshPortfolioReviewWorkflowSlaTrends(),
           ]).catch(showError);
@@ -6603,6 +6797,7 @@ def render_demo_ui_html() -> str:
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
             refreshReviewWorkflowSlaProfile(),
+            refreshPortfolioReviewWorkflow(),
             refreshPortfolioReviewWorkflowTrends(),
             refreshPortfolioReviewWorkflowSlaTrends(),
           ]).catch(showError);
@@ -6665,6 +6860,7 @@ def render_demo_ui_html() -> str:
               refreshReviewWorkflowTrends(),
               refreshReviewWorkflowSla(),
               refreshReviewWorkflowSlaTrends(),
+              refreshPortfolioReviewWorkflow(),
               refreshPortfolioReviewWorkflowTrends(),
               refreshPortfolioReviewWorkflowSlaTrends(),
             ]).catch(showError);
@@ -6677,6 +6873,7 @@ def render_demo_ui_html() -> str:
             refreshReviewWorkflowTrends(),
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
+            refreshPortfolioReviewWorkflow(),
             refreshPortfolioReviewWorkflowTrends(),
             refreshPortfolioReviewWorkflowSlaTrends(),
           ]).catch(showError);
@@ -6688,6 +6885,7 @@ def render_demo_ui_html() -> str:
             refreshReviewWorkflowTrends(),
             refreshReviewWorkflowSla(),
             refreshReviewWorkflowSlaTrends(),
+            refreshPortfolioReviewWorkflow(),
             refreshPortfolioReviewWorkflowTrends(),
             refreshPortfolioReviewWorkflowSlaTrends(),
           ]).catch(showError);
