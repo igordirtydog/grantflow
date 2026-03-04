@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,10 @@ def _split_csv_args(values: list[str] | None) -> list[str]:
             if value:
                 rows.append(value)
     return rows
+
+
+def _is_truthy(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def refresh_grounded_baseline(
@@ -68,6 +73,11 @@ def refresh_grounded_baseline(
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Refresh grounded regression baseline snapshot from current grounded suite.")
+    parser.add_argument(
+        "--confirm-refresh",
+        action="store_true",
+        help="Explicitly confirm baseline refresh (or set ALLOW_BASELINE_REFRESH=1).",
+    )
     parser.add_argument(
         "--cases-file",
         type=Path,
@@ -124,6 +134,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+    if not (bool(args.confirm_refresh) or _is_truthy(os.getenv("ALLOW_BASELINE_REFRESH"))):
+        print("FAILED: baseline refresh requires explicit confirmation. Use --confirm-refresh or ALLOW_BASELINE_REFRESH=1.")
+        return 1
     seed_manifest = None if bool(args.no_seed_rag) else Path(args.seed_rag_manifest)
     donor_filters = _split_csv_args(args.donor_id)
     case_filters = _split_csv_args(args.case_id)

@@ -13,6 +13,7 @@ GROUNDED_MIN_NON_RETRIEVAL_IMPROVEMENT ?= 0.25
 GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT ?= 0.25
 GROUNDED_EXPECTED_DONORS ?= usaid,eu,worldbank,state_department
 GROUNDED_MIN_SEEDED_TOTAL ?= 1
+ALLOW_BASELINE_REFRESH ?= 0
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
@@ -77,7 +78,7 @@ eval-grounded-ab:
 		--out $(EVAL_ARTIFACTS_DIR)/grounded-gate-summary.md
 
 refresh-grounded-baseline:
-	PYTHONPATH=. $(PYTHON) scripts/refresh_grounded_baseline.py \
+	ALLOW_BASELINE_REFRESH=$(ALLOW_BASELINE_REFRESH) PYTHONPATH=. $(PYTHON) scripts/refresh_grounded_baseline.py \
 		--cases-file $(GROUNDED_CASES_FILE) \
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--out $(GROUNDED_BASELINE)

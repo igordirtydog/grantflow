@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import argparse
 from pathlib import Path
 
 
@@ -98,3 +99,45 @@ def test_refresh_grounded_baseline_fails_when_suite_fails_by_default(monkeypatch
         assert "Grounded suite failed" in str(exc)
     else:
         raise AssertionError("Expected RuntimeError for failing suite")
+
+
+def _make_main_args(*, confirm_refresh: bool) -> argparse.Namespace:
+    return argparse.Namespace(
+        confirm_refresh=confirm_refresh,
+        no_seed_rag=True,
+        seed_rag_manifest=Path("docs/rag_seed_corpus/ingest_manifest.jsonl"),
+        donor_id=[],
+        case_id=[],
+        cases_file=Path("grantflow/eval/cases/grounded_cases.json"),
+        out=Path("grantflow/eval/fixtures/grounded_regression_snapshot.json"),
+        suite_label="grounded-eval",
+        allow_seed_errors=False,
+        allow_failing_suite=False,
+    )
+
+
+def test_main_requires_explicit_confirmation(monkeypatch):
+    module = _load_module()
+    monkeypatch.delenv("ALLOW_BASELINE_REFRESH", raising=False)
+    monkeypatch.setattr(module, "_parse_args", lambda argv=None: _make_main_args(confirm_refresh=False))
+
+    def _unexpected_call(**kwargs):
+        raise AssertionError("refresh_grounded_baseline should not run without confirmation")
+
+    monkeypatch.setattr(module, "refresh_grounded_baseline", _unexpected_call)
+    assert module.main([]) == 1
+
+
+def test_main_accepts_env_confirmation(monkeypatch):
+    module = _load_module()
+    monkeypatch.setenv("ALLOW_BASELINE_REFRESH", "1")
+    monkeypatch.setattr(module, "_parse_args", lambda argv=None: _make_main_args(confirm_refresh=False))
+    monkeypatch.setattr(
+        module,
+        "refresh_grounded_baseline",
+        lambda **kwargs: (
+            {"cases": {"c1": {"metrics": {}}}},
+            None,
+        ),
+    )
+    assert module.main([]) == 0

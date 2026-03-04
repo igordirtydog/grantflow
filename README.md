@@ -427,7 +427,7 @@ CI uploads the same files as the `eval-report` artifact, including `grounded-gat
 Refresh grounded trend baseline intentionally after expected quality changes:
 
 ```bash
-make refresh-grounded-baseline
+ALLOW_BASELINE_REFRESH=1 make refresh-grounded-baseline
 ```
 
 ## Deployment
