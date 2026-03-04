@@ -89,6 +89,8 @@ class JobRunnerConfig(BaseModel):
     redis_pop_timeout_seconds: float = 1.0
     redis_max_attempts: int = 3
     redis_dead_letter_queue_name: str = ""
+    dead_letter_alert_threshold: int = 0
+    dead_letter_alert_blocking: bool = False
 
 
 class GrantFlowConfig(BaseModel):
@@ -217,6 +219,9 @@ class GrantFlowConfig(BaseModel):
                 redis_pop_timeout_seconds=float(_env("GRANTFLOW_JOB_RUNNER_REDIS_POP_TIMEOUT_SECONDS", "1.0")),
                 redis_max_attempts=int(_env("GRANTFLOW_JOB_RUNNER_REDIS_MAX_ATTEMPTS", "3")),
                 redis_dead_letter_queue_name=_env("GRANTFLOW_JOB_RUNNER_REDIS_DEAD_LETTER_QUEUE_NAME", ""),
+                dead_letter_alert_threshold=int(_env("GRANTFLOW_JOB_RUNNER_DEAD_LETTER_ALERT_THRESHOLD", "0")),
+                dead_letter_alert_blocking=_env("GRANTFLOW_JOB_RUNNER_DEAD_LETTER_ALERT_BLOCKING", "false").lower()
+                == "true",
             ),
             api_host=_env("GRANTFLOW_API_HOST", "0.0.0.0"),
             api_port=int(_env("GRANTFLOW_API_PORT", "8000")),

@@ -3,6 +3,7 @@ from __future__ import annotations
 import gzip
 import io
 import json
+import csv
 import os
 import re
 import tempfile
@@ -215,6 +216,19 @@ def _uses_redis_queue_runner() -> bool:
 
 def _uses_queue_runner() -> bool:
     return _uses_inmemory_queue_runner() or _uses_redis_queue_runner()
+
+
+def _dead_letter_alert_threshold() -> int:
+    raw = getattr(config.job_runner, "dead_letter_alert_threshold", 0)
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, value)
+
+
+def _dead_letter_alert_blocking() -> bool:
+    return bool(getattr(config.job_runner, "dead_letter_alert_blocking", False))
 
 
 def _build_job_runner():
@@ -3927,6 +3941,42 @@ def _portfolio_export_response(
     )
 
 
+def _dead_letter_queue_csv_text(payload: Dict[str, Any]) -> str:
+    rows = payload.get("items") if isinstance(payload.get("items"), list) else []
+    header = [
+        "index",
+        "task_name",
+        "reason",
+        "attempt",
+        "max_attempts",
+        "failed_at",
+        "error",
+        "payload_json",
+        "raw_payload",
+    ]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    for row in rows:
+        item = row if isinstance(row, dict) else {}
+        payload_value = item.get("payload")
+        payload_json = json.dumps(payload_value, ensure_ascii=False) if isinstance(payload_value, dict) else ""
+        writer.writerow(
+            [
+                item.get("index"),
+                item.get("task_name"),
+                item.get("reason"),
+                item.get("attempt"),
+                item.get("max_attempts"),
+                item.get("failed_at"),
+                item.get("error"),
+                payload_json,
+                item.get("raw_payload"),
+            ]
+        )
+    return buffer.getvalue()
+
+
 def _vector_store_readiness() -> dict[str, Any]:
     client = getattr(vector_store, "client", None)
     backend = "chroma" if client is not None else "memory"
@@ -3959,6 +4009,18 @@ def readiness_check():
     vector_ready = _vector_store_readiness()
     job_runner_mode = _job_runner_mode()
     job_runner_diag = JOB_RUNNER.diagnostics()
+    dead_letter_threshold = _dead_letter_alert_threshold()
+    dead_letter_queue_size_raw = job_runner_diag.get("dead_letter_queue_size")
+    try:
+        dead_letter_queue_size = int(dead_letter_queue_size_raw)
+    except (TypeError, ValueError):
+        dead_letter_queue_size = -1
+    dead_letter_alert_triggered = (
+        _uses_redis_queue_runner()
+        and dead_letter_threshold > 0
+        and dead_letter_queue_size >= 0
+        and dead_letter_queue_size >= dead_letter_threshold
+    )
     job_runner_ready = True
     if _uses_inmemory_queue_runner():
         job_runner_ready = bool(job_runner_diag.get("running"))
@@ -3966,11 +4028,33 @@ def readiness_check():
         consumer_enabled = bool(job_runner_diag.get("consumer_enabled", True))
         running_ok = bool(job_runner_diag.get("running")) if consumer_enabled else True
         job_runner_ready = running_ok and bool(job_runner_diag.get("redis_available"))
+    if dead_letter_alert_triggered and _dead_letter_alert_blocking():
+        job_runner_ready = False
     ready = bool(vector_ready.get("ready")) and job_runner_ready
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
+    dead_letter_alert = {
+        "enabled": bool(_uses_redis_queue_runner() and dead_letter_threshold > 0),
+        "threshold": dead_letter_threshold,
+        "queue_size": dead_letter_queue_size,
+        "triggered": bool(dead_letter_alert_triggered),
+        "blocking": bool(_dead_letter_alert_blocking()),
+    }
+    alerts: list[dict[str, Any]] = []
+    if dead_letter_alert_triggered:
+        alerts.append(
+            {
+                "code": "DEAD_LETTER_QUEUE_THRESHOLD_EXCEEDED",
+                "severity": "high" if _dead_letter_alert_blocking() else "medium",
+                "message": (
+                    "Dead-letter queue size exceeded configured alert threshold "
+                    f"({dead_letter_queue_size}/{dead_letter_threshold})."
+                ),
+                "blocking": bool(_dead_letter_alert_blocking()),
+            }
+        )
     payload = {
         "status": "ready" if ready else "degraded",
         "checks": {
@@ -3979,6 +4063,8 @@ def readiness_check():
                 "mode": job_runner_mode,
                 "ready": job_runner_ready,
                 "queue": job_runner_diag,
+                "dead_letter_alert": dead_letter_alert,
+                "alerts": alerts,
             },
             "preflight_grounding_policy": {
                 "mode": _configured_preflight_grounding_policy_mode(),
@@ -4074,6 +4160,32 @@ def purge_dead_letter_queue(
         return runner.purge_dead_letters(limit=limit)
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/queue/dead-letter/export")
+def export_dead_letter_queue(
+    request: Request,
+    limit: int = Query(default=500, ge=1, le=5000),
+    format: Literal["csv", "json"] = Query(default="json"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    runner = _redis_queue_admin_runner(("list_dead_letters",))
+    try:
+        payload = runner.list_dead_letters(limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix="grantflow_queue_dead_letter",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=_dead_letter_queue_csv_text,
+    )
 
 
 @app.get("/donors")

@@ -135,6 +135,8 @@ export GRANTFLOW_JOB_RUNNER_REDIS_QUEUE_NAME=grantflow:jobs
 export GRANTFLOW_JOB_RUNNER_REDIS_POP_TIMEOUT_SECONDS=1.0
 export GRANTFLOW_JOB_RUNNER_REDIS_MAX_ATTEMPTS=3
 export GRANTFLOW_JOB_RUNNER_REDIS_DEAD_LETTER_QUEUE_NAME=grantflow:jobs:dead
+export GRANTFLOW_JOB_RUNNER_DEAD_LETTER_ALERT_THRESHOLD=0
+export GRANTFLOW_JOB_RUNNER_DEAD_LETTER_ALERT_BLOCKING=false
 ```
 
 Notes:
@@ -145,8 +147,10 @@ Notes:
 - Use `GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED=false` on API when running a dedicated worker process.
 - Dead-letter ops (redis mode only):
   - `GET /queue/dead-letter?limit=50`
+  - `GET /queue/dead-letter/export?limit=500&format=json` (or `format=csv`)
   - `POST /queue/dead-letter/requeue?limit=10&reset_attempts=true`
   - `DELETE /queue/dead-letter?limit=100`
+- `/ready` includes `checks.job_runner.dead_letter_alert`; set `...ALERT_THRESHOLD` to enable and `...ALERT_BLOCKING=true` to fail readiness when threshold is exceeded.
 
 Dedicated worker process (for `redis_queue`):
 

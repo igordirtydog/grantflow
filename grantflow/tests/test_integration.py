@@ -597,6 +597,81 @@ def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch
     assert checks["job_runner"]["ready"] is True
 
 
+def test_ready_endpoint_reports_dead_letter_alert_when_threshold_exceeded(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "dead_letter_alert_threshold", 1)
+    monkeypatch.setattr(api_app_module.config.job_runner, "dead_letter_alert_blocking", False)
+    monkeypatch.setattr(
+        api_app_module,
+        "JOB_RUNNER",
+        type(
+            "_Runner",
+            (),
+            {
+                "diagnostics": staticmethod(
+                    lambda: {
+                        "backend": "redis",
+                        "consumer_enabled": False,
+                        "running": False,
+                        "redis_available": True,
+                        "queue_size": 0,
+                        "dead_letter_queue_size": 3,
+                    }
+                )
+            },
+        )(),
+    )
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    checks = body["checks"]
+    assert checks["job_runner"]["ready"] is True
+    alert = checks["job_runner"]["dead_letter_alert"]
+    assert alert["triggered"] is True
+    assert alert["blocking"] is False
+    alerts = checks["job_runner"]["alerts"]
+    assert alerts and alerts[0]["code"] == "DEAD_LETTER_QUEUE_THRESHOLD_EXCEEDED"
+
+
+def test_ready_endpoint_can_block_when_dead_letter_alert_is_blocking(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "dead_letter_alert_threshold", 1)
+    monkeypatch.setattr(api_app_module.config.job_runner, "dead_letter_alert_blocking", True)
+    monkeypatch.setattr(
+        api_app_module,
+        "JOB_RUNNER",
+        type(
+            "_Runner",
+            (),
+            {
+                "diagnostics": staticmethod(
+                    lambda: {
+                        "backend": "redis",
+                        "consumer_enabled": False,
+                        "running": False,
+                        "redis_available": True,
+                        "queue_size": 0,
+                        "dead_letter_queue_size": 2,
+                    }
+                )
+            },
+        )(),
+    )
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "degraded"
+    checks = detail["checks"]
+    assert checks["job_runner"]["ready"] is False
+    alert = checks["job_runner"]["dead_letter_alert"]
+    assert alert["triggered"] is True
+    assert alert["blocking"] is True
+
+
 def test_ready_endpoint_returns_503_when_vector_store_unavailable(monkeypatch):
     class BrokenClient:
         def heartbeat(self):
@@ -9123,6 +9198,12 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     queue_dead_letter_auth = client.get("/queue/dead-letter", headers={"X-API-Key": "test-secret"})
     assert queue_dead_letter_auth.status_code == 200
 
+    queue_dead_letter_export_unauth = client.get("/queue/dead-letter/export")
+    assert queue_dead_letter_export_unauth.status_code == 401
+
+    queue_dead_letter_export_auth = client.get("/queue/dead-letter/export", headers={"X-API-Key": "test-secret"})
+    assert queue_dead_letter_export_auth.status_code == 200
+
     queue_requeue_unauth = client.post("/queue/dead-letter/requeue")
     assert queue_requeue_unauth.status_code == 401
 
@@ -9171,6 +9252,9 @@ def test_openapi_declares_api_key_security_scheme():
     queue_dead_letter_security = (((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("get") or {}).get(
         "security"
     )
+    queue_dead_letter_export_security = (
+        ((spec.get("paths") or {}).get("/queue/dead-letter/export") or {}).get("get") or {}
+    ).get("security")
     queue_dead_letter_requeue_security = (
         ((spec.get("paths") or {}).get("/queue/dead-letter/requeue") or {}).get("post") or {}
     ).get("security")
@@ -9736,6 +9820,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert ingest_inventory_security == [{"ApiKeyAuth": []}]
     assert ingest_inventory_export_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_security == [{"ApiKeyAuth": []}]
+    assert queue_dead_letter_export_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_requeue_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_purge_security == [{"ApiKeyAuth": []}]
     assert cancel_security == [{"ApiKeyAuth": []}]
@@ -11224,6 +11309,10 @@ def test_dead_letter_queue_endpoints_require_redis_queue_mode(monkeypatch):
     assert list_resp.status_code == 409
     assert "redis_queue" in str(list_resp.json()["detail"])
 
+    export_resp = client.get("/queue/dead-letter/export")
+    assert export_resp.status_code == 409
+    assert "redis_queue" in str(export_resp.json()["detail"])
+
     requeue_resp = client.post("/queue/dead-letter/requeue")
     assert requeue_resp.status_code == 409
     assert "redis_queue" in str(requeue_resp.json()["detail"])
@@ -11275,6 +11364,16 @@ def test_dead_letter_queue_endpoints_use_runner_in_redis_mode(monkeypatch):
     assert listed_body["mode"] == "redis_queue"
     assert listed_body["dead_letter_queue_size"] == 1
     assert listed_body["items"]
+
+    export_json = client.get("/queue/dead-letter/export", params={"limit": 5, "format": "json"})
+    assert export_json.status_code == 200
+    assert "application/json" in (export_json.headers.get("content-type") or "")
+    assert "grantflow_queue_dead_letter" in (export_json.headers.get("content-disposition") or "")
+
+    export_csv = client.get("/queue/dead-letter/export", params={"limit": 5, "format": "csv"})
+    assert export_csv.status_code == 200
+    assert "text/csv" in (export_csv.headers.get("content-type") or "")
+    assert "task_name" in export_csv.text
 
     requeue = client.post("/queue/dead-letter/requeue", params={"limit": 2, "reset_attempts": True})
     assert requeue.status_code == 200
