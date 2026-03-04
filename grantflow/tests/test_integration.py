@@ -326,6 +326,8 @@ def test_demo_console_page_loads():
     assert "reviewWorkflowJson" in body
     assert "reviewWorkflowEventTypeFilter" in body
     assert "reviewWorkflowFindingIdFilter" in body
+    assert "reviewWorkflowFindingCodeFilter" in body
+    assert "reviewWorkflowFindingSectionFilter" in body
     assert "reviewWorkflowCommentStatusFilter" in body
     assert "reviewWorkflowStateFilter" in body
     assert "reviewWorkflowOverdueHoursFilter" in body
@@ -347,6 +349,8 @@ def test_demo_console_page_loads():
     assert "reviewWorkflowSlaProfileJson" in body
     assert "grantflow_demo_review_workflow_event_type" in body
     assert "grantflow_demo_review_workflow_finding_id" in body
+    assert "grantflow_demo_review_workflow_finding_code" in body
+    assert "grantflow_demo_review_workflow_finding_section" in body
     assert "grantflow_demo_review_workflow_comment_status" in body
     assert "grantflow_demo_review_workflow_state" in body
     assert "grantflow_demo_review_workflow_overdue_hours" in body
@@ -1430,6 +1434,17 @@ def test_runtime_grounded_quality_gate_blocks_llm_when_non_retrieval_signals_dom
     flaws = (state.get("critic_notes") or {}).get("fatal_flaws") or []
     flaw_codes = {str(item.get("code") or "") for item in flaws if isinstance(item, dict)}
     assert "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK" in flaw_codes
+    runtime_gate_flaw = next(
+        (
+            item
+            for item in flaws
+            if isinstance(item, dict) and str(item.get("code") or "") == "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK"
+        ),
+        {},
+    )
+    related_sections = runtime_gate_flaw.get("related_sections")
+    assert isinstance(related_sections, list)
+    assert any(section in {"toc", "logframe"} for section in related_sections)
 
 
 def test_runtime_grounded_quality_gate_skips_when_architect_rag_disabled(monkeypatch):

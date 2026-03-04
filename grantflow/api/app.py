@@ -2328,7 +2328,14 @@ def _append_runtime_grounded_quality_gate_finding(state: dict, gate: Dict[str, A
         return
     reasons = gate.get("reasons") if isinstance(gate.get("reasons"), list) else []
     reason_details = gate.get("reason_details") if isinstance(gate.get("reason_details"), list) else []
-    failed_sections = gate.get("failed_sections") if isinstance(gate.get("failed_sections"), list) else []
+    raw_failed_sections = gate.get("failed_sections")
+    failed_sections: list[Any] = raw_failed_sections if isinstance(raw_failed_sections, list) else []
+    related_sections = [
+        token
+        for token in [str(section or "").strip().lower() for section in failed_sections]
+        if token in {"toc", "logframe", "general"}
+    ]
+    primary_section = related_sections[0] if related_sections else "general"
     thresholds = gate.get("thresholds") if isinstance(gate.get("thresholds"), dict) else {}
     non_retrieval_rate = gate.get("non_retrieval_citation_rate")
     retrieval_grounded_count = gate.get("retrieval_grounded_citation_count")
@@ -2348,7 +2355,8 @@ def _append_runtime_grounded_quality_gate_finding(state: dict, gate: Dict[str, A
     new_finding = {
         "code": "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK",
         "severity": "high",
-        "section": "general",
+        "section": primary_section,
+        "related_sections": related_sections,
         "version_id": None,
         "message": "Grounded quality gate blocked finalization for LLM generation.",
         "rationale": rationale,

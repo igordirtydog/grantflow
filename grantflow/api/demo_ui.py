@@ -1127,6 +1127,24 @@ def render_demo_ui_html() -> str:
             </div>
             <div class="row3" style="margin-top:10px;">
               <div>
+                <label for="reviewWorkflowFindingCodeFilter">Workflow Filter: Finding Code (client)</label>
+                <input id="reviewWorkflowFindingCodeFilter" placeholder="RUNTIME_GROUNDED_QUALITY_GATE_BLOCK" />
+              </div>
+              <div>
+                <label for="reviewWorkflowFindingSectionFilter">Workflow Filter: Finding Section (client)</label>
+                <select id="reviewWorkflowFindingSectionFilter">
+                  <option value="">all</option>
+                  <option value="toc">toc</option>
+                  <option value="logframe">logframe</option>
+                  <option value="general">general</option>
+                </select>
+              </div>
+              <div class="sub" style="align-self:end;">
+                Client-side filters on top of server workflow response.
+              </div>
+            </div>
+            <div class="row3" style="margin-top:10px;">
+              <div>
                 <label for="reviewWorkflowOverdueHoursFilter">Workflow Filter: Overdue After (hours)</label>
                 <input id="reviewWorkflowOverdueHoursFilter" type="number" min="1" step="1" value="48" />
               </div>
@@ -1234,6 +1252,8 @@ def render_demo_ui_html() -> str:
         ["commentsFilterVersionId", "grantflow_demo_comments_filter_version_id"],
         ["reviewWorkflowEventTypeFilter", "grantflow_demo_review_workflow_event_type"],
         ["reviewWorkflowFindingIdFilter", "grantflow_demo_review_workflow_finding_id"],
+        ["reviewWorkflowFindingCodeFilter", "grantflow_demo_review_workflow_finding_code"],
+        ["reviewWorkflowFindingSectionFilter", "grantflow_demo_review_workflow_finding_section"],
         ["reviewWorkflowCommentStatusFilter", "grantflow_demo_review_workflow_comment_status"],
         ["reviewWorkflowStateFilter", "grantflow_demo_review_workflow_state"],
         ["reviewWorkflowOverdueHoursFilter", "grantflow_demo_review_workflow_overdue_hours"],
@@ -1500,6 +1520,8 @@ def render_demo_ui_html() -> str:
         reviewWorkflowJson: $("reviewWorkflowJson"),
         reviewWorkflowEventTypeFilter: $("reviewWorkflowEventTypeFilter"),
         reviewWorkflowFindingIdFilter: $("reviewWorkflowFindingIdFilter"),
+        reviewWorkflowFindingCodeFilter: $("reviewWorkflowFindingCodeFilter"),
+        reviewWorkflowFindingSectionFilter: $("reviewWorkflowFindingSectionFilter"),
         reviewWorkflowCommentStatusFilter: $("reviewWorkflowCommentStatusFilter"),
         reviewWorkflowStateFilter: $("reviewWorkflowStateFilter"),
         reviewWorkflowOverdueHoursFilter: $("reviewWorkflowOverdueHoursFilter"),
@@ -1705,6 +1727,8 @@ def render_demo_ui_html() -> str:
       function clearReviewWorkflowFilters() {
         els.reviewWorkflowEventTypeFilter.value = "";
         els.reviewWorkflowFindingIdFilter.value = "";
+        els.reviewWorkflowFindingCodeFilter.value = "";
+        els.reviewWorkflowFindingSectionFilter.value = "";
         els.reviewWorkflowCommentStatusFilter.value = "";
         els.reviewWorkflowStateFilter.value = "";
         els.reviewWorkflowOverdueHoursFilter.value = "48";
@@ -3557,13 +3581,19 @@ def render_demo_ui_html() -> str:
           els.portfolioQualityGroundedGateSectionsList,
           summary?.grounded_gate_section_fail_counts,
           "No grounded-gate failed sections yet.",
-          8
+          8,
+          (sectionKey) => {
+            applyRuntimeGroundedGateReviewWorkflowDrilldown({ section: sectionKey }).catch(showError);
+          }
         );
         renderKeyValueList(
           els.portfolioQualityGroundedGateReasonsList,
           summary?.grounded_gate_reason_counts,
           "No grounded-gate reason codes yet.",
-          8
+          8,
+          (reasonCode) => {
+            applyRuntimeGroundedGateReviewWorkflowDrilldown({ reasonCode }).catch(showError);
+          }
         );
         renderDonorGroundedGateList(
           els.portfolioQualityGroundedGateDonorsList,
@@ -3919,16 +3949,115 @@ def render_demo_ui_html() -> str:
         }
       }
 
+      function buildCriticFindingMetaById() {
+        const critic = state.lastCritic && typeof state.lastCritic === "object" ? state.lastCritic : {};
+        const flaws = Array.isArray(critic.fatal_flaws) ? critic.fatal_flaws : [];
+        const byId = {};
+        for (const flaw of flaws) {
+          if (!flaw || typeof flaw !== "object") continue;
+          const findingId = String(flaw.finding_id || flaw.id || "").trim();
+          if (!findingId) continue;
+          const relatedSections = Array.isArray(flaw.related_sections)
+            ? flaw.related_sections.map((s) => String(s || "").trim().toLowerCase()).filter((s) => ["toc", "logframe", "general"].includes(s))
+            : [];
+          byId[findingId] = {
+            findingId,
+            code: String(flaw.code || "").trim(),
+            section: String(flaw.section || "").trim().toLowerCase(),
+            status: String(flaw.status || "").trim().toLowerCase(),
+            rationale: String(flaw.rationale || ""),
+            relatedSections,
+          };
+        }
+        return byId;
+      }
+
+      function timelineItemMatchesReviewWorkflowClientFilters(item, findingMetaById) {
+        const findingCodeFilter = String(els.reviewWorkflowFindingCodeFilter?.value || "").trim().toUpperCase();
+        const findingSectionFilter = String(els.reviewWorkflowFindingSectionFilter?.value || "").trim().toLowerCase();
+        if (!findingCodeFilter && !findingSectionFilter) return true;
+
+        const findingId = String(item?.finding_id || "").trim();
+        const findingMeta = findingId ? findingMetaById[findingId] : null;
+        const itemSection = String(item?.section || "").trim().toLowerCase();
+        const metaSection = findingMeta ? String(findingMeta.section || "").trim().toLowerCase() : "";
+        const relatedSections = Array.isArray(findingMeta?.relatedSections) ? findingMeta.relatedSections : [];
+
+        if (findingCodeFilter) {
+          const codeToken = findingMeta ? String(findingMeta.code || "").trim().toUpperCase() : "";
+          if (codeToken !== findingCodeFilter) return false;
+        }
+        if (findingSectionFilter) {
+          const sectionMatched =
+            itemSection === findingSectionFilter ||
+            metaSection === findingSectionFilter ||
+            relatedSections.includes(findingSectionFilter);
+          if (!sectionMatched) return false;
+        }
+        return true;
+      }
+
+      async function applyRuntimeGroundedGateReviewWorkflowDrilldown({ section = "", reasonCode = "" } = {}) {
+        const jobId = currentJobId();
+        if (!jobId) throw new Error("Set or generate a job_id first");
+        const normalizedSection = String(section || "").trim().toLowerCase();
+        const normalizedReasonCode = String(reasonCode || "").trim();
+
+        if (!state.lastCritic) {
+          await refreshCritic();
+        }
+        const findingMetaById = buildCriticFindingMetaById();
+        const candidateFindings = Object.values(findingMetaById)
+          .filter((meta) => String(meta.code || "").toUpperCase() === "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK")
+          .filter((meta) => {
+            if (!normalizedSection) return true;
+            return (
+              String(meta.section || "").toLowerCase() === normalizedSection ||
+              (Array.isArray(meta.relatedSections) && meta.relatedSections.includes(normalizedSection))
+            );
+          })
+          .filter((meta) => {
+            if (!normalizedReasonCode) return true;
+            return String(meta.rationale || "").includes(normalizedReasonCode);
+          })
+          .sort((a, b) => {
+            const rank = (status) => {
+              if (status === "open") return 0;
+              if (status === "acknowledged") return 1;
+              if (status === "resolved") return 2;
+              return 3;
+            };
+            return rank(a.status) - rank(b.status) || String(a.findingId).localeCompare(String(b.findingId));
+          });
+
+        const selectedFinding = candidateFindings.length ? candidateFindings[0] : null;
+        els.reviewWorkflowEventTypeFilter.value = "critic_finding_status_changed";
+        els.reviewWorkflowFindingCodeFilter.value = "RUNTIME_GROUNDED_QUALITY_GATE_BLOCK";
+        if (normalizedSection && ["toc", "logframe", "general"].includes(normalizedSection)) {
+          els.reviewWorkflowFindingSectionFilter.value = normalizedSection;
+        }
+        els.reviewWorkflowFindingIdFilter.value = selectedFinding ? String(selectedFinding.findingId || "") : "";
+        persistUiState();
+        await Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]);
+      }
+
       function renderReviewWorkflowTimeline(body) {
-        const timeline = Array.isArray(body?.timeline) ? body.timeline : [];
+        const timelineAll = Array.isArray(body?.timeline) ? body.timeline : [];
+        const findingMetaById = buildCriticFindingMetaById();
+        const timeline = timelineAll.filter((item) =>
+          timelineItemMatchesReviewWorkflowClientFilters(item, findingMetaById)
+        );
         els.reviewWorkflowTimelineList.innerHTML = "";
         if (!timeline.length) {
-          els.reviewWorkflowTimelineList.innerHTML = `<div class="item"><div class="sub">No review workflow events.</div></div>`;
+          els.reviewWorkflowTimelineList.innerHTML = `<div class="item"><div class="sub">No review workflow events for current filters.</div></div>`;
         } else {
           for (const item of timeline) {
             const findingId = String(item.finding_id || "").trim();
             const commentId = String(item.comment_id || "").trim();
-            const parts = [item.type || "event", item.status || "-", item.section || "-"];
+            const findingMeta = findingId ? findingMetaById[findingId] : null;
+            const findingCode = findingMeta ? String(findingMeta.code || "").trim() : "";
+            const parts = [item.type || "event", item.status || "-", item.section || findingMeta?.section || "-"];
+            if (findingCode) parts.push(findingCode);
             if (findingId) parts.push(`finding ${findingId.slice(0, 8)}`);
             if (commentId) parts.push(`comment ${commentId.slice(0, 8)}`);
             const meta = [item.ts, item.actor || item.author, item.severity].filter(Boolean).join(" · ");
@@ -3962,9 +4091,18 @@ def render_demo_ui_html() -> str:
         const overdueCommentCount = Number(summary.overdue_comment_count || 0);
         const orphanLinkedCount = Number(summary.orphan_linked_comment_count || 0);
         const lastActivity = String(summary.last_activity_at || "-");
+        const findingCodeFilter = String(els.reviewWorkflowFindingCodeFilter?.value || "").trim();
+        const findingSectionFilter = String(els.reviewWorkflowFindingSectionFilter?.value || "").trim();
+        const clientFilterMarker =
+          findingCodeFilter || findingSectionFilter
+            ? ` · client_filters=${findingCodeFilter || "-"}:${findingSectionFilter || "-"} · visible=${timeline.length}/${timelineAll.length}`
+            : "";
         if (els.reviewWorkflowSummaryLine) {
           els.reviewWorkflowSummaryLine.textContent =
             `workflow: timeline=${timelineCount} · findings=${findingCount} (pending=${pendingFindingCount}, overdue=${overdueFindingCount}) · comments=${commentCount} (pending=${pendingCommentCount}, overdue=${overdueCommentCount}) · orphan_links=${orphanLinkedCount} · last=${lastActivity}`;
+          if (clientFilterMarker) {
+            els.reviewWorkflowSummaryLine.textContent += clientFilterMarker;
+          }
         }
       }
 
@@ -4589,6 +4727,13 @@ def render_demo_ui_html() -> str:
         const jobId = currentJobId();
         if (!jobId) return;
         persistUiState();
+        const needsCriticForClientFilter =
+          !state.lastCritic &&
+          (String(els.reviewWorkflowFindingCodeFilter?.value || "").trim() ||
+            String(els.reviewWorkflowFindingSectionFilter?.value || "").trim());
+        if (needsCriticForClientFilter) {
+          await refreshCritic();
+        }
         const q = buildReviewWorkflowFilterQueryString();
         const body = await apiFetch(`/status/${encodeURIComponent(jobId)}/review/workflow${q}`);
         renderReviewWorkflowTimeline(body);
@@ -5607,16 +5752,22 @@ def render_demo_ui_html() -> str:
             refreshComments().catch(showError);
           })
         );
-        [els.reviewWorkflowEventTypeFilter, els.reviewWorkflowCommentStatusFilter, els.reviewWorkflowStateFilter].forEach((el) =>
+        [
+          els.reviewWorkflowEventTypeFilter,
+          els.reviewWorkflowCommentStatusFilter,
+          els.reviewWorkflowStateFilter,
+          els.reviewWorkflowFindingCodeFilter,
+          els.reviewWorkflowFindingSectionFilter,
+        ].forEach((el) =>
           el.addEventListener("change", () => {
             persistUiState();
             refreshReviewWorkflow().catch(showError);
           })
         );
-        els.reviewWorkflowFindingIdFilter.addEventListener("change", () => {
+        [els.reviewWorkflowFindingIdFilter].forEach((el) => el.addEventListener("change", () => {
           persistUiState();
           refreshReviewWorkflow().catch(showError);
-        });
+        }));
         els.reviewWorkflowOverdueHoursFilter.addEventListener("change", () => {
           persistUiState();
           Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]).catch(showError);
