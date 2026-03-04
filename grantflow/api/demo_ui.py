@@ -1170,11 +1170,18 @@ def render_demo_ui_html() -> str:
             </div>
             <div class="row3" style="margin-top:10px;">
               <button id="reviewWorkflowSlaBtn" class="ghost">Load Workflow SLA</button>
+              <button id="reviewWorkflowSlaTrendsBtn" class="ghost">Load SLA Trends</button>
               <button id="reviewWorkflowSlaProfileBtn" class="ghost">Load SLA Profile</button>
-              <button id="reviewWorkflowSlaRecomputeBtn" class="secondary">Recompute SLA</button>
               <div id="reviewWorkflowSlaSummaryLine" class="footer-note mono" style="align-self:center;">
                 sla: overdue=- · breach_rate=- · oldest=-
               </div>
+            </div>
+            <div class="row3" style="margin-top:10px;">
+              <button id="reviewWorkflowSlaRecomputeBtn" class="secondary">Recompute SLA</button>
+              <div id="reviewWorkflowSlaTrendsSummaryLine" class="footer-note mono" style="align-self:center;">
+                trends: buckets=- · window=- · overdue=-
+              </div>
+              <div></div>
             </div>
             <div class="row3" style="margin-top:10px;">
               <button id="reviewWorkflowSlaExportJsonBtn" class="ghost">Export SLA JSON</button>
@@ -1214,7 +1221,14 @@ def render_demo_ui_html() -> str:
               <div class="list" id="reviewWorkflowSlaHotspotsList"></div>
             </div>
             <div style="margin-top:10px;">
+              <label>SLA Overdue Trends</label>
+              <div class="list" id="reviewWorkflowSlaTrendsList"></div>
+            </div>
+            <div style="margin-top:10px;">
               <pre id="reviewWorkflowSlaJson">{}</pre>
+            </div>
+            <div style="margin-top:10px;">
+              <pre id="reviewWorkflowSlaTrendsJson">{}</pre>
             </div>
             <div style="margin-top:10px;">
               <div id="reviewWorkflowSlaProfileSummaryLine" class="footer-note mono">profile: source=- · updated=-</div>
@@ -1539,13 +1553,17 @@ def render_demo_ui_html() -> str:
         reviewWorkflowExportJsonBtn: $("reviewWorkflowExportJsonBtn"),
         reviewWorkflowExportCsvBtn: $("reviewWorkflowExportCsvBtn"),
         reviewWorkflowSlaBtn: $("reviewWorkflowSlaBtn"),
+        reviewWorkflowSlaTrendsBtn: $("reviewWorkflowSlaTrendsBtn"),
         reviewWorkflowSlaProfileBtn: $("reviewWorkflowSlaProfileBtn"),
         reviewWorkflowSlaRecomputeBtn: $("reviewWorkflowSlaRecomputeBtn"),
         reviewWorkflowSlaExportJsonBtn: $("reviewWorkflowSlaExportJsonBtn"),
         reviewWorkflowSlaExportCsvBtn: $("reviewWorkflowSlaExportCsvBtn"),
         reviewWorkflowSlaSummaryLine: $("reviewWorkflowSlaSummaryLine"),
+        reviewWorkflowSlaTrendsSummaryLine: $("reviewWorkflowSlaTrendsSummaryLine"),
         reviewWorkflowSlaHotspotsList: $("reviewWorkflowSlaHotspotsList"),
+        reviewWorkflowSlaTrendsList: $("reviewWorkflowSlaTrendsList"),
         reviewWorkflowSlaJson: $("reviewWorkflowSlaJson"),
+        reviewWorkflowSlaTrendsJson: $("reviewWorkflowSlaTrendsJson"),
         reviewWorkflowSlaProfileSummaryLine: $("reviewWorkflowSlaProfileSummaryLine"),
         reviewWorkflowSlaProfileJson: $("reviewWorkflowSlaProfileJson"),
         metricsCards: $("metricsCards"),
@@ -4020,7 +4038,7 @@ def render_demo_ui_html() -> str:
         }
         els.reviewWorkflowFindingIdFilter.value = selectedFinding ? String(selectedFinding.findingId || "") : "";
         persistUiState();
-        await Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]);
+        await Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]);
       }
 
       function renderReviewWorkflowTimeline(body) {
@@ -4121,6 +4139,74 @@ def render_demo_ui_html() -> str:
             <div class="sub" style="margin-top:6px;">${escapeHtml(meta)}</div>
           `;
           els.reviewWorkflowSlaHotspotsList.appendChild(div);
+        }
+      }
+
+      function renderReviewWorkflowSlaTrends(body) {
+        const totalSeries = Array.isArray(body?.total_series) ? body.total_series : [];
+        const sectionSeriesRaw = body?.section_series && typeof body.section_series === "object"
+          ? body.section_series
+          : {};
+        const severitySeriesRaw = body?.severity_series && typeof body.severity_series === "object"
+          ? body.severity_series
+          : {};
+
+        const severityBucketMap = {};
+        for (const [severity, series] of Object.entries(severitySeriesRaw)) {
+          if (!Array.isArray(series)) continue;
+          const bucketMap = {};
+          for (const row of series) {
+            const bucket = String(row?.bucket || "").trim();
+            if (!bucket) continue;
+            bucketMap[bucket] = Number(row?.count || 0);
+          }
+          severityBucketMap[String(severity)] = bucketMap;
+        }
+
+        const windowStart = String(body?.time_window_start || "-");
+        const windowEnd = String(body?.time_window_end || "-");
+        const bucketCount = Number(body?.bucket_count || totalSeries.length || 0);
+        const overdueTotal = Number(body?.overdue_total || 0);
+        if (els.reviewWorkflowSlaTrendsSummaryLine) {
+          els.reviewWorkflowSlaTrendsSummaryLine.textContent =
+            `trends: buckets=${bucketCount} · window=${windowStart}..${windowEnd} · overdue=${overdueTotal}`;
+        }
+
+        els.reviewWorkflowSlaTrendsList.innerHTML = "";
+        if (!totalSeries.length) {
+          els.reviewWorkflowSlaTrendsList.innerHTML = `<div class="item"><div class="sub">No overdue trend buckets for current filters.</div></div>`;
+          return;
+        }
+
+        const sectionTotals = {};
+        for (const [section, series] of Object.entries(sectionSeriesRaw)) {
+          if (!Array.isArray(series)) continue;
+          sectionTotals[String(section)] = series.reduce((acc, row) => acc + Number(row?.count || 0), 0);
+        }
+        let topSection = "-";
+        let topSectionCount = -1;
+        for (const [section, count] of Object.entries(sectionTotals)) {
+          if (Number(count) > topSectionCount) {
+            topSection = section;
+            topSectionCount = Number(count);
+          }
+        }
+
+        for (const point of totalSeries) {
+          const bucket = String(point?.bucket || "").trim() || "unknown";
+          const total = Number(point?.count || 0);
+          const highCount = Number(severityBucketMap.high?.[bucket] || 0);
+          const mediumCount = Number(severityBucketMap.medium?.[bucket] || 0);
+          const lowCount = Number(severityBucketMap.low?.[bucket] || 0);
+          const unknownCount = Number(severityBucketMap.unknown?.[bucket] || 0);
+          const div = document.createElement("div");
+          div.className = "item";
+          div.innerHTML = `
+            <div class="title mono">${escapeHtml(`${bucket} · overdue=${total}`)}</div>
+            <div class="sub">${escapeHtml(`sev(h/m/l/u)=${highCount}/${mediumCount}/${lowCount}/${unknownCount}`)}</div>
+            <div class="sub" style="margin-top:6px;">${escapeHtml(`top_section=${topSection}${topSectionCount >= 0 ? ` (${topSectionCount})` : ""}`)}</div>
+          `;
+          els.reviewWorkflowSlaTrendsList.appendChild(div);
         }
       }
 
@@ -4717,6 +4803,19 @@ def render_demo_ui_html() -> str:
         return body;
       }
 
+      async function refreshReviewWorkflowSlaTrends() {
+        const jobId = currentJobId();
+        if (!jobId) return;
+        persistUiState();
+        const q = buildReviewWorkflowSlaFilterQueryString();
+        const body = await apiFetch(
+          `/status/${encodeURIComponent(jobId)}/review/workflow/sla/trends${q}`
+        );
+        renderReviewWorkflowSlaTrends(body);
+        setJson(els.reviewWorkflowSlaTrendsJson, body);
+        return body;
+      }
+
       async function refreshReviewWorkflowSlaProfile() {
         const jobId = currentJobId();
         if (!jobId) return;
@@ -4767,7 +4866,13 @@ def render_demo_ui_html() -> str:
         const slaPayload = body?.sla && typeof body.sla === "object" ? body.sla : {};
         renderReviewWorkflowSla(slaPayload);
         setJson(els.reviewWorkflowSlaJson, body);
-        await Promise.allSettled([refreshReviewWorkflow(), refreshComments(), refreshCritic(), refreshReviewWorkflowSlaProfile()]);
+        await Promise.allSettled([
+          refreshReviewWorkflow(),
+          refreshComments(),
+          refreshCritic(),
+          refreshReviewWorkflowSlaProfile(),
+          refreshReviewWorkflowSlaTrends(),
+        ]);
         return body;
       }
 
@@ -5072,6 +5177,7 @@ def render_demo_ui_html() -> str:
           refreshComments(),
           refreshReviewWorkflow(),
           refreshReviewWorkflowSla(),
+          refreshReviewWorkflowSlaTrends(),
           refreshReviewWorkflowSlaProfile(),
         ]);
       }
@@ -5729,9 +5835,15 @@ def render_demo_ui_html() -> str:
         );
         els.commentsBtn.addEventListener("click", () => refreshComments().catch(showError));
         els.reviewWorkflowBtn.addEventListener("click", () => {
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaProfile()]).catch(showError);
+          Promise.allSettled([
+            refreshReviewWorkflow(),
+            refreshReviewWorkflowSla(),
+            refreshReviewWorkflowSlaTrends(),
+            refreshReviewWorkflowSlaProfile(),
+          ]).catch(showError);
         });
         els.reviewWorkflowSlaBtn.addEventListener("click", () => refreshReviewWorkflowSla().catch(showError));
+        els.reviewWorkflowSlaTrendsBtn.addEventListener("click", () => refreshReviewWorkflowSlaTrends().catch(showError));
         els.reviewWorkflowSlaProfileBtn.addEventListener("click", () => refreshReviewWorkflowSlaProfile().catch(showError));
         els.reviewWorkflowSlaRecomputeBtn.addEventListener("click", () => recomputeReviewWorkflowSla().catch(showError));
         els.reviewWorkflowSlaExportJsonBtn.addEventListener("click", () =>
@@ -5742,7 +5854,12 @@ def render_demo_ui_html() -> str:
         );
         els.reviewWorkflowClearFiltersBtn.addEventListener("click", () => {
           clearReviewWorkflowFilters();
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaProfile()]).catch(showError);
+          Promise.allSettled([
+            refreshReviewWorkflow(),
+            refreshReviewWorkflowSla(),
+            refreshReviewWorkflowSlaTrends(),
+            refreshReviewWorkflowSlaProfile(),
+          ]).catch(showError);
         });
         els.reviewWorkflowExportJsonBtn.addEventListener("click", () =>
           downloadReviewWorkflowJson().catch((err) => showError(err))
@@ -5797,16 +5914,16 @@ def render_demo_ui_html() -> str:
         ].forEach((el) =>
           el.addEventListener("change", () => {
             persistUiState();
-            Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]).catch(showError);
+            Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
           })
         );
         [els.reviewWorkflowFindingIdFilter].forEach((el) => el.addEventListener("change", () => {
           persistUiState();
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]).catch(showError);
+          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
         }));
         els.reviewWorkflowOverdueHoursFilter.addEventListener("change", () => {
           persistUiState();
-          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla()]).catch(showError);
+          Promise.allSettled([refreshReviewWorkflow(), refreshReviewWorkflowSla(), refreshReviewWorkflowSlaTrends()]).catch(showError);
         });
         [
           els.reviewWorkflowSlaHighHours,

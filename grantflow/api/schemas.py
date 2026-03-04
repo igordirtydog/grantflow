@@ -259,6 +259,33 @@ class JobReviewWorkflowSLAFiltersPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobReviewWorkflowSLATrendPointPublicResponse(BaseModel):
+    bucket: str
+    count: int
+
+    model_config = ConfigDict(extra="allow")
+
+
+class JobReviewWorkflowSLATrendsPublicResponse(BaseModel):
+    job_id: str
+    status: str
+    generated_at: str
+    filters: JobReviewWorkflowSLAFiltersPublicResponse
+    overdue_after_hours: int
+    overdue_finding_count: int
+    overdue_comment_count: int
+    overdue_total: int
+    bucket_granularity: str = "day"
+    bucket_count: int = 0
+    time_window_start: Optional[str] = None
+    time_window_end: Optional[str] = None
+    total_series: list[JobReviewWorkflowSLATrendPointPublicResponse]
+    severity_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+    section_series: Dict[str, list[JobReviewWorkflowSLATrendPointPublicResponse]]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobReviewWorkflowSLAPublicResponse(BaseModel):
     job_id: str
     status: str

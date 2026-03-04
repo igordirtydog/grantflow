@@ -840,7 +840,7 @@ def public_job_review_workflow_payload(
     }
 
 
-def public_job_review_workflow_sla_payload(
+def _review_workflow_sla_snapshot(
     job_id: str,
     job: Dict[str, Any],
     *,
@@ -850,7 +850,6 @@ def public_job_review_workflow_sla_payload(
     comment_status: Optional[str] = None,
     workflow_state: Optional[str] = None,
     overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
-    top_limit: int = 5,
 ) -> Dict[str, Any]:
     workflow_payload = public_job_review_workflow_payload(
         job_id,
@@ -988,9 +987,6 @@ def public_job_review_workflow_sla_payload(
         return overdue_hours_value, due_at
 
     overdue_rows.sort(key=_sort_key, reverse=True)
-    top_n = max(1, int(top_limit))
-    top_overdue = overdue_rows[:top_n]
-    oldest_overdue = top_overdue[0] if top_overdue else None
 
     unresolved_total = unresolved_finding_count + unresolved_comment_count
     overdue_total = overdue_finding_count + overdue_comment_count
@@ -1001,7 +997,7 @@ def public_job_review_workflow_sla_payload(
         "status": str(job.get("status") or ""),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "filters": sla_filters,
-        "overdue_after_hours": int(overdue_after_hours),
+        "overdue_after_hours": overdue_after_hours_value,
         "finding_total": len(findings_list),
         "comment_total": len(comments_list),
         "unresolved_finding_count": unresolved_finding_count,
@@ -1013,9 +1009,126 @@ def public_job_review_workflow_sla_payload(
         "breach_rate": round(breach_rate, 4) if breach_rate is not None else None,
         "overdue_by_severity": overdue_by_severity,
         "overdue_by_section": overdue_by_section,
+        "workflow_summary": summary_dict,
+        "overdue_rows": overdue_rows,
+    }
+
+
+def public_job_review_workflow_sla_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    top_limit: int = 5,
+) -> Dict[str, Any]:
+    snapshot = _review_workflow_sla_snapshot(
+        job_id,
+        job,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    overdue_rows = snapshot.pop("overdue_rows", [])
+    overdue_rows_list = (
+        [item for item in overdue_rows if isinstance(item, dict)] if isinstance(overdue_rows, list) else []
+    )
+    top_n = max(1, int(top_limit))
+    top_overdue = overdue_rows_list[:top_n]
+    oldest_overdue = top_overdue[0] if top_overdue else None
+    return {
+        **snapshot,
         "oldest_overdue": oldest_overdue,
         "top_overdue": top_overdue,
-        "workflow_summary": summary_dict,
+    }
+
+
+def public_job_review_workflow_sla_trends_payload(
+    job_id: str,
+    job: Dict[str, Any],
+    *,
+    finding_id: Optional[str] = None,
+    finding_code: Optional[str] = None,
+    finding_section: Optional[str] = None,
+    comment_status: Optional[str] = None,
+    workflow_state: Optional[str] = None,
+    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+) -> Dict[str, Any]:
+    snapshot = _review_workflow_sla_snapshot(
+        job_id,
+        job,
+        finding_id=finding_id,
+        finding_code=finding_code,
+        finding_section=finding_section,
+        comment_status=comment_status,
+        workflow_state=workflow_state,
+        overdue_after_hours=overdue_after_hours,
+    )
+    overdue_rows = snapshot.pop("overdue_rows", [])
+    overdue_rows_list = (
+        [item for item in overdue_rows if isinstance(item, dict)] if isinstance(overdue_rows, list) else []
+    )
+
+    total_bucket_counts: Dict[str, int] = {}
+    severity_bucket_counts: Dict[str, Dict[str, int]] = {}
+    section_bucket_counts: Dict[str, Dict[str, int]] = {}
+
+    for row in overdue_rows_list:
+        due_dt = _parse_event_ts(row.get("due_at"))
+        bucket = due_dt.date().isoformat() if due_dt is not None else "unknown"
+        total_bucket_counts[bucket] = int(total_bucket_counts.get(bucket) or 0) + 1
+
+        severity = str(row.get("severity") or "").strip().lower() or "unknown"
+        severity_counts = severity_bucket_counts.setdefault(severity, {})
+        severity_counts[bucket] = int(severity_counts.get(bucket) or 0) + 1
+
+        section = str(row.get("section") or "").strip().lower() or "unknown"
+        section_counts = section_bucket_counts.setdefault(section, {})
+        section_counts[bucket] = int(section_counts.get(bucket) or 0) + 1
+
+    def _series_rows(counts: Dict[str, int]) -> list[Dict[str, Any]]:
+        return [{"bucket": bucket, "count": int(counts.get(bucket) or 0)} for bucket in sorted(counts.keys())]
+
+    total_series = _series_rows(total_bucket_counts)
+    severity_series: Dict[str, list[Dict[str, Any]]] = {}
+    for level in ("high", "medium", "low", "unknown"):
+        severity_series[level] = _series_rows(severity_bucket_counts.get(level, {}))
+    for level in sorted(severity_bucket_counts.keys()):
+        if level in severity_series:
+            continue
+        severity_series[level] = _series_rows(severity_bucket_counts.get(level, {}))
+
+    section_series: Dict[str, list[Dict[str, Any]]] = {}
+    for section in sorted(section_bucket_counts.keys()):
+        section_series[section] = _series_rows(section_bucket_counts.get(section, {}))
+
+    dated_buckets = []
+    for point in total_series:
+        bucket = str(point.get("bucket") or "").strip()
+        try:
+            datetime.strptime(bucket, "%Y-%m-%d")
+            dated_buckets.append(bucket)
+        except ValueError:
+            continue
+    time_window_start = dated_buckets[0] if dated_buckets else None
+    time_window_end = dated_buckets[-1] if dated_buckets else None
+
+    return {
+        **snapshot,
+        "bucket_granularity": "day",
+        "bucket_count": len(total_series),
+        "time_window_start": time_window_start,
+        "time_window_end": time_window_end,
+        "total_series": total_series,
+        "severity_series": severity_series,
+        "section_series": section_series,
     }
 
 
