@@ -226,6 +226,7 @@ class RedisJobRunner:
         self._completed = 0
         self._failed = 0
         self._retried = 0
+        self._requeued = 0
         self._dead_lettered = 0
         self._last_error: Optional[str] = None
         self._task_registry: dict[str, TaskCallable] = {}
@@ -303,6 +304,7 @@ class RedisJobRunner:
             completed = int(self._completed)
             failed = int(self._failed)
             retried = int(self._retried)
+            requeued = int(self._requeued)
             dead_lettered = int(self._dead_lettered)
             running = bool(self._started)
             active_workers = sum(1 for t in self._threads if t.is_alive())
@@ -328,6 +330,7 @@ class RedisJobRunner:
             "completed_count": completed,
             "failed_count": failed,
             "retry_count": retried,
+            "requeued_count": requeued,
             "dead_lettered_count": dead_lettered,
             "redis_url": _mask_redis_url(self.redis_url),
             "queue_name": self.queue_name,
@@ -386,6 +389,165 @@ class RedisJobRunner:
     def _record_error(self, exc: Exception) -> None:
         with self._lock:
             self._last_error = str(exc)
+
+    def _decode_queue_payload(self, raw_payload: Any) -> tuple[str, Optional[dict[str, Any]]]:
+        if isinstance(raw_payload, (bytes, bytearray)):
+            decoded_payload = raw_payload.decode("utf-8", errors="replace")
+        else:
+            decoded_payload = str(raw_payload)
+        try:
+            payload = json.loads(decoded_payload)
+        except Exception:
+            return decoded_payload, None
+        return decoded_payload, payload if isinstance(payload, dict) else None
+
+    def _is_task_payload(self, payload: Any) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        task_name = str(payload.get("task_name") or "").strip()
+        return (
+            bool(task_name)
+            and isinstance(payload.get("args", []), list)
+            and isinstance(payload.get("kwargs", {}), dict)
+        )
+
+    def list_dead_letters(self, limit: int = 50) -> Dict[str, Any]:
+        client = self._ensure_client()
+        if client is None:
+            raise RuntimeError("Redis client is unavailable")
+        limited = max(1, min(_coerce_int(limit, 50), 500))
+        try:
+            raw_items = client.lrange(self.dead_letter_queue_name, 0, limited - 1)
+        except Exception as exc:
+            self._record_error(exc)
+            raise RuntimeError("Failed to read dead-letter queue") from exc
+
+        items: list[dict[str, Any]] = []
+        for idx, raw in enumerate(raw_items):
+            decoded, parsed = self._decode_queue_payload(raw)
+            if parsed is not None:
+                item = dict(parsed)
+            else:
+                item = {"raw_payload": decoded, "reason": "unparseable_dead_letter_item"}
+            if "task_name" not in item:
+                embedded = item.get("payload")
+                if isinstance(embedded, dict):
+                    token = str(embedded.get("task_name") or "").strip()
+                    if token:
+                        item["task_name"] = token
+            item["index"] = idx
+            items.append(item)
+
+        size = self._redis_queue_size(self.dead_letter_queue_name)
+        return {
+            "mode": "redis_queue",
+            "queue_name": self.queue_name,
+            "dead_letter_queue_name": self.dead_letter_queue_name,
+            "dead_letter_queue_size": int(size if size is not None else -1),
+            "items": items,
+        }
+
+    def requeue_dead_letters(self, limit: int = 10, *, reset_attempts: bool = True) -> Dict[str, Any]:
+        client = self._ensure_client()
+        if client is None:
+            raise RuntimeError("Redis client is unavailable")
+        limited = max(1, min(_coerce_int(limit, 10), 500))
+        existing_size = self._redis_queue_size(self.dead_letter_queue_name)
+        if existing_size is None or existing_size <= 0:
+            return {
+                "mode": "redis_queue",
+                "queue_name": self.queue_name,
+                "dead_letter_queue_name": self.dead_letter_queue_name,
+                "requested_count": limited,
+                "affected_count": 0,
+                "skipped_count": 0,
+                "dead_letter_queue_size": max(0, int(existing_size or 0)),
+            }
+
+        to_scan = min(limited, max(0, int(existing_size)))
+        moved = 0
+        skipped = 0
+        for _ in range(to_scan):
+            try:
+                raw_item = client.lpop(self.dead_letter_queue_name)
+            except Exception as exc:
+                self._record_error(exc)
+                break
+            if raw_item is None:
+                break
+            decoded, parsed = self._decode_queue_payload(raw_item)
+            candidate: Optional[dict[str, Any]] = None
+            if isinstance(parsed, dict):
+                payload = parsed.get("payload")
+                if self._is_task_payload(payload):
+                    candidate = dict(payload)
+                elif self._is_task_payload(parsed):
+                    candidate = dict(parsed)
+            if candidate is None:
+                skipped += 1
+                try:
+                    client.rpush(self.dead_letter_queue_name, decoded)
+                except Exception as exc:
+                    self._record_error(exc)
+                continue
+
+            if reset_attempts:
+                candidate["attempt"] = 0
+            candidate.pop("last_error", None)
+            candidate.pop("last_error_at", None)
+            if not isinstance(candidate.get("max_attempts"), int) or int(candidate.get("max_attempts") or 0) < 1:
+                candidate["max_attempts"] = self.max_attempts
+
+            try:
+                encoded = json.dumps(candidate, ensure_ascii=True, separators=(",", ":"))
+                client.rpush(self.queue_name, encoded)
+                moved += 1
+            except Exception as exc:
+                self._record_error(exc)
+                skipped += 1
+                try:
+                    client.rpush(self.dead_letter_queue_name, decoded)
+                except Exception as nested_exc:
+                    self._record_error(nested_exc)
+
+        if moved:
+            with self._lock:
+                self._requeued += moved
+        size = self._redis_queue_size(self.dead_letter_queue_name)
+        return {
+            "mode": "redis_queue",
+            "queue_name": self.queue_name,
+            "dead_letter_queue_name": self.dead_letter_queue_name,
+            "requested_count": limited,
+            "affected_count": moved,
+            "skipped_count": skipped,
+            "dead_letter_queue_size": int(size if size is not None else -1),
+        }
+
+    def purge_dead_letters(self, limit: int = 100) -> Dict[str, Any]:
+        client = self._ensure_client()
+        if client is None:
+            raise RuntimeError("Redis client is unavailable")
+        limited = max(1, min(_coerce_int(limit, 100), 5000))
+        removed = 0
+        for _ in range(limited):
+            try:
+                raw_item = client.lpop(self.dead_letter_queue_name)
+            except Exception as exc:
+                self._record_error(exc)
+                break
+            if raw_item is None:
+                break
+            removed += 1
+        size = self._redis_queue_size(self.dead_letter_queue_name)
+        return {
+            "mode": "redis_queue",
+            "queue_name": self.queue_name,
+            "dead_letter_queue_name": self.dead_letter_queue_name,
+            "requested_count": limited,
+            "affected_count": removed,
+            "dead_letter_queue_size": int(size if size is not None else -1),
+        }
 
     def _resolve_task_callable(self, task_name: str) -> Optional[TaskCallable]:
         with self._lock:

@@ -43,6 +43,25 @@ class _FakeRedisClient:
                 return None
             time.sleep(0.01)
 
+    def lrange(self, queue_name: str, start: int, end: int):
+        with self._lock:
+            queue = list(self._queues.get(queue_name, []))
+        safe_start = max(0, int(start))
+        safe_end = int(end)
+        if safe_end < 0:
+            safe_end = len(queue) + safe_end
+        safe_end = min(safe_end, len(queue) - 1)
+        if safe_start > safe_end or safe_start >= len(queue):
+            return []
+        return queue[safe_start : safe_end + 1]
+
+    def lpop(self, queue_name: str):
+        with self._lock:
+            queue = self._queues.setdefault(queue_name, [])
+            if not queue:
+                return None
+            return queue.pop(0)
+
     def queue_snapshot(self, queue_name: str) -> list[str]:
         with self._lock:
             raw = list(self._queues.get(queue_name, []))
@@ -233,5 +252,68 @@ def test_redis_job_runner_dead_letters_after_max_attempts():
         assert diag["dead_lettered_count"] >= 1
         dlq_payloads = fake_client.queue_snapshot(diag["dead_letter_queue_name"])
         assert len(dlq_payloads) >= 1
+    finally:
+        runner.stop()
+
+
+def test_redis_job_runner_lists_and_requeues_dead_letters():
+    fake_client = _FakeRedisClient()
+    seen = {"calls": 0}
+
+    def _fail_once_then_succeed(value: int) -> None:
+        seen["calls"] += 1
+        if seen["calls"] == 1:
+            raise RuntimeError("first call fails")
+        _redis_test_task(value)
+
+    with _REDIS_OBSERVED_LOCK:
+        _REDIS_TEST_OBSERVED.clear()
+    runner = RedisJobRunner(
+        worker_count=1,
+        queue_maxsize=8,
+        redis_url="redis://local-test/0",
+        queue_name="grantflow:test:jobs:dlq-requeue",
+        pop_timeout_seconds=0.1,
+        max_attempts=1,
+        redis_client_factory=lambda _url: fake_client,
+    )
+    try:
+        assert runner.submit(_fail_once_then_succeed, 21) is True
+        assert _wait_until(lambda: runner.diagnostics()["dead_lettered_count"] >= 1, timeout_s=2.0)
+        listed = runner.list_dead_letters(limit=5)
+        assert listed["dead_letter_queue_size"] >= 1
+        assert listed["items"]
+        first = listed["items"][0]
+        assert first.get("reason") == "task_execution_error"
+        assert first.get("task_name")
+
+        requeued = runner.requeue_dead_letters(limit=1)
+        assert requeued["affected_count"] == 1
+        assert _wait_until(lambda: _REDIS_TEST_OBSERVED == [21], timeout_s=2.0)
+        diag = runner.diagnostics()
+        assert diag["requeued_count"] >= 1
+    finally:
+        runner.stop()
+
+
+def test_redis_job_runner_purges_dead_letters():
+    fake_client = _FakeRedisClient()
+    runner = RedisJobRunner(
+        worker_count=1,
+        queue_maxsize=8,
+        redis_url="redis://local-test/0",
+        queue_name="grantflow:test:jobs:dlq-purge",
+        pop_timeout_seconds=0.1,
+        redis_client_factory=lambda _url: fake_client,
+    )
+    try:
+        fake_client.rpush(runner.dead_letter_queue_name, '{"reason":"one"}')
+        fake_client.rpush(runner.dead_letter_queue_name, '{"reason":"two"}')
+        listed = runner.list_dead_letters(limit=10)
+        assert listed["dead_letter_queue_size"] == 2
+        purge = runner.purge_dead_letters(limit=1)
+        assert purge["affected_count"] == 1
+        listed_after = runner.list_dead_letters(limit=10)
+        assert listed_after["dead_letter_queue_size"] == 1
     finally:
         runner.stop()

@@ -66,6 +66,8 @@ from grantflow.api.public_views import (
     public_portfolio_review_workflow_trends_payload,
 )
 from grantflow.api.schemas import (
+    DeadLetterQueueListPublicResponse,
+    DeadLetterQueueMutationPublicResponse,
     CriticFindingsBulkStatusPublicResponse,
     CriticFindingsListPublicResponse,
     CriticFatalFlawPublicResponse,
@@ -4005,6 +4007,73 @@ def readiness_check():
     if not ready:
         raise HTTPException(status_code=503, detail=payload)
     return payload
+
+
+def _redis_queue_admin_runner(required_methods: tuple[str, ...]) -> Any:
+    if not _uses_redis_queue_runner():
+        raise HTTPException(
+            status_code=409,
+            detail="Dead-letter queue management requires GRANTFLOW_JOB_RUNNER_MODE=redis_queue",
+        )
+    runner = JOB_RUNNER
+    for method_name in required_methods:
+        if not callable(getattr(runner, method_name, None)):
+            raise HTTPException(
+                status_code=409, detail="Redis queue admin operations are unavailable in current runner"
+            )
+    return runner
+
+
+@app.get(
+    "/queue/dead-letter",
+    response_model=DeadLetterQueueListPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_dead_letter_queue(
+    request: Request,
+    limit: int = Query(default=50, ge=1, le=500),
+):
+    require_api_key_if_configured(request, for_read=True)
+    runner = _redis_queue_admin_runner(("list_dead_letters",))
+    try:
+        return runner.list_dead_letters(limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post(
+    "/queue/dead-letter/requeue",
+    response_model=DeadLetterQueueMutationPublicResponse,
+    response_model_exclude_none=True,
+)
+def requeue_dead_letter_queue(
+    request: Request,
+    limit: int = Query(default=10, ge=1, le=500),
+    reset_attempts: bool = Query(default=True),
+):
+    require_api_key_if_configured(request)
+    runner = _redis_queue_admin_runner(("requeue_dead_letters",))
+    try:
+        return runner.requeue_dead_letters(limit=limit, reset_attempts=reset_attempts)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.delete(
+    "/queue/dead-letter",
+    response_model=DeadLetterQueueMutationPublicResponse,
+    response_model_exclude_none=True,
+)
+def purge_dead_letter_queue(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=5000),
+):
+    require_api_key_if_configured(request)
+    runner = _redis_queue_admin_runner(("purge_dead_letters",))
+    try:
+        return runner.purge_dead_letters(limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @app.get("/donors")

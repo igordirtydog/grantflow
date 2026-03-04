@@ -9082,6 +9082,59 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     ingest_inventory_export_auth = client.get("/ingest/inventory/export", headers={"X-API-Key": "test-secret"})
     assert ingest_inventory_export_auth.status_code == 200
 
+    class _QueueAdminRunnerStub:
+        def list_dead_letters(self, limit: int = 50):
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "dead_letter_queue_size": 0,
+                "items": [],
+            }
+
+        def requeue_dead_letters(self, limit: int = 10, reset_attempts: bool = True):
+            _ = reset_attempts
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "requested_count": int(limit),
+                "affected_count": 0,
+                "skipped_count": 0,
+                "dead_letter_queue_size": 0,
+            }
+
+        def purge_dead_letters(self, limit: int = 100):
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "requested_count": int(limit),
+                "affected_count": 0,
+                "dead_letter_queue_size": 0,
+            }
+
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module, "JOB_RUNNER", _QueueAdminRunnerStub())
+
+    queue_dead_letter_unauth = client.get("/queue/dead-letter")
+    assert queue_dead_letter_unauth.status_code == 401
+
+    queue_dead_letter_auth = client.get("/queue/dead-letter", headers={"X-API-Key": "test-secret"})
+    assert queue_dead_letter_auth.status_code == 200
+
+    queue_requeue_unauth = client.post("/queue/dead-letter/requeue")
+    assert queue_requeue_unauth.status_code == 401
+
+    queue_requeue_auth = client.post("/queue/dead-letter/requeue", headers={"X-API-Key": "test-secret"})
+    assert queue_requeue_auth.status_code == 200
+
+    queue_purge_unauth = client.delete("/queue/dead-letter")
+    assert queue_purge_unauth.status_code == 401
+
+    queue_purge_auth = client.delete("/queue/dead-letter", headers={"X-API-Key": "test-secret"})
+    assert queue_purge_auth.status_code == 200
+
     pending_unauth = client.get("/hitl/pending")
     assert pending_unauth.status_code == 401
 
@@ -9114,6 +9167,15 @@ def test_openapi_declares_api_key_security_scheme():
     )
     ingest_inventory_export_security = (
         ((spec.get("paths") or {}).get("/ingest/inventory/export") or {}).get("get") or {}
+    ).get("security")
+    queue_dead_letter_security = (((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("get") or {}).get(
+        "security"
+    )
+    queue_dead_letter_requeue_security = (
+        ((spec.get("paths") or {}).get("/queue/dead-letter/requeue") or {}).get("post") or {}
+    ).get("security")
+    queue_dead_letter_purge_security = (
+        ((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("delete") or {}
     ).get("security")
     cancel_security = (((spec.get("paths") or {}).get("/cancel/{job_id}") or {}).get("post") or {}).get("security")
     status_security = (((spec.get("paths") or {}).get("/status/{job_id}") or {}).get("get") or {}).get("security")
@@ -9645,6 +9707,27 @@ def test_openapi_declares_api_key_security_scheme():
         .get("application/json", {})
         .get("schema")
     )
+    queue_dead_letter_response_schema = (
+        ((((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("get") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    queue_dead_letter_requeue_response_schema = (
+        ((((spec.get("paths") or {}).get("/queue/dead-letter/requeue") or {}).get("post") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    queue_dead_letter_purge_response_schema = (
+        ((((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("delete") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     assert generate_security == [{"ApiKeyAuth": []}]
     assert generate_preflight_security == [{"ApiKeyAuth": []}]
     assert ingest_security == [{"ApiKeyAuth": []}]
@@ -9652,6 +9735,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert ingest_recent_security == [{"ApiKeyAuth": []}]
     assert ingest_inventory_security == [{"ApiKeyAuth": []}]
     assert ingest_inventory_export_security == [{"ApiKeyAuth": []}]
+    assert queue_dead_letter_security == [{"ApiKeyAuth": []}]
+    assert queue_dead_letter_requeue_security == [{"ApiKeyAuth": []}]
+    assert queue_dead_letter_purge_security == [{"ApiKeyAuth": []}]
     assert cancel_security == [{"ApiKeyAuth": []}]
     assert status_security == [{"ApiKeyAuth": []}]
     assert status_citations_security == [{"ApiKeyAuth": []}]
@@ -9780,6 +9866,13 @@ def test_openapi_declares_api_key_security_scheme():
     assert pending_response_schema == {"$ref": "#/components/schemas/HITLPendingListPublicResponse"}
     assert ingest_recent_response_schema == {"$ref": "#/components/schemas/IngestRecentListPublicResponse"}
     assert ingest_inventory_response_schema == {"$ref": "#/components/schemas/IngestInventoryPublicResponse"}
+    assert queue_dead_letter_response_schema == {"$ref": "#/components/schemas/DeadLetterQueueListPublicResponse"}
+    assert queue_dead_letter_requeue_response_schema == {
+        "$ref": "#/components/schemas/DeadLetterQueueMutationPublicResponse"
+    }
+    assert queue_dead_letter_purge_response_schema == {
+        "$ref": "#/components/schemas/DeadLetterQueueMutationPublicResponse"
+    }
 
     schemas = (spec.get("components") or {}).get("schemas") or {}
     assert "JobStatusPublicResponse" in schemas
@@ -11122,6 +11215,78 @@ def test_generate_returns_503_when_redis_queue_is_unavailable(monkeypatch):
     )
     assert response.status_code == 503
     assert "Job queue is full" in str(response.json()["detail"])
+
+
+def test_dead_letter_queue_endpoints_require_redis_queue_mode(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "background_tasks")
+
+    list_resp = client.get("/queue/dead-letter")
+    assert list_resp.status_code == 409
+    assert "redis_queue" in str(list_resp.json()["detail"])
+
+    requeue_resp = client.post("/queue/dead-letter/requeue")
+    assert requeue_resp.status_code == 409
+    assert "redis_queue" in str(requeue_resp.json()["detail"])
+
+    purge_resp = client.delete("/queue/dead-letter")
+    assert purge_resp.status_code == 409
+    assert "redis_queue" in str(purge_resp.json()["detail"])
+
+
+def test_dead_letter_queue_endpoints_use_runner_in_redis_mode(monkeypatch):
+    class _StubRunner:
+        def list_dead_letters(self, limit: int = 50):
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "dead_letter_queue_size": 1,
+                "items": [{"index": 0, "task_name": "grantflow.api.app:_run_pipeline_to_completion_by_job_id"}],
+            }
+
+        def requeue_dead_letters(self, limit: int = 10, reset_attempts: bool = True):
+            _ = reset_attempts
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "requested_count": int(limit),
+                "affected_count": 1,
+                "skipped_count": 0,
+                "dead_letter_queue_size": 0,
+            }
+
+        def purge_dead_letters(self, limit: int = 100):
+            return {
+                "mode": "redis_queue",
+                "queue_name": "grantflow:jobs",
+                "dead_letter_queue_name": "grantflow:jobs:dead",
+                "requested_count": int(limit),
+                "affected_count": 1,
+                "dead_letter_queue_size": 0,
+            }
+
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module, "JOB_RUNNER", _StubRunner())
+
+    listed = client.get("/queue/dead-letter", params={"limit": 5})
+    assert listed.status_code == 200
+    listed_body = listed.json()
+    assert listed_body["mode"] == "redis_queue"
+    assert listed_body["dead_letter_queue_size"] == 1
+    assert listed_body["items"]
+
+    requeue = client.post("/queue/dead-letter/requeue", params={"limit": 2, "reset_attempts": True})
+    assert requeue.status_code == 200
+    requeue_body = requeue.json()
+    assert requeue_body["affected_count"] == 1
+    assert requeue_body["requested_count"] == 2
+
+    purge = client.delete("/queue/dead-letter", params={"limit": 3})
+    assert purge.status_code == 200
+    purge_body = purge.json()
+    assert purge_body["affected_count"] == 1
+    assert purge_body["requested_count"] == 3
 
 
 def test_resume_returns_503_and_keeps_pending_hitl_when_queue_full(monkeypatch):

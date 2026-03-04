@@ -143,6 +143,10 @@ Notes:
 - `redis_queue` uses Redis LIST/BLPOP for queue persistence and worker coordination; requires a reachable Redis instance.
 - `redis_queue` retries transient task failures up to `GRANTFLOW_JOB_RUNNER_REDIS_MAX_ATTEMPTS`; exhausted jobs are moved to dead-letter queue.
 - Use `GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED=false` on API when running a dedicated worker process.
+- Dead-letter ops (redis mode only):
+  - `GET /queue/dead-letter?limit=50`
+  - `POST /queue/dead-letter/requeue?limit=10&reset_attempts=true`
+  - `DELETE /queue/dead-letter?limit=100`
 
 Dedicated worker process (for `redis_queue`):
 

@@ -1505,3 +1505,39 @@ class GeneratePreflightPublicResponse(BaseModel):
     warnings: list[GeneratePreflightWarningPublicResponse]
 
     model_config = ConfigDict(extra="allow")
+
+
+class DeadLetterQueueItemPublicResponse(BaseModel):
+    index: int
+    task_name: Optional[str] = None
+    reason: Optional[str] = None
+    attempt: Optional[int] = None
+    max_attempts: Optional[int] = None
+    failed_at: Optional[float] = None
+    error: Optional[str] = None
+    payload: Optional[Dict[str, Any]] = None
+    raw_payload: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class DeadLetterQueueListPublicResponse(BaseModel):
+    mode: str
+    queue_name: str
+    dead_letter_queue_name: str
+    dead_letter_queue_size: int
+    items: list[DeadLetterQueueItemPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class DeadLetterQueueMutationPublicResponse(BaseModel):
+    mode: str
+    queue_name: str
+    dead_letter_queue_name: str
+    requested_count: int
+    affected_count: int
+    dead_letter_queue_size: int
+    skipped_count: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
