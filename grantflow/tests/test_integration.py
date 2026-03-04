@@ -3920,6 +3920,14 @@ def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     body = resp.json()
     assert body["job_id"] == job_id
     assert body["status"] == "done"
+    assert body["filters"] == {
+        "finding_id": None,
+        "finding_code": None,
+        "finding_section": None,
+        "comment_status": None,
+        "workflow_state": None,
+        "overdue_after_hours": 2,
+    }
     assert body["overdue_after_hours"] == 2
     assert body["finding_total"] == 3
     assert body["comment_total"] == 3
@@ -3944,6 +3952,8 @@ def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     )
     assert section_filtered.status_code == 200
     section_payload = section_filtered.json()
+    assert section_payload["filters"]["finding_section"] == "logframe"
+    assert section_payload["filters"]["overdue_after_hours"] == 2
     assert section_payload["finding_total"] == 1
     assert section_payload["comment_total"] == 1
     assert section_payload["overdue_total"] == 0
@@ -3955,6 +3965,8 @@ def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     )
     assert code_filtered.status_code == 200
     code_payload = code_filtered.json()
+    assert code_payload["filters"]["finding_code"] == "TOC_SCHEMA_INVALID"
+    assert code_payload["filters"]["overdue_after_hours"] == 2
     assert code_payload["finding_total"] == 1
     assert code_payload["comment_total"] == 1
     assert code_payload["overdue_total"] == 2
@@ -3966,6 +3978,8 @@ def test_status_review_workflow_sla_endpoint_aggregates_overdue_hotspots():
     )
     assert workflow_filtered.status_code == 200
     workflow_payload = workflow_filtered.json()
+    assert workflow_payload["filters"]["workflow_state"] == "pending"
+    assert workflow_payload["filters"]["overdue_after_hours"] == 2
     assert workflow_payload["overdue_total"] == 0
     assert workflow_payload["finding_total"] == 1
     assert workflow_payload["comment_total"] == 1
@@ -6835,6 +6849,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert "CriticFindingsListSummaryPublicResponse" in schemas
     assert "JobReviewWorkflowPublicResponse" in schemas
     assert "JobReviewWorkflowSLAPublicResponse" in schemas
+    assert "JobReviewWorkflowSLAFiltersPublicResponse" in schemas
     assert "JobReviewWorkflowSLAProfilePublicResponse" in schemas
     assert "JobReviewWorkflowSLARecomputePublicResponse" in schemas
     assert "JobReviewWorkflowSLAItemPublicResponse" in schemas
@@ -6910,7 +6925,21 @@ def test_openapi_declares_api_key_security_scheme():
         if isinstance(schemas.get("PortfolioMetricsFiltersPublicResponse"), dict)
         else {}
     )
+    review_workflow_sla_filters_schema_props = (
+        ((schemas.get("JobReviewWorkflowSLAFiltersPublicResponse") or {}).get("properties") or {})
+        if isinstance(schemas.get("JobReviewWorkflowSLAFiltersPublicResponse"), dict)
+        else {}
+    )
     assert "toc_text_risk_level" in portfolio_filters_schema_props
+    for name in (
+        "finding_id",
+        "finding_code",
+        "finding_section",
+        "comment_status",
+        "workflow_state",
+        "overdue_after_hours",
+    ):
+        assert name in review_workflow_sla_filters_schema_props
 
 
 def test_ingest_endpoint_uploads_to_donor_namespace(monkeypatch):

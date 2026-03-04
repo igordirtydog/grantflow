@@ -870,6 +870,22 @@ def public_job_review_workflow_sla_payload(
     summary = workflow_payload.get("summary")
     summary_dict = summary if isinstance(summary, dict) else {}
     reference_ts = _parse_event_ts(summary_dict.get("last_activity_at"))
+    workflow_filters = workflow_payload.get("filters")
+    workflow_filters_dict = workflow_filters if isinstance(workflow_filters, dict) else {}
+    overdue_after_hours_value = _coerce_int(
+        workflow_filters_dict.get("overdue_after_hours"),
+        default=_coerce_int(overdue_after_hours, default=REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS),
+    )
+    if overdue_after_hours_value <= 0:
+        overdue_after_hours_value = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS
+    sla_filters = {
+        "finding_id": str(workflow_filters_dict.get("finding_id") or "").strip() or None,
+        "finding_code": str(workflow_filters_dict.get("finding_code") or "").strip() or None,
+        "finding_section": str(workflow_filters_dict.get("finding_section") or "").strip() or None,
+        "comment_status": str(workflow_filters_dict.get("comment_status") or "").strip() or None,
+        "workflow_state": str(workflow_filters_dict.get("workflow_state") or "").strip() or None,
+        "overdue_after_hours": overdue_after_hours_value,
+    }
 
     finding_severity_by_id: Dict[str, str] = {}
     for row in findings_list:
@@ -984,6 +1000,7 @@ def public_job_review_workflow_sla_payload(
         "job_id": str(job_id),
         "status": str(job.get("status") or ""),
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "filters": sla_filters,
         "overdue_after_hours": int(overdue_after_hours),
         "finding_total": len(findings_list),
         "comment_total": len(comments_list),

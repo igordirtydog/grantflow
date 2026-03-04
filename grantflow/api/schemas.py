@@ -248,10 +248,22 @@ class JobReviewWorkflowSLAItemPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class JobReviewWorkflowSLAFiltersPublicResponse(BaseModel):
+    finding_id: Optional[str] = None
+    finding_code: Optional[str] = None
+    finding_section: Optional[str] = None
+    comment_status: Optional[str] = None
+    workflow_state: Optional[str] = None
+    overdue_after_hours: Optional[int] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
 class JobReviewWorkflowSLAPublicResponse(BaseModel):
     job_id: str
     status: str
     generated_at: str
+    filters: JobReviewWorkflowSLAFiltersPublicResponse
     overdue_after_hours: int
     finding_total: int
     comment_total: int
