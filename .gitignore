@@ -49,3 +49,4 @@ backups/
 
 # Optional local uploads/exports
 *.zip
+eval-artifacts/

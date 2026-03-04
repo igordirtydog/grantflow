@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import csv
 import gzip
 import io
 import json
-import csv
 import os
 import re
 import tempfile
@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator, Callable, Dict, Literal, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
+from openpyxl import load_workbook
 from pydantic import BaseModel, ConfigDict
 
 from grantflow.api.demo_ui import render_demo_ui_html
@@ -38,8 +39,6 @@ from grantflow.api.public_views import (
     public_job_quality_payload,
     public_job_review_workflow_csv_text,
     public_job_review_workflow_payload,
-    public_job_review_workflow_trends_csv_text,
-    public_job_review_workflow_trends_payload,
     public_job_review_workflow_sla_csv_text,
     public_job_review_workflow_sla_hotspots_csv_text,
     public_job_review_workflow_sla_hotspots_payload,
@@ -48,6 +47,8 @@ from grantflow.api.public_views import (
     public_job_review_workflow_sla_payload,
     public_job_review_workflow_sla_trends_csv_text,
     public_job_review_workflow_sla_trends_payload,
+    public_job_review_workflow_trends_csv_text,
+    public_job_review_workflow_trends_payload,
     public_job_versions_payload,
     public_portfolio_metrics_csv_text,
     public_portfolio_metrics_payload,
@@ -57,9 +58,9 @@ from grantflow.api.public_views import (
     public_portfolio_review_workflow_payload,
     public_portfolio_review_workflow_sla_csv_text,
     public_portfolio_review_workflow_sla_hotspots_csv_text,
+    public_portfolio_review_workflow_sla_hotspots_payload,
     public_portfolio_review_workflow_sla_hotspots_trends_csv_text,
     public_portfolio_review_workflow_sla_hotspots_trends_payload,
-    public_portfolio_review_workflow_sla_hotspots_payload,
     public_portfolio_review_workflow_sla_payload,
     public_portfolio_review_workflow_sla_trends_csv_text,
     public_portfolio_review_workflow_sla_trends_payload,
@@ -67,12 +68,12 @@ from grantflow.api.public_views import (
     public_portfolio_review_workflow_trends_payload,
 )
 from grantflow.api.schemas import (
-    DeadLetterQueueListPublicResponse,
-    DeadLetterQueueMutationPublicResponse,
-    CriticFindingsBulkStatusPublicResponse,
-    CriticFindingsListPublicResponse,
     CriticFatalFlawPublicResponse,
     CriticFatalFlawStatusUpdatePublicResponse,
+    CriticFindingsBulkStatusPublicResponse,
+    CriticFindingsListPublicResponse,
+    DeadLetterQueueListPublicResponse,
+    DeadLetterQueueMutationPublicResponse,
     GeneratePreflightPublicResponse,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
@@ -88,21 +89,21 @@ from grantflow.api.schemas import (
     JobMetricsPublicResponse,
     JobQualitySummaryPublicResponse,
     JobReviewWorkflowPublicResponse,
-    JobReviewWorkflowTrendsPublicResponse,
-    JobReviewWorkflowSLAProfilePublicResponse,
-    JobReviewWorkflowSLARecomputePublicResponse,
-    JobReviewWorkflowSLAPublicResponse,
     JobReviewWorkflowSLAHotspotsPublicResponse,
     JobReviewWorkflowSLAHotspotsTrendsPublicResponse,
+    JobReviewWorkflowSLAProfilePublicResponse,
+    JobReviewWorkflowSLAPublicResponse,
+    JobReviewWorkflowSLARecomputePublicResponse,
     JobReviewWorkflowSLATrendsPublicResponse,
+    JobReviewWorkflowTrendsPublicResponse,
     JobStatusPublicResponse,
     JobVersionsPublicResponse,
     PortfolioMetricsPublicResponse,
     PortfolioQualityPublicResponse,
     PortfolioReviewWorkflowPublicResponse,
-    PortfolioReviewWorkflowSLAPublicResponse,
     PortfolioReviewWorkflowSLAHotspotsPublicResponse,
     PortfolioReviewWorkflowSLAHotspotsTrendsPublicResponse,
+    PortfolioReviewWorkflowSLAPublicResponse,
     PortfolioReviewWorkflowSLATrendsPublicResponse,
     PortfolioReviewWorkflowTrendsPublicResponse,
     ReviewCommentPublicResponse,
@@ -129,7 +130,11 @@ from grantflow.exporters.template_profile import normalize_export_template_key
 from grantflow.exporters.word_builder import build_docx_from_toc
 from grantflow.memory_bank.ingest import ingest_pdf_to_namespace
 from grantflow.memory_bank.vector_store import vector_store
-from openpyxl import load_workbook
+from grantflow.swarm.citations import (
+    citation_traceability_status,
+    is_non_retrieval_citation_type,
+    is_retrieval_grounded_citation_type,
+)
 from grantflow.swarm.findings import (
     canonicalize_findings,
     finding_primary_id,
@@ -141,11 +146,6 @@ from grantflow.swarm.hitl import HITLStatus, hitl_manager
 from grantflow.swarm.nodes.architect_generation import generate_toc_under_contract
 from grantflow.swarm.nodes.architect_retrieval import retrieve_architect_evidence
 from grantflow.swarm.retrieval_query import donor_query_preset_list
-from grantflow.swarm.citations import (
-    citation_traceability_status,
-    is_non_retrieval_citation_type,
-    is_retrieval_grounded_citation_type,
-)
 from grantflow.swarm.state_contract import (
     build_graph_state,
     normalize_rag_namespace,
@@ -3620,11 +3620,7 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
         checkpoint_stage = str(checkpoint.get("stage") or "").strip().lower() if isinstance(checkpoint, dict) else ""
         checkpoint_status = _checkpoint_status_token(checkpoint) if isinstance(checkpoint, dict) else ""
         if not checkpoint or checkpoint_status != HITLStatus.PENDING.value or checkpoint_stage != stage:
-            if (
-                isinstance(checkpoint, dict)
-                and checkpoint_status == HITLStatus.PENDING.value
-                and checkpoint_id
-            ):
+            if isinstance(checkpoint, dict) and checkpoint_status == HITLStatus.PENDING.value and checkpoint_id:
                 hitl_manager.cancel(checkpoint_id, "Superseded by new HITL checkpoint")
             checkpoint_id = None
     if not checkpoint_id:
@@ -4008,7 +4004,8 @@ def _portfolio_export_response(
 
 
 def _dead_letter_queue_csv_text(payload: Dict[str, Any]) -> str:
-    rows = payload.get("items") if isinstance(payload.get("items"), list) else []
+    raw_items = payload.get("items")
+    rows: list[Any] = raw_items if isinstance(raw_items, list) else []
     header = [
         "index",
         "dispatch_id",

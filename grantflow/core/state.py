@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Compatibility layer for the canonical GrantFlow graph state contract.
 
 Source of truth lives in `grantflow.swarm.state_contract`.
 `grantflow.core.state` is retained as a stable import path for consumers.
 """
+
+from __future__ import annotations
 
 from grantflow.swarm.state_contract import (
     GrantFlowState,
