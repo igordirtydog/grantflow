@@ -1,29 +1,49 @@
-# grantflow/core/state.py
 from __future__ import annotations
 
-import operator
-from typing import Annotated, List, Optional, TypedDict
+"""Compatibility layer for the canonical GrantFlow graph state contract.
 
+Source of truth lives in `grantflow.swarm.state_contract`.
+`grantflow.core.state` is retained as a stable import path for consumers.
+"""
 
-class GrantFlowState(TypedDict):
-    """Full LangGraph state for GrantFlow."""
+from grantflow.swarm.state_contract import (
+    GrantFlowState,
+    GrantFlowStateModel,
+    build_graph_state,
+    normalize_donor_token,
+    normalize_input_context,
+    normalize_rag_namespace,
+    normalize_state_contract,
+    normalized_state_copy,
+    set_state_donor_strategy,
+    set_state_iteration,
+    state_donor_id,
+    state_donor_strategy,
+    state_input_context,
+    state_iteration,
+    state_llm_mode,
+    state_max_iterations,
+    state_rag_namespace,
+    state_revision_hint,
+)
 
-    # 1. Базовые поля (Перезаписываются при каждом обновлении)
-    donor_id: str
-    input_context: dict
-    # Словари с драфтами (Можно перезаписывать, так как они обновляются целиком)
-    toc_draft: Optional[dict]
-    logframe_draft: Optional[dict]
-    final_output: Optional[dict]
-    # Метрики и Флаги
-    critic_score: Optional[float]
-    iteration_count: int
-    max_iterations: int
-    hitl_approval_toc: Optional[bool]
-    hitl_approval_logframe: Optional[bool]
-    # 2. Аккумулируемые поля (Reducers) - Значения ДОБАВЛЯЮТСЯ, а не перезаписываются!
-    # Теперь новые ошибки будут добавляться в конец списка: errors.extend(["новая ошибка"])
-    errors: Annotated[List[str], operator.add]
-    # Если мы хотим хранить историю фидбека за все итерации,
-    # лучше сделать это списком строк, а не одной строкой:
-    critic_feedback_history: Annotated[List[str], operator.add]
+__all__ = [
+    "GrantFlowState",
+    "GrantFlowStateModel",
+    "build_graph_state",
+    "normalize_donor_token",
+    "normalize_input_context",
+    "normalize_rag_namespace",
+    "normalize_state_contract",
+    "normalized_state_copy",
+    "set_state_donor_strategy",
+    "set_state_iteration",
+    "state_donor_id",
+    "state_donor_strategy",
+    "state_input_context",
+    "state_iteration",
+    "state_llm_mode",
+    "state_max_iterations",
+    "state_rag_namespace",
+    "state_revision_hint",
+]
