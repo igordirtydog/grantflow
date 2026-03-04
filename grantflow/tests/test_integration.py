@@ -4251,6 +4251,9 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
             "generate_preflight": {"warning_level": "medium", "risk_level": "medium"},
             "state": {
                 "donor_id": "usaid",
+                "critic_notes": {
+                    "rule_checks": [{"code": "TOC_TEXT_COMPLETENESS", "status": "fail"}],
+                },
                 "citations": [
                     {"citation_type": "fallback_namespace"},
                     {"citation_type": "fallback_namespace"},
@@ -4312,11 +4315,14 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
             "generate_preflight": {"warning_level": "high", "risk_level": "high"},
             "state": {
                 "donor_id": "eu",
+                "critic_notes": {
+                    "rule_checks": [{"code": "TOC_TEXT_COMPLETENESS", "status": "pass"}],
+                },
                 "citations": [
-                    {"citation_type": "rag_source"},
-                    {"citation_type": "rag_source"},
-                    {"citation_type": "rag_source"},
-                    {"citation_type": "rag_source"},
+                    {"citation_type": "rag_claim_support"},
+                    {"citation_type": "rag_claim_support"},
+                    {"citation_type": "rag_support"},
+                    {"citation_type": "rag_support"},
                 ],
             },
             "job_events": [
@@ -4386,6 +4392,7 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     assert filtered_body["filters"]["donor_id"] == "usaid"
     assert filtered_body["filters"]["status"] == "done"
     assert filtered_body["filters"]["hitl_enabled"] is True
+    assert filtered_body["filters"].get("toc_text_risk_level") is None
     assert filtered_body["job_count"] >= 1
     assert "error" not in filtered_body["status_counts"]
     assert filtered_body["warning_level_counts"]["medium"] >= 1
@@ -4408,6 +4415,14 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     assert grounding_filtered_body["grounding_risk_counts"] == {"high": grounding_filtered_body["job_count"]}
     assert grounding_filtered_body["grounding_risk_job_counts"]["high"] == grounding_filtered_body["job_count"]
     assert grounding_filtered_body["grounding_risk_job_counts"]["low"] == 0
+
+    toc_text_filtered = client.get("/portfolio/metrics", params={"toc_text_risk_level": "high"})
+    assert toc_text_filtered.status_code == 200
+    toc_text_filtered_body = toc_text_filtered.json()
+    assert toc_text_filtered_body["filters"]["toc_text_risk_level"] == "high"
+    assert toc_text_filtered_body["job_count"] >= 1
+    assert toc_text_filtered_body["status_counts"].get("done", 0) >= 1
+    assert toc_text_filtered_body["status_counts"].get("error", 0) == 0
 
 
 def test_portfolio_quality_endpoint_aggregates_quality_signals():
@@ -5890,9 +5905,19 @@ def test_openapi_declares_api_key_security_scheme():
     portfolio_quality_params = (
         (((spec.get("paths") or {}).get("/portfolio/quality") or {}).get("get") or {}).get("parameters") or []
     )
+    portfolio_metrics_params = (
+        (((spec.get("paths") or {}).get("/portfolio/metrics") or {}).get("get") or {}).get("parameters") or []
+    )
+    portfolio_metrics_export_params = (
+        (((spec.get("paths") or {}).get("/portfolio/metrics/export") or {}).get("get") or {}).get("parameters") or []
+    )
     portfolio_quality_export_params = (
         (((spec.get("paths") or {}).get("/portfolio/quality/export") or {}).get("get") or {}).get("parameters") or []
     )
+    assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_metrics_params if isinstance(p, dict)]
+    assert "toc_text_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_metrics_export_params if isinstance(p, dict)
+    ]
     assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_quality_params if isinstance(p, dict)]
     assert "toc_text_risk_level" in [
         str(p.get("name") or "") for p in portfolio_quality_export_params if isinstance(p, dict)

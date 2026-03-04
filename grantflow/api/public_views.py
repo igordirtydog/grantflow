@@ -1965,9 +1965,11 @@ def public_portfolio_metrics_payload(
     hitl_enabled: Optional[bool] = None,
     warning_level: Optional[str] = None,
     grounding_risk_level: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     warning_level_filter = _normalize_warning_level_filter(warning_level)
     grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
+    toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
     filtered: list[tuple[str, Dict[str, Any]]] = []
     for job_id, job in jobs_by_id.items():
         if not isinstance(job, dict):
@@ -1985,6 +1987,8 @@ def public_portfolio_metrics_payload(
         if warning_level_filter is not None and _job_warning_level(job) != warning_level_filter:
             continue
         if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
+            continue
+        if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
             continue
         filtered.append((str(job_id), job))
 
@@ -2032,6 +2036,7 @@ def public_portfolio_metrics_payload(
             "hitl_enabled": hitl_enabled,
             "warning_level": warning_level_filter,
             "grounding_risk_level": grounding_risk_filter,
+            "toc_text_risk_level": toc_text_risk_filter,
         },
         "status_counts": status_counts,
         "donor_counts": donor_counts,
