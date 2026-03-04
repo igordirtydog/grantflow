@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from grantflow.eval import harness
 from grantflow.eval.harness import (
@@ -366,6 +367,22 @@ def test_load_eval_cases_supports_explicit_case_files(tmp_path):
     assert len(rows) == 1
     assert rows[0]["case_id"] == "explicit_case"
     assert rows[0]["_fixture_file"] == "cases.json"
+
+
+def test_grounded_cases_expectations_are_strict_quality_gate():
+    rows = load_eval_cases(case_files=[Path("grantflow/eval/cases/grounded_cases.json")])
+    assert rows, "Expected grounded eval fixtures"
+    for case in rows:
+        expectations = case.get("expectations") if isinstance(case.get("expectations"), dict) else {}
+        assert expectations.get("min_quality_score") >= 8.0
+        assert expectations.get("min_critic_score") >= 8.0
+        assert expectations.get("max_fatal_flaws") <= 1
+        assert expectations.get("max_high_severity_fatal_flaws") == 0
+        assert expectations.get("max_rag_low_confidence_citations") == 0
+        assert expectations.get("max_fallback_namespace_citations") == 0
+        assert expectations.get("max_architect_fallback_claim_ratio") == 0.0
+        assert expectations.get("max_non_retrieval_citation_rate") <= 0.1
+        assert expectations.get("max_traceability_gap_citation_rate") <= 0.1
 
 
 def test_filter_eval_cases_supports_donor_and_case_filters():

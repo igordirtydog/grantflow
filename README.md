@@ -352,6 +352,9 @@ python -m grantflow.eval.harness \
   --text-out eval-artifacts/grounded-eval-report.txt \
   --json-out eval-artifacts/grounded-eval-report.json
 
+# grounded_cases.json is a strict gate:
+# high quality/critic minima + zero fallback namespace citations + low non-retrieval and traceability-gap limits.
+
 # Grounded A/B (architect RAG on vs off, metrics-only)
 python -m grantflow.eval.harness \
   --cases-file grantflow/eval/cases/grounded_cases.json \
