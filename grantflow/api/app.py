@@ -7377,6 +7377,8 @@ def export_artifacts(req: ExportRequest, request: Request):
                     **export_headers,
                 },
             )
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

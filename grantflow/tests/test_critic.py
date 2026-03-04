@@ -3,6 +3,7 @@ from __future__ import annotations
 import grantflow.swarm.critic_llm_policy as critic_llm_policy
 from grantflow.swarm.critic_rules import evaluate_rule_based_critic
 from grantflow.swarm.nodes.critic import (
+    RedTeamEvaluation,
     _advisory_llm_findings_context,
     _apply_advisory_llm_score_cap,
     _citation_grounding_context,
@@ -11,7 +12,6 @@ from grantflow.swarm.nodes.critic import (
     _downgrade_advisory_llm_findings,
     _is_advisory_llm_message,
     _llm_flaws_to_structured,
-    RedTeamEvaluation,
     red_team_critic,
 )
 
@@ -587,8 +587,18 @@ def test_combine_critic_scores_keeps_strict_min_when_grounding_is_not_weak():
     state = {
         "architect_retrieval": {"enabled": True, "hits_count": 4},
         "citations": [
-            {"citation_type": "rag_claim_support", "citation_confidence": 0.92},
-            {"citation_type": "rag_claim_support", "citation_confidence": 0.88},
+            {
+                "citation_type": "rag_claim_support",
+                "citation_confidence": 0.92,
+                "doc_id": "doc-1",
+                "retrieval_rank": 1,
+            },
+            {
+                "citation_type": "rag_claim_support",
+                "citation_confidence": 0.88,
+                "doc_id": "doc-2",
+                "retrieval_rank": 2,
+            },
         ],
     }
 

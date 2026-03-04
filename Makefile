@@ -3,6 +3,7 @@
 PYTHON ?= python3
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
+GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
 GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
 GROUNDED_MAX_NON_RETRIEVAL ?= 0.35
 
@@ -10,12 +11,14 @@ eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
 	$(PYTHON) -m grantflow.eval.harness \
 		--cases-file $(GROUNDED_CASES_FILE) \
+		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--suite-label grounded-ab-a \
 		--skip-expectations \
 		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-ab-a-report.json
 	$(PYTHON) -m grantflow.eval.harness \
 		--cases-file $(GROUNDED_CASES_FILE) \
+		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--suite-label grounded-ab-b \
 		--skip-expectations \
 		--force-no-architect-rag \

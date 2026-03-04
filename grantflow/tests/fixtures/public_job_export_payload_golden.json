@@ -21,6 +21,7 @@
       }
     ],
     "export_contract": {
+      "actual_primary_sheet_headers": [],
       "actual_sheets": [],
       "blocking": false,
       "donor_id": "usaid",
@@ -38,6 +39,7 @@
         "IR Description"
       ],
       "go_ahead": true,
+      "missing_required_primary_sheet_headers": [],
       "missing_required_sections": [
         "project_goal",
         "development_objectives"

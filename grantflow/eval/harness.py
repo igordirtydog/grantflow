@@ -5,7 +5,7 @@ import json
 import sys
 from copy import deepcopy
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from grantflow.core.config import config
 from grantflow.core.strategies.factory import DonorFactory
@@ -232,6 +232,71 @@ def _split_csv_args(values: list[str] | None) -> list[str]:
             if token:
                 tokens.append(token)
     return tokens
+
+
+def _resolve_manifest_entry_path(manifest_path: Path, file_value: Any) -> Path:
+    raw = str(file_value or "").strip()
+    if not raw:
+        raise ValueError("Manifest row is missing file path")
+    candidate = Path(raw)
+    if candidate.is_absolute():
+        return candidate
+    cwd_candidate = Path.cwd() / candidate
+    if cwd_candidate.exists():
+        return cwd_candidate
+    manifest_relative = manifest_path.parent / candidate
+    if manifest_relative.exists():
+        return manifest_relative
+    return cwd_candidate
+
+
+def seed_rag_corpus_from_manifest(
+    manifest_path: Path,
+    *,
+    allowed_donor_ids: Iterable[str] | None = None,
+) -> dict[str, Any]:
+    from grantflow.memory_bank.ingest import ingest_pdf_to_namespace
+
+    donor_filter = {str(item).strip().lower() for item in (allowed_donor_ids or []) if str(item).strip()}
+    lines = [line.strip() for line in manifest_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    seeded_total = 0
+    skipped_total = 0
+    errors: list[str] = []
+    donor_counts: dict[str, int] = {}
+    for idx, line in enumerate(lines, start=1):
+        try:
+            row = json.loads(line)
+        except Exception as exc:
+            errors.append(f"line {idx}: invalid json ({exc})")
+            continue
+        if not isinstance(row, dict):
+            errors.append(f"line {idx}: row must be object")
+            continue
+        donor_id = str(row.get("donor_id") or "").strip().lower()
+        if not donor_id:
+            errors.append(f"line {idx}: donor_id is missing")
+            continue
+        if donor_filter and donor_id not in donor_filter:
+            skipped_total += 1
+            continue
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        try:
+            file_path = _resolve_manifest_entry_path(manifest_path, row.get("file"))
+            if not file_path.exists():
+                errors.append(f"line {idx}: file not found ({file_path})")
+                continue
+            ingest_pdf_to_namespace(str(file_path), namespace=donor_id, metadata=metadata)
+            seeded_total += 1
+            donor_counts[donor_id] = int(donor_counts.get(donor_id) or 0) + 1
+        except Exception as exc:
+            errors.append(f"line {idx}: ingest failed ({exc})")
+    return {
+        "manifest_path": str(manifest_path),
+        "seeded_total": seeded_total,
+        "skipped_total": skipped_total,
+        "errors": errors,
+        "donor_counts": donor_counts,
+    }
 
 
 def build_initial_state(case: dict[str, Any]) -> dict[str, Any]:
@@ -1247,6 +1312,17 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Explicit JSON file(s) with eval cases (repeat flag or use comma-separated values).",
     )
     parser.add_argument(
+        "--seed-rag-manifest",
+        type=Path,
+        default=None,
+        help="Optional JSONL manifest to seed donor namespaces before running eval cases.",
+    )
+    parser.add_argument(
+        "--seed-rag-best-effort",
+        action="store_true",
+        help="Do not fail when manifest seeding reports errors.",
+    )
+    parser.add_argument(
         "--json-out",
         type=Path,
         default=None,
@@ -1302,6 +1378,21 @@ def main(argv: list[str] | None = None) -> int:
         force_architect_rag=bool(args.force_architect_rag),
         force_no_architect_rag=bool(args.force_no_architect_rag),
     )
+    seeded_corpus_summary: dict[str, Any] | None = None
+    if args.seed_rag_manifest is not None:
+        donor_ids_for_seed = sorted(
+            {str(case.get("donor_id") or "").strip().lower() for case in cases if case.get("donor_id")}
+        )
+        seeded_corpus_summary = seed_rag_corpus_from_manifest(
+            args.seed_rag_manifest,
+            allowed_donor_ids=donor_ids_for_seed,
+        )
+        seed_errors = list(seeded_corpus_summary.get("errors") or [])
+        if seed_errors and not bool(args.seed_rag_best_effort):
+            print("RAG corpus seeding failed:")
+            for item in seed_errors:
+                print(f"- {item}")
+            return 1
     suite = run_eval_suite(cases, suite_label=args.suite_label, skip_expectations=bool(args.skip_expectations))
     suite["runtime_overrides"] = {
         "force_llm": bool(args.force_llm),
@@ -1312,6 +1403,11 @@ def main(argv: list[str] | None = None) -> int:
     suite["runtime_overrides"]["donor_filters"] = donor_filters
     suite["runtime_overrides"]["case_filters"] = case_filters
     suite["runtime_overrides"]["cases_files"] = case_file_tokens
+    if args.seed_rag_manifest is not None:
+        suite["runtime_overrides"]["seed_rag_manifest"] = str(args.seed_rag_manifest)
+        suite["runtime_overrides"]["seed_rag_best_effort"] = bool(args.seed_rag_best_effort)
+    if seeded_corpus_summary is not None:
+        suite["seeded_corpus"] = seeded_corpus_summary
     text_report = format_eval_suite_report(suite)
     print(text_report)
     if args.json_out is not None:
