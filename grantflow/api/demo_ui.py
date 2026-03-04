@@ -517,7 +517,7 @@ def render_demo_ui_html() -> str:
                 </select>
               </div>
             </div>
-            <div class="row3" style="margin-top:10px;">
+            <div class="row4" style="margin-top:10px;">
               <div>
                 <label for="portfolioGroundingRiskLevelFilter">Grounding Risk</label>
                 <select id="portfolioGroundingRiskLevelFilter">
@@ -544,6 +544,16 @@ def render_demo_ui_html() -> str:
                   <option value="high">high</option>
                   <option value="medium">medium</option>
                   <option value="low">low</option>
+                </select>
+              </div>
+              <div>
+                <label for="portfolioToCTextRiskLevelFilter">ToC Text Risk</label>
+                <select id="portfolioToCTextRiskLevelFilter">
+                  <option value="">all</option>
+                  <option value="high">high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                  <option value="unknown">unknown</option>
                 </select>
               </div>
             </div>
@@ -1182,6 +1192,7 @@ def render_demo_ui_html() -> str:
         ["portfolioGroundingRiskLevelFilter", "grantflow_demo_portfolio_grounding_risk_level"],
         ["portfolioFindingStatusFilter", "grantflow_demo_portfolio_finding_status"],
         ["portfolioFindingSeverityFilter", "grantflow_demo_portfolio_finding_severity"],
+        ["portfolioToCTextRiskLevelFilter", "grantflow_demo_portfolio_toc_text_risk_level"],
         ["exportGzipEnabled", "grantflow_demo_export_gzip_enabled"],
         ["productionExportMode", "grantflow_demo_production_export_mode"],
         ["allowUnsafeExport", "grantflow_demo_allow_unsafe_export"],
@@ -1517,6 +1528,7 @@ def render_demo_ui_html() -> str:
         portfolioGroundingRiskLevelFilter: $("portfolioGroundingRiskLevelFilter"),
         portfolioFindingStatusFilter: $("portfolioFindingStatusFilter"),
         portfolioFindingSeverityFilter: $("portfolioFindingSeverityFilter"),
+        portfolioToCTextRiskLevelFilter: $("portfolioToCTextRiskLevelFilter"),
         exportGzipEnabled: $("exportGzipEnabled"),
         productionExportMode: $("productionExportMode"),
         allowUnsafeExport: $("allowUnsafeExport"),
@@ -1630,6 +1642,7 @@ def render_demo_ui_html() -> str:
         els.portfolioGroundingRiskLevelFilter.value = "";
         els.portfolioFindingStatusFilter.value = "";
         els.portfolioFindingSeverityFilter.value = "";
+        els.portfolioToCTextRiskLevelFilter.value = "";
         persistUiState();
       }
 
@@ -3194,8 +3207,10 @@ def render_demo_ui_html() -> str:
           const highRiskCount = Number(tocTextQuality?.high_risk_job_count ?? tocTextQuality?.risk_counts?.high ?? 0);
           tocHighRiskNode.title =
             portfolioJobCount > 0
-              ? `${highRiskCount} jobs with high ToC text risk out of ${portfolioJobCount}`
+              ? `${highRiskCount} jobs with high ToC text risk out of ${portfolioJobCount} · click to filter`
               : "No portfolio jobs in current filter";
+          tocHighRiskNode.style.cursor = portfolioJobCount > 0 ? "pointer" : "default";
+          tocHighRiskNode.onclick = portfolioJobCount > 0 ? () => applyPortfolioToCTextRiskLevelFilter("high") : null;
         }
         const tocIssuesNode = portfolioQualityValueNodes[16];
         if (tocIssuesNode) {
@@ -4342,6 +4357,12 @@ def render_demo_ui_html() -> str:
         refreshPortfolioBundle().catch(showError);
       }
 
+      function applyPortfolioToCTextRiskLevelFilter(tocTextRiskLevelValue) {
+        els.portfolioToCTextRiskLevelFilter.value = tocTextRiskLevelValue || "";
+        persistUiState();
+        refreshPortfolioBundle().catch(showError);
+      }
+
       function buildPortfolioFilterQueryString() {
         const params = new URLSearchParams();
         if (els.portfolioDonorFilter.value.trim()) params.set("donor_id", els.portfolioDonorFilter.value.trim());
@@ -4356,6 +4377,9 @@ def render_demo_ui_html() -> str:
         }
         if (els.portfolioFindingSeverityFilter.value) {
           params.set("finding_severity", els.portfolioFindingSeverityFilter.value);
+        }
+        if (els.portfolioToCTextRiskLevelFilter.value) {
+          params.set("toc_text_risk_level", els.portfolioToCTextRiskLevelFilter.value);
         }
         const q = params.toString();
         return q ? `?${q}` : "";
@@ -4501,7 +4525,8 @@ def render_demo_ui_html() -> str:
           els.portfolioQualityToCTextRiskList,
           body.toc_text_quality?.risk_counts,
           "No ToC text-risk data yet.",
-          8
+          8,
+          (riskLevel) => applyPortfolioToCTextRiskLevelFilter(riskLevel)
         );
         renderDonorGroundingRiskList(
           els.portfolioQualityGroundingRiskList,
@@ -5181,6 +5206,9 @@ def render_demo_ui_html() -> str:
         });
         els.portfolioFindingSeverityFilter.addEventListener("change", () => {
           applyPortfolioFindingSeverityFilter(els.portfolioFindingSeverityFilter.value);
+        });
+        els.portfolioToCTextRiskLevelFilter.addEventListener("change", () => {
+          applyPortfolioToCTextRiskLevelFilter(els.portfolioToCTextRiskLevelFilter.value);
         });
         els.portfolioDonorFilter.addEventListener("change", () => {
           persistUiState();

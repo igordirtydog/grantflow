@@ -39,6 +39,8 @@ PORTFOLIO_WARNING_LEVELS = {"high", "medium", "low", "none"}
 PORTFOLIO_WARNING_LEVEL_ORDER = ("high", "medium", "low", "none")
 GROUNDING_RISK_LEVEL_ORDER = ("high", "medium", "low", "unknown")
 GROUNDING_RISK_LEVELS = set(GROUNDING_RISK_LEVEL_ORDER)
+TOC_TEXT_RISK_LEVEL_ORDER = ("high", "medium", "low", "unknown")
+TOC_TEXT_RISK_LEVELS = set(TOC_TEXT_RISK_LEVEL_ORDER)
 FINDING_STATUS_FILTER_VALUES = {"open", "acknowledged", "resolved"}
 FINDING_SEVERITY_FILTER_VALUES = {"high", "medium", "low"}
 REVIEW_WORKFLOW_EVENT_TYPES = {
@@ -144,6 +146,17 @@ def _normalize_finding_severity_filter(finding_severity: Optional[str]) -> Optio
     if not token:
         return None
     if token not in FINDING_SEVERITY_FILTER_VALUES:
+        return token
+    return token
+
+
+def _normalize_toc_text_risk_filter(toc_text_risk_level: Optional[str]) -> Optional[str]:
+    if toc_text_risk_level is None:
+        return None
+    token = str(toc_text_risk_level or "").strip().lower()
+    if not token:
+        return None
+    if token not in TOC_TEXT_RISK_LEVELS:
         return token
     return token
 
@@ -1409,6 +1422,20 @@ def _public_job_preflight_payload(job: Dict[str, Any]) -> Optional[Dict[str, Any
     return cast(Dict[str, Any], payload) if isinstance(payload, dict) else None
 
 
+def _job_toc_text_risk_level(job: Dict[str, Any]) -> str:
+    state_dict = _job_state_dict(job)
+    critic_notes = state_dict.get("critic_notes")
+    critic_notes_dict = critic_notes if isinstance(critic_notes, dict) else {}
+    raw_rule_checks = critic_notes_dict.get("rule_checks")
+    rule_checks = [row for row in raw_rule_checks if isinstance(row, dict)] if isinstance(raw_rule_checks, list) else []
+    critic_flaws = state_critic_findings(state_dict)
+    toc_text_quality = _toc_text_quality_summary(rule_checks, critic_flaws)
+    risk_level = str(toc_text_quality.get("risk_level") or "unknown").strip().lower()
+    if risk_level in TOC_TEXT_RISK_LEVELS:
+        return risk_level
+    return "unknown"
+
+
 def _rule_check_status_by_code(rule_checks: list[Dict[str, Any]], code: str) -> str:
     rank = {"unknown": 0, "pass": 1, "warn": 2, "fail": 3}
     best = "unknown"
@@ -2038,11 +2065,13 @@ def public_portfolio_quality_payload(
     grounding_risk_level: Optional[str] = None,
     finding_status: Optional[str] = None,
     finding_severity: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     warning_level_filter = _normalize_warning_level_filter(warning_level)
     grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
     finding_status_filter = _normalize_finding_status_filter(finding_status)
     finding_severity_filter = _normalize_finding_severity_filter(finding_severity)
+    toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
     filtered: list[tuple[str, Dict[str, Any]]] = []
     for job_id, job in jobs_by_id.items():
         if not isinstance(job, dict):
@@ -2060,6 +2089,8 @@ def public_portfolio_quality_payload(
         if warning_level_filter is not None and _job_warning_level(job) != warning_level_filter:
             continue
         if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
+            continue
+        if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
             continue
         if not _job_matches_finding_filters(
             job,
@@ -2623,6 +2654,7 @@ def public_portfolio_quality_payload(
             "grounding_risk_level": grounding_risk_filter,
             "finding_status": finding_status_filter,
             "finding_severity": finding_severity_filter,
+            "toc_text_risk_level": toc_text_risk_filter,
         },
         "status_counts": status_counts,
         "donor_counts": donor_counts,

@@ -608,6 +608,7 @@ class PortfolioMetricsFiltersPublicResponse(BaseModel):
     grounding_risk_level: Optional[str] = None
     finding_status: Optional[str] = None
     finding_severity: Optional[str] = None
+    toc_text_risk_level: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 

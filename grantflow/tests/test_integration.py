@@ -180,6 +180,7 @@ def test_demo_console_page_loads():
     assert "grantflow_demo_portfolio_grounding_risk_level" in body
     assert "grantflow_demo_portfolio_finding_status" in body
     assert "grantflow_demo_portfolio_finding_severity" in body
+    assert "grantflow_demo_portfolio_toc_text_risk_level" in body
     assert "grantflow_demo_export_gzip_enabled" in body
     assert "grantflow_demo_production_export_mode" in body
     assert "grantflow_demo_allow_unsafe_export" in body
@@ -192,6 +193,7 @@ def test_demo_console_page_loads():
     assert "portfolioGroundingRiskLevelFilter" in body
     assert "portfolioFindingStatusFilter" in body
     assert "portfolioFindingSeverityFilter" in body
+    assert "portfolioToCTextRiskLevelFilter" in body
     assert "/portfolio/quality" in body
     assert "/portfolio/metrics/export" in body
     assert "/portfolio/quality/export" in body
@@ -242,6 +244,7 @@ def test_demo_console_page_loads():
     assert "portfolioQualityJson" in body
     assert 'params.set("finding_status",' in body
     assert 'params.set("finding_severity",' in body
+    assert 'params.set("toc_text_risk_level",' in body
     assert "copyPortfolioMetricsJsonBtn" in body
     assert "downloadPortfolioMetricsJsonBtn" in body
     assert "downloadPortfolioMetricsCsvBtn" in body
@@ -4600,7 +4603,10 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
                             "message": "Grounding evidence is mostly fallback.",
                         }
                     ],
-                    "rule_checks": [{"code": "toc.grounding", "status": "warn"}],
+                    "rule_checks": [
+                        {"code": "toc.grounding", "status": "warn"},
+                        {"code": "TOC_TEXT_COMPLETENESS", "status": "fail"},
+                    ],
                 },
                 "citations": [
                     {"stage": "architect", "citation_type": "fallback_namespace", "citation_confidence": 0.2},
@@ -4621,6 +4627,7 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["filters"]["hitl_enabled"] is True
     assert body["filters"].get("finding_status") is None
     assert body["filters"].get("finding_severity") is None
+    assert body["filters"].get("toc_text_risk_level") is None
     assert body["warning_level_counts"]["medium"] >= 1
     assert body["warning_level_counts"]["low"] >= 1
     assert body["warning_level_high_job_count"] >= 0
@@ -4769,6 +4776,7 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert "repetition_check_status_counts" in body["toc_text_quality"]
     assert body["toc_text_quality"]["placeholder_check_status_counts"]["unknown"] >= 0
     assert body["toc_text_quality"]["repetition_check_status_counts"]["unknown"] >= 0
+    assert body["toc_text_quality"]["risk_counts"]["high"] >= 1
     assert "eu" not in body["donor_counts"]
 
     warning_filtered = client.get("/portfolio/quality", params={"warning_level": "high"})
@@ -4802,6 +4810,16 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert finding_severity_filtered_body["filters"]["finding_severity"] == "high"
     assert finding_severity_filtered_body["job_count"] >= 1
     assert finding_severity_filtered_body["finding_severity_counts"]["high"] >= 1
+
+    toc_text_risk_filtered = client.get("/portfolio/quality", params={"toc_text_risk_level": "high"})
+    assert toc_text_risk_filtered.status_code == 200
+    toc_text_risk_filtered_body = toc_text_risk_filtered.json()
+    assert toc_text_risk_filtered_body["filters"]["toc_text_risk_level"] == "high"
+    assert toc_text_risk_filtered_body["job_count"] >= 1
+    assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["high"] == toc_text_risk_filtered_body["job_count"]
+    assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["medium"] == 0
+    assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["low"] == 0
+    assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["unknown"] == 0
 
 
 def test_portfolio_filters_accept_legacy_state_donor_alias():
@@ -5869,6 +5887,22 @@ def test_openapi_declares_api_key_security_scheme():
     assert "GeneratePreflightWarningPublicResponse" in schemas
     assert "GeneratePreflightArchitectClaimsPublicResponse" in schemas
     assert "GeneratePreflightGroundingPolicyPublicResponse" in schemas
+    portfolio_quality_params = (
+        (((spec.get("paths") or {}).get("/portfolio/quality") or {}).get("get") or {}).get("parameters") or []
+    )
+    portfolio_quality_export_params = (
+        (((spec.get("paths") or {}).get("/portfolio/quality/export") or {}).get("get") or {}).get("parameters") or []
+    )
+    assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_quality_params if isinstance(p, dict)]
+    assert "toc_text_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_quality_export_params if isinstance(p, dict)
+    ]
+    portfolio_filters_schema_props = (
+        ((schemas.get("PortfolioMetricsFiltersPublicResponse") or {}).get("properties") or {})
+        if isinstance(schemas.get("PortfolioMetricsFiltersPublicResponse"), dict)
+        else {}
+    )
+    assert "toc_text_risk_level" in portfolio_filters_schema_props
 
 
 def test_ingest_endpoint_uploads_to_donor_namespace(monkeypatch):

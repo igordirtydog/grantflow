@@ -3479,6 +3479,7 @@ def get_portfolio_quality(
     grounding_risk_level: Optional[str] = None,
     finding_status: Optional[str] = None,
     finding_severity: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
 ):
     require_api_key_if_configured(request, for_read=True)
     resolved_tenant_id = _resolve_tenant_id(request, explicit_tenant=tenant_id, require_if_enabled=True)
@@ -3492,6 +3493,7 @@ def get_portfolio_quality(
         grounding_risk_level=(grounding_risk_level or None),
         finding_status=(finding_status or None),
         finding_severity=(finding_severity or None),
+        toc_text_risk_level=(toc_text_risk_level or None),
     )
 
 
@@ -3506,6 +3508,7 @@ def export_portfolio_quality(
     grounding_risk_level: Optional[str] = None,
     finding_status: Optional[str] = None,
     finding_severity: Optional[str] = None,
+    toc_text_risk_level: Optional[str] = None,
     format: Literal["csv", "json"] = Query(default="csv"),
     gzip_enabled: bool = Query(default=False, alias="gzip"),
 ):
@@ -3521,6 +3524,7 @@ def export_portfolio_quality(
         grounding_risk_level=(grounding_risk_level or None),
         finding_status=(finding_status or None),
         finding_severity=(finding_severity or None),
+        toc_text_risk_level=(toc_text_risk_level or None),
     )
 
     return _portfolio_export_response(
