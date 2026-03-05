@@ -3550,8 +3550,90 @@ def public_portfolio_quality_payload(
                 "citation_type_counts": {},
                 "architect_citation_type_counts": {},
                 "mel_citation_type_counts": {},
+                "mel": {
+                    "indicator_job_count": 0,
+                    "indicator_count_total": 0,
+                    "baseline_placeholder_count": 0,
+                    "target_placeholder_count": 0,
+                    "field_present_weighted_totals": {field: 0.0 for field in MEL_COVERAGE_FIELDS},
+                    "result_level_counts": {"impact": 0, "outcome": 0, "output": 0, "unknown": 0},
+                },
             },
         )
+        donor_mel = donor_row.get("mel")
+        if not isinstance(donor_mel, dict):
+            donor_mel = {
+                "indicator_job_count": 0,
+                "indicator_count_total": 0,
+                "baseline_placeholder_count": 0,
+                "target_placeholder_count": 0,
+                "field_present_weighted_totals": {field: 0.0 for field in MEL_COVERAGE_FIELDS},
+                "result_level_counts": {"impact": 0, "outcome": 0, "output": 0, "unknown": 0},
+            }
+            donor_row["mel"] = donor_mel
+
+        donor_row_indicator_count = _coerce_int(row_mel.get("indicator_count"), default=0)
+        if donor_row_indicator_count > 0:
+            donor_mel["indicator_job_count"] = _coerce_int(donor_mel.get("indicator_job_count"), default=0) + 1
+            donor_mel["indicator_count_total"] = (
+                _coerce_int(donor_mel.get("indicator_count_total"), default=0) + donor_row_indicator_count
+            )
+
+        donor_mel["baseline_placeholder_count"] = (
+            _coerce_int(donor_mel.get("baseline_placeholder_count"), default=0)
+            + _coerce_int(row_mel.get("baseline_placeholder_count"), default=0)
+        )
+        donor_mel["target_placeholder_count"] = (
+            _coerce_int(donor_mel.get("target_placeholder_count"), default=0)
+            + _coerce_int(row_mel.get("target_placeholder_count"), default=0)
+        )
+        donor_row_missing_field_counts = (
+            cast(Dict[str, Any], row_mel.get("missing_field_counts"))
+            if isinstance(row_mel.get("missing_field_counts"), dict)
+            else {}
+        )
+        donor_field_present_weighted_totals = (
+            cast(Dict[str, Any], donor_mel.get("field_present_weighted_totals"))
+            if isinstance(donor_mel.get("field_present_weighted_totals"), dict)
+            else {}
+        )
+        for field in MEL_COVERAGE_FIELDS:
+            if donor_row_indicator_count <= 0:
+                continue
+            donor_field_present: Optional[float] = None
+            missing_raw = donor_row_missing_field_counts.get(field)
+            if isinstance(missing_raw, (int, float)):
+                row_missing = max(0, min(donor_row_indicator_count, _coerce_int(missing_raw, default=0)))
+                donor_field_present = float(max(0, donor_row_indicator_count - row_missing))
+            else:
+                rate_raw = row_mel.get(f"{field}_coverage_rate")
+                if isinstance(rate_raw, (int, float)):
+                    bounded_rate = max(0.0, min(1.0, float(rate_raw)))
+                    donor_field_present = bounded_rate * float(donor_row_indicator_count)
+            if donor_field_present is not None:
+                donor_field_present_weighted_totals[field] = (
+                    float(donor_field_present_weighted_totals.get(field, 0.0)) + float(donor_field_present)
+                )
+        donor_mel["field_present_weighted_totals"] = donor_field_present_weighted_totals
+
+        donor_row_result_level_counts = (
+            cast(Dict[str, Any], row_mel.get("result_level_counts"))
+            if isinstance(row_mel.get("result_level_counts"), dict)
+            else {}
+        )
+        donor_result_level_counts = (
+            cast(Dict[str, Any], donor_mel.get("result_level_counts"))
+            if isinstance(donor_mel.get("result_level_counts"), dict)
+            else {}
+        )
+        donor_row_result_level_total = 0
+        for level in ("impact", "outcome", "output", "unknown"):
+            level_count = _coerce_int(donor_row_result_level_counts.get(level), default=0)
+            donor_result_level_counts[level] = _coerce_int(donor_result_level_counts.get(level), default=0) + level_count
+            donor_row_result_level_total += level_count
+        if donor_row_indicator_count > 0 and donor_row_result_level_total <= 0:
+            donor_result_level_counts["unknown"] = _coerce_int(donor_result_level_counts.get("unknown"), default=0) + donor_row_indicator_count
+        donor_mel["result_level_counts"] = donor_result_level_counts
         donor_row["open_findings_total"] += int(row_critic.get("open_finding_count") or 0)
         donor_row["high_severity_findings_total"] += int(row_critic.get("high_severity_fatal_flaw_count") or 0)
         donor_row["citation_count_total"] += int(row_citations.get("citation_count") or 0)
@@ -3907,6 +3989,100 @@ def public_portfolio_quality_payload(
         donor_row["architect_claim_support_rate"] = donor_architect_claim_support_rate
         donor_row["retrieval_expected_mode"] = donor_retrieval_expected_mode
         donor_row["grounding_risk_level"] = donor_grounding_level
+        donor_mel = donor_row.get("mel")
+        if isinstance(donor_mel, dict):
+            donor_mel_indicator_job_count = _coerce_int(donor_mel.get("indicator_job_count"), default=0)
+            donor_mel_indicator_count_total = _coerce_int(donor_mel.get("indicator_count_total"), default=0)
+            donor_mel_field_totals = (
+                cast(Dict[str, Any], donor_mel.get("field_present_weighted_totals"))
+                if isinstance(donor_mel.get("field_present_weighted_totals"), dict)
+                else {}
+            )
+            donor_mel_missing_field_counts: Dict[str, int] = {
+                field: (
+                    max(
+                        0,
+                        int(
+                            round(
+                                max(
+                                    0.0,
+                                    float(donor_mel_indicator_count_total)
+                                    - float(donor_mel_field_totals.get(field, 0.0)),
+                                )
+                            )
+                        ),
+                    )
+                )
+                if donor_mel_indicator_count_total > 0
+                else 0
+                for field in MEL_COVERAGE_FIELDS
+            }
+            donor_mel_coverage_rates: Dict[str, Optional[float]] = {
+                field: (
+                    round(float(donor_mel_field_totals.get(field, 0.0)) / float(donor_mel_indicator_count_total), 4)
+                    if donor_mel_indicator_count_total
+                    else None
+                )
+                for field in MEL_COVERAGE_FIELDS
+            }
+            donor_mel_smart_present_total = sum(
+                float(donor_mel_field_totals.get(field, 0.0)) for field in MEL_SMART_COVERAGE_FIELDS
+            )
+            donor_mel_smart_total = donor_mel_indicator_count_total * len(MEL_SMART_COVERAGE_FIELDS)
+            donor_mel_result_level_counts_raw = (
+                cast(Dict[str, Any], donor_mel.get("result_level_counts"))
+                if isinstance(donor_mel.get("result_level_counts"), dict)
+                else {}
+            )
+            donor_mel_result_level_counts = {
+                "impact": _coerce_int(donor_mel_result_level_counts_raw.get("impact"), default=0),
+                "outcome": _coerce_int(donor_mel_result_level_counts_raw.get("outcome"), default=0),
+                "output": _coerce_int(donor_mel_result_level_counts_raw.get("output"), default=0),
+                "unknown": _coerce_int(donor_mel_result_level_counts_raw.get("unknown"), default=0),
+            }
+            donor_row["mel"] = {
+                "indicator_job_count": donor_mel_indicator_job_count,
+                "indicator_count_total": donor_mel_indicator_count_total,
+                "avg_indicator_count_per_job": (
+                    round(donor_mel_indicator_count_total / donor_mel_indicator_job_count, 4)
+                    if donor_mel_indicator_job_count
+                    else None
+                ),
+                "baseline_coverage_rate": donor_mel_coverage_rates.get("baseline"),
+                "target_coverage_rate": donor_mel_coverage_rates.get("target"),
+                "frequency_coverage_rate": donor_mel_coverage_rates.get("frequency"),
+                "formula_coverage_rate": donor_mel_coverage_rates.get("formula"),
+                "definition_coverage_rate": donor_mel_coverage_rates.get("definition"),
+                "data_source_coverage_rate": donor_mel_coverage_rates.get("data_source"),
+                "disaggregation_coverage_rate": donor_mel_coverage_rates.get("disaggregation"),
+                "result_level_coverage_rate": donor_mel_coverage_rates.get("result_level"),
+                "smart_field_coverage_rate": (
+                    round(donor_mel_smart_present_total / donor_mel_smart_total, 4) if donor_mel_smart_total else None
+                ),
+                "baseline_placeholder_count": _coerce_int(donor_mel.get("baseline_placeholder_count"), default=0),
+                "target_placeholder_count": _coerce_int(donor_mel.get("target_placeholder_count"), default=0),
+                "missing_field_counts": donor_mel_missing_field_counts,
+                "result_level_counts": donor_mel_result_level_counts,
+            }
+        else:
+            donor_row["mel"] = {
+                "indicator_job_count": 0,
+                "indicator_count_total": 0,
+                "avg_indicator_count_per_job": None,
+                "baseline_coverage_rate": None,
+                "target_coverage_rate": None,
+                "frequency_coverage_rate": None,
+                "formula_coverage_rate": None,
+                "definition_coverage_rate": None,
+                "data_source_coverage_rate": None,
+                "disaggregation_coverage_rate": None,
+                "result_level_coverage_rate": None,
+                "smart_field_coverage_rate": None,
+                "baseline_placeholder_count": 0,
+                "target_placeholder_count": 0,
+                "missing_field_counts": {field: 0 for field in MEL_COVERAGE_FIELDS},
+                "result_level_counts": {"impact": 0, "outcome": 0, "output": 0, "unknown": 0},
+            }
         donor_grounding_risk_counts[donor_grounding_level] = (
             int(donor_grounding_risk_counts.get(donor_grounding_level, 0)) + 1
         )

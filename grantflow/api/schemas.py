@@ -1317,6 +1317,7 @@ class PortfolioQualityDonorWeightedRiskPublicResponse(BaseModel):
     llm_advisory_applied_rate: Optional[float] = None
     llm_advisory_candidate_finding_count: Optional[int] = None
     llm_advisory_rejected_reason_counts: Optional[Dict[str, int]] = None
+    mel: Optional[PortfolioQualityMelSummaryPublicResponse] = None
 
     model_config = ConfigDict(extra="allow")
 

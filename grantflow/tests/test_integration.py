@@ -388,6 +388,7 @@ def test_demo_console_page_loads():
     assert "portfolioQualityCitationTypeCountsList" in body
     assert "portfolioQualityArchitectCitationTypeCountsList" in body
     assert "portfolioQualityMelCitationTypeCountsList" in body
+    assert "portfolioQualityMelSummaryList" in body
     assert "portfolioQualityFindingStatusList" in body
     assert "portfolioQualityFindingSeverityList" in body
     assert "portfolioQualityToCTextRiskList" in body
@@ -7331,6 +7332,25 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert "mel_rag_low_confidence_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "traceability_gap_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "llm_finding_label_counts" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert "mel" in body["donor_weighted_risk_breakdown"]["usaid"]
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["indicator_job_count"] >= 2
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["indicator_count_total"] >= 3
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["smart_field_coverage_rate"] is not None
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["baseline_coverage_rate"] == 0.6667
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["target_coverage_rate"] == 0.6667
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["frequency_coverage_rate"] == 1.0
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["formula_coverage_rate"] == 0.6667
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["definition_coverage_rate"] == 0.6667
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["data_source_coverage_rate"] == 1.0
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["result_level_coverage_rate"] == 1.0
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["smart_field_coverage_rate"] == 0.8095
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["baseline_placeholder_count"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["target_placeholder_count"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["missing_field_counts"]["baseline"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["missing_field_counts"]["target"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["result_level_counts"]["impact"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["result_level_counts"]["outcome"] >= 1
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["result_level_counts"]["output"] >= 1
     assert "citation_count_total" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "architect_citation_count_total" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert "architect_claim_support_citation_count" in body["donor_weighted_risk_breakdown"]["usaid"]
@@ -10900,6 +10920,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert "PortfolioQualityDonorWeightedRiskPublicResponse" in schemas
     assert "PortfolioQualityCriticSummaryPublicResponse" in schemas
     assert "PortfolioQualityCitationSummaryPublicResponse" in schemas
+    assert "PortfolioQualityMelSummaryPublicResponse" in schemas
     assert "PortfolioQualityToCTextQualitySummaryPublicResponse" in schemas
     assert "PortfolioMetricsFiltersPublicResponse" in schemas
     assert "HITLPendingListPublicResponse" in schemas

@@ -780,6 +780,13 @@ def render_demo_ui_html() -> str:
             </div>
             <div class="row" style="margin-top:10px;">
               <div>
+                <label>Portfolio MEL Summary</label>
+                <div class="list" id="portfolioQualityMelSummaryList"></div>
+              </div>
+              <div></div>
+            </div>
+            <div class="row" style="margin-top:10px;">
+              <div>
                 <label>Finding Status</label>
                 <div class="list" id="portfolioQualityFindingStatusList"></div>
               </div>
@@ -1869,6 +1876,7 @@ def render_demo_ui_html() -> str:
         portfolioQualityCitationTypeCountsList: $("portfolioQualityCitationTypeCountsList"),
         portfolioQualityArchitectCitationTypeCountsList: $("portfolioQualityArchitectCitationTypeCountsList"),
         portfolioQualityMelCitationTypeCountsList: $("portfolioQualityMelCitationTypeCountsList"),
+        portfolioQualityMelSummaryList: $("portfolioQualityMelSummaryList"),
         portfolioQualityPrioritySignalsList: $("portfolioQualityPrioritySignalsList"),
         portfolioQualityWeightedDonorsList: $("portfolioQualityWeightedDonorsList"),
         portfolioQualityLlmLabelCountsList: $("portfolioQualityLlmLabelCountsList"),
@@ -4275,6 +4283,40 @@ def render_demo_ui_html() -> str:
           citations.mel_citation_type_counts_total,
           "No portfolio MEL citation type breakdown yet.",
           8
+        );
+        const melSummary = summary?.mel || {};
+        renderKeyValueList(
+          els.portfolioQualityMelSummaryList,
+          {
+            indicator_job_count: Number(melSummary.indicator_job_count ?? 0),
+            indicator_count_total: Number(melSummary.indicator_count_total ?? 0),
+            avg_indicator_count_per_job:
+              typeof melSummary.avg_indicator_count_per_job === "number"
+                ? Number(melSummary.avg_indicator_count_per_job).toFixed(2)
+                : "-",
+            smart_field_coverage_rate:
+              typeof melSummary.smart_field_coverage_rate === "number"
+                ? `${(Number(melSummary.smart_field_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            baseline_coverage_rate:
+              typeof melSummary.baseline_coverage_rate === "number"
+                ? `${(Number(melSummary.baseline_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            target_coverage_rate:
+              typeof melSummary.target_coverage_rate === "number"
+                ? `${(Number(melSummary.target_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            formula_coverage_rate:
+              typeof melSummary.formula_coverage_rate === "number"
+                ? `${(Number(melSummary.formula_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            data_source_coverage_rate:
+              typeof melSummary.data_source_coverage_rate === "number"
+                ? `${(Number(melSummary.data_source_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+          },
+          "No portfolio MEL summary yet.",
+          10
         );
         renderKeyValueList(
           els.portfolioQualityGroundedGateSectionsList,
