@@ -7916,6 +7916,7 @@ def export_artifacts(req: ExportRequest, request: Request):
             docx_bytes = build_docx_from_toc(
                 toc_draft,
                 donor_id,
+                logframe_draft=logframe_draft,
                 citations=citations,
                 critic_findings=critic_findings,
                 review_comments=review_comments,

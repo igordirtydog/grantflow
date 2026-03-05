@@ -240,6 +240,38 @@ def test_word_export_includes_template_profile_and_missing_sections_summary():
     assert "Missing sections: specific_objectives, expected_outcomes" in text
 
 
+def test_word_export_includes_mel_indicator_summary_when_logframe_provided():
+    toc_draft = {"toc": {"brief": "Sample ToC brief"}}
+    logframe_draft = {
+        "indicators": [
+            {
+                "indicator_id": "IND_001",
+                "name": "Service coverage rate",
+                "result_level": "outcome",
+                "baseline": "0%",
+                "target": "30%",
+                "frequency": "quarterly",
+                "formula": "(Numerator / Denominator) * 100",
+                "definition": "Share of target population receiving the service.",
+                "data_source": "PMP indicator tracking dataset",
+                "disaggregation": ["sex", "age", "location"],
+                "citation": "USAID ADS 201 p.12",
+                "justification": "Tracks outcome-level adoption.",
+            }
+        ]
+    }
+
+    doc = Document(BytesIO(build_docx_from_toc(toc_draft, "usaid", logframe_draft=logframe_draft)))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "MEL Indicator Summary" in text
+    assert "IND_001 — Service coverage rate" in text
+    assert "Result level: outcome" in text
+    assert "Baseline/Target: 0% -> 30%" in text
+    assert "Frequency: quarterly" in text
+    assert "Data source: PMP indicator tracking dataset" in text
+    assert "Disaggregation: sex, age, location" in text
+
+
 def test_word_export_includes_export_contract_section():
     eu_toc_incomplete = {
         "toc": {

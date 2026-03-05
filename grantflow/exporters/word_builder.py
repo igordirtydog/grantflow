@@ -432,6 +432,61 @@ def _render_generic_toc(doc: Document, toc: Dict[str, Any]) -> None:
                 doc.add_paragraph(f"  Justification: {ind['justification']}", style="Intense Quote")
 
 
+def _add_mel_indicator_summary_section(doc: Document, logframe_draft: Optional[Dict[str, Any]]) -> None:
+    if not isinstance(logframe_draft, dict):
+        return
+    indicators = logframe_draft.get("indicators")
+    if not isinstance(indicators, list) or not indicators:
+        return
+
+    doc.add_heading("MEL Indicator Summary", level=1)
+    for indicator in indicators:
+        if not isinstance(indicator, dict):
+            continue
+        indicator_id = str(indicator.get("indicator_id") or "").strip()
+        name = str(indicator.get("name") or "").strip() or "Untitled indicator"
+        title = f"{indicator_id} — {name}" if indicator_id else name
+        doc.add_paragraph(title, style="List Bullet")
+
+        result_level = str(indicator.get("result_level") or "").strip()
+        baseline = str(indicator.get("baseline") or "").strip()
+        target = str(indicator.get("target") or "").strip()
+        frequency = str(indicator.get("frequency") or "").strip()
+        formula = str(indicator.get("formula") or "").strip()
+        definition = str(indicator.get("definition") or "").strip()
+        data_source = str(indicator.get("data_source") or "").strip()
+        citation = str(indicator.get("citation") or "").strip()
+        justification = str(indicator.get("justification") or "").strip()
+        disaggregation_raw = indicator.get("disaggregation")
+        disaggregation = ""
+        if isinstance(disaggregation_raw, list):
+            disaggregation = ", ".join(str(item).strip() for item in disaggregation_raw if str(item).strip())
+        elif isinstance(disaggregation_raw, str):
+            disaggregation = disaggregation_raw.strip()
+
+        details: list[str] = []
+        if result_level:
+            details.append(f"Result level: {result_level}")
+        if baseline or target:
+            details.append(f"Baseline/Target: {baseline or '-'} -> {target or '-'}")
+        if frequency:
+            details.append(f"Frequency: {frequency}")
+        if formula:
+            details.append(f"Formula: {formula}")
+        if definition:
+            details.append(f"Definition: {definition}")
+        if data_source:
+            details.append(f"Data source: {data_source}")
+        if disaggregation:
+            details.append(f"Disaggregation: {disaggregation}")
+        if citation:
+            details.append(f"Citation: {citation}")
+        if justification:
+            details.append(f"Justification: {justification}")
+        if details:
+            doc.add_paragraph(" | ".join(details))
+
+
 def _add_template_profile_section(doc: Document, profile: Dict[str, Any]) -> None:
     doc.add_heading("Template Profile", level=1)
     doc.add_paragraph(f"Template: {profile.get('template_display_name')} ({profile.get('template_key')})")
@@ -477,6 +532,7 @@ def _add_export_contract_section(doc: Document, contract: Dict[str, Any]) -> Non
 def build_docx_from_toc(
     toc_draft: Dict[str, Any],
     donor_id: str,
+    logframe_draft: Optional[Dict[str, Any]] = None,
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
@@ -510,6 +566,7 @@ def build_docx_from_toc(
     else:
         _render_generic_toc(doc, toc_content)
 
+    _add_mel_indicator_summary_section(doc, logframe_draft)
     _add_citation_traceability_section(doc, citations or toc_draft.get("citations") or [])
     _add_critic_findings_section(doc, critic_findings or [])
     _add_review_comments_section(doc, review_comments or [])
@@ -524,6 +581,7 @@ def save_docx_to_file(
     toc_draft: Dict[str, Any],
     donor_id: str,
     output_path: str,
+    logframe_draft: Optional[Dict[str, Any]] = None,
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
@@ -532,6 +590,7 @@ def save_docx_to_file(
     content = build_docx_from_toc(
         toc_draft,
         donor_id,
+        logframe_draft=logframe_draft,
         citations=citations,
         critic_findings=critic_findings,
         review_comments=review_comments,
