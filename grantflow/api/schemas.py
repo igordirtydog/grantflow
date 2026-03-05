@@ -1631,6 +1631,37 @@ class GenerateLegacyPresetDetailPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class DemoGeneratePresetPublicResponse(BaseModel):
+    preset_key: str
+    donor_id: Optional[str] = None
+    title: Optional[str] = None
+    label: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_file: Optional[str] = None
+    generate_payload: Dict[str, Any]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class DemoIngestPresetPublicResponse(BaseModel):
+    preset_key: str
+    donor_id: Optional[str] = None
+    title: Optional[str] = None
+    label: Optional[str] = None
+    metadata: Dict[str, Any]
+    checklist_items: list[IngestPresetChecklistItemPublicResponse]
+    recommended_docs: list[str]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class DemoPresetBundlePublicResponse(BaseModel):
+    generate_presets: list[DemoGeneratePresetPublicResponse]
+    ingest_presets: list[DemoIngestPresetPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class RBMSamplePresetSummaryPublicResponse(BaseModel):
     sample_id: str
     donor_id: Optional[str] = None

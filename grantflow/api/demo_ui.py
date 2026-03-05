@@ -2218,6 +2218,101 @@ def render_demo_ui_html() -> str:
         }
       }
 
+      function applyServerPresetBundle(bundle) {
+        const generateRows = Array.isArray(bundle?.generate_presets) ? bundle.generate_presets : [];
+        const ingestRows = Array.isArray(bundle?.ingest_presets) ? bundle.ingest_presets : [];
+        let generateChanged = false;
+        let ingestChanged = false;
+
+        if (generateRows.length) {
+          const mergedGenerate = {};
+          const nextGenerateLabels = {};
+          for (const row of generateRows) {
+            if (!row || typeof row !== "object") continue;
+            const presetKey = String(row.preset_key || "").trim();
+            if (!presetKey) continue;
+            const sourceKind = String(row.source_kind || "").trim().toLowerCase();
+            const prefix = sourceKind === "rbm" ? "RBM" : "";
+            const normalized = normalizeGeneratePresetRecord({
+              presetKey,
+              row,
+              detail: { generate_payload: row.generate_payload || {} },
+              prefix,
+            });
+            mergedGenerate[presetKey] = normalized.preset;
+            nextGenerateLabels[presetKey] = String(row.label || "").trim() || normalized.label;
+            generateChanged = true;
+          }
+          if (generateChanged) {
+            GENERATE_PRESETS = mergedGenerate;
+            for (const key of Object.keys(SERVER_GENERATE_PRESET_LABELS)) {
+              delete SERVER_GENERATE_PRESET_LABELS[key];
+            }
+            for (const [key, value] of Object.entries(nextGenerateLabels)) {
+              SERVER_GENERATE_PRESET_LABELS[key] = value;
+            }
+            const storedPreset = localStorage.getItem("grantflow_demo_generate_preset") || "";
+            const preferredValue =
+              String(els.generatePresetSelect.value || "").trim() || String(storedPreset || "").trim();
+            renderGeneratePresetOptions({ preferredValue });
+          }
+        }
+
+        if (ingestRows.length) {
+          const mergedIngest = {};
+          const nextIngestLabels = {};
+          for (const row of ingestRows) {
+            if (!row || typeof row !== "object") continue;
+            const presetKey = String(row.preset_key || "").trim();
+            if (!presetKey) continue;
+            const donorId = String(row.donor_id || "").trim();
+            mergedIngest[presetKey] = {
+              donor_id: donorId,
+              metadata:
+                row.metadata && typeof row.metadata === "object" && !Array.isArray(row.metadata)
+                  ? { ...row.metadata }
+                  : {},
+              checklist_items: Array.isArray(row.checklist_items) ? row.checklist_items : [],
+              recommended_docs: Array.isArray(row.recommended_docs) ? row.recommended_docs : [],
+            };
+            const donorLabel = donorId ? donorId.toUpperCase() : "INGEST";
+            const title = String(row.title || presetKey).trim();
+            nextIngestLabels[presetKey] = String(row.label || "").trim() || `${donorLabel}: ${title}`;
+            ingestChanged = true;
+          }
+          if (ingestChanged) {
+            INGEST_PRESETS = mergedIngest;
+            for (const key of Object.keys(SERVER_INGEST_PRESET_LABELS)) {
+              delete SERVER_INGEST_PRESET_LABELS[key];
+            }
+            for (const [key, value] of Object.entries(nextIngestLabels)) {
+              SERVER_INGEST_PRESET_LABELS[key] = value;
+            }
+            const storedPreset = localStorage.getItem("grantflow_demo_ingest_preset") || "";
+            const preferredValue =
+              String(els.ingestPresetSelect.value || "").trim() || String(storedPreset || "").trim();
+            renderIngestPresetOptions({ preferredValue });
+          }
+        }
+
+        if (generateChanged || ingestChanged) {
+          renderGeneratePresetReadiness();
+          renderZeroReadinessWarningPreference();
+          renderIngestPresetGuidance();
+          renderIngestChecklistProgress();
+        }
+        return generateChanged || ingestChanged;
+      }
+
+      async function loadServerPresetBundle() {
+        try {
+          const body = await apiFetch("/demo/presets");
+          return applyServerPresetBundle(body);
+        } catch (err) {
+          return false;
+        }
+      }
+
       async function loadServerIngestPresets() {
         let listBody;
         try {
@@ -8316,8 +8411,17 @@ def render_demo_ui_html() -> str:
 
       initDefaults();
       bind();
-      loadAllServerGeneratePresets().catch(() => {});
-      loadServerIngestPresets().catch(() => {});
+      loadServerPresetBundle()
+        .then((loaded) => {
+          if (!loaded) {
+            loadAllServerGeneratePresets().catch(() => {});
+            loadServerIngestPresets().catch(() => {});
+          }
+        })
+        .catch(() => {
+          loadAllServerGeneratePresets().catch(() => {});
+          loadServerIngestPresets().catch(() => {});
+        });
       if (currentJobId()) {
         refreshAll().catch(() => {});
       } else {

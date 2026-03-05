@@ -325,6 +325,8 @@ If runtime grounded gate export pass policy is enabled (`GRANTFLOW_EXPORT_REQUIR
   - Demo Console loads legacy generate presets from these endpoints at runtime
 - `GET /ingest/presets`, `GET /ingest/presets/{preset_key}`
   - Demo Console loads ingest preset metadata/checklists from these endpoints at runtime
+- `GET /demo/presets`
+  - bundled payload for Demo Console (`generate_presets` + `ingest_presets`) to reduce startup round-trips
 - `POST /generate/preflight`, `POST /generate`, `POST /cancel/{job_id}`, `POST /resume/{job_id}`
   - `tenant_id` supported on `generate/preflight` and `generate`
   - lifecycle idempotency via `request_id` (query/body) or `X-Request-Id` is supported for `generate`, `cancel`, `resume`, and `hitl/approve`

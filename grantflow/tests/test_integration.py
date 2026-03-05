@@ -196,6 +196,7 @@ def test_demo_console_page_loads():
     assert "ingestInventoryJson" in body
     assert "grantflow_demo_ingest_checklist_progress" in body
     assert "doc_family=" in body
+    assert "/demo/presets" in body
     assert "/generate/presets/legacy" in body
     assert "/generate/presets/rbm" in body
     assert "/ingest/presets" in body
@@ -1019,6 +1020,31 @@ def test_list_donors():
     assert "usaid" in donor_ids
     assert "eu" in donor_ids
     assert "worldbank" in donor_ids
+
+
+def test_get_demo_presets_bundle():
+    response = client.get("/demo/presets")
+    assert response.status_code == 200
+    body = response.json()
+    generate_presets = body.get("generate_presets")
+    ingest_presets = body.get("ingest_presets")
+    assert isinstance(generate_presets, list) and generate_presets
+    assert isinstance(ingest_presets, list) and ingest_presets
+    generate_keys = {str(item.get("preset_key") or "") for item in generate_presets if isinstance(item, dict)}
+    assert "usaid_gov_ai_kazakhstan" in generate_keys
+    assert "rbm-usaid-ai-civil-service-kazakhstan" in generate_keys
+    ingest_keys = {str(item.get("preset_key") or "") for item in ingest_presets if isinstance(item, dict)}
+    assert "usaid_gov_ai_kazakhstan" in ingest_keys
+    sample_generate = next(
+        item for item in generate_presets if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
+    )
+    assert isinstance(sample_generate.get("generate_payload"), dict)
+    assert isinstance(str(sample_generate.get("label") or ""), str)
+    sample_ingest = next(
+        item for item in ingest_presets if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
+    )
+    assert isinstance(sample_ingest.get("metadata"), dict)
+    assert isinstance(sample_ingest.get("checklist_items"), list)
 
 
 def test_list_ingest_presets():

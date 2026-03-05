@@ -21,7 +21,9 @@ from pydantic import BaseModel, ConfigDict
 
 from grantflow.api.demo_ui import render_demo_ui_html
 from grantflow.api.demo_presets import (
+    list_generate_legacy_preset_details,
     list_generate_legacy_preset_summaries,
+    list_ingest_preset_details,
     list_ingest_preset_summaries,
     load_generate_legacy_preset,
     load_ingest_preset,
@@ -80,6 +82,7 @@ from grantflow.api.schemas import (
     CriticFindingsListPublicResponse,
     DeadLetterQueueListPublicResponse,
     DeadLetterQueueMutationPublicResponse,
+    DemoPresetBundlePublicResponse,
     GeneratePreflightPublicResponse,
     GenerateLegacyPresetDetailPublicResponse,
     GenerateLegacyPresetListPublicResponse,
@@ -4378,6 +4381,83 @@ def export_dead_letter_queue(
 @app.get("/donors")
 def list_donors():
     return {"donors": DonorFactory.list_supported()}
+
+
+def _demo_preset_bundle_payload() -> dict[str, Any]:
+    generate_presets: list[dict[str, Any]] = []
+    for item in list_generate_legacy_preset_details():
+        donor_id = str(item.get("donor_id") or "").strip().lower() or None
+        title = str(item.get("title") or "").strip() or None
+        donor_label = donor_id.upper() if donor_id else "LEGACY"
+        generate_presets.append(
+            {
+                "preset_key": str(item.get("preset_key") or "").strip(),
+                "donor_id": donor_id,
+                "title": title,
+                "label": f"{donor_label}: {title or str(item.get('preset_key') or '')}",
+                "source_kind": "legacy",
+                "source_file": None,
+                "generate_payload": dict(item.get("generate_payload") or {}),
+            }
+        )
+    for row in list_sample_preset_summaries():
+        sample_id = str(row.get("sample_id") or "").strip()
+        if not sample_id:
+            continue
+        try:
+            payload = load_sample_payload(sample_id)
+            generate_payload = build_sample_generate_payload(
+                sample_id,
+                llm_mode=True,
+                hitl_enabled=True,
+                architect_rag_enabled=True,
+                strict_preflight=False,
+            )
+        except ValueError:
+            continue
+        donor_id = str(payload.get("donor_id") or row.get("donor_id") or "").strip().lower() or None
+        title = str(row.get("title") or sample_id).strip() or sample_id
+        donor_label = donor_id.upper() if donor_id else "RBM"
+        generate_presets.append(
+            {
+                "preset_key": sample_id,
+                "donor_id": donor_id,
+                "title": title,
+                "label": f"RBM ({donor_label}): {title}",
+                "source_kind": "rbm",
+                "source_file": row.get("source_file"),
+                "generate_payload": generate_payload,
+            }
+        )
+    ingest_presets: list[dict[str, Any]] = []
+    for item in list_ingest_preset_details():
+        donor_id = str(item.get("donor_id") or "").strip().lower() or None
+        title = str(item.get("title") or "").strip() or None
+        donor_label = donor_id.upper() if donor_id else "INGEST"
+        ingest_presets.append(
+            {
+                "preset_key": str(item.get("preset_key") or "").strip(),
+                "donor_id": donor_id,
+                "title": title,
+                "label": f"{donor_label}: {title or str(item.get('preset_key') or '')}",
+                "metadata": dict(item.get("metadata") or {}),
+                "checklist_items": list(item.get("checklist_items") or []),
+                "recommended_docs": list(item.get("recommended_docs") or []),
+            }
+        )
+    return {
+        "generate_presets": generate_presets,
+        "ingest_presets": ingest_presets,
+    }
+
+
+@app.get(
+    "/demo/presets",
+    response_model=DemoPresetBundlePublicResponse,
+    response_model_exclude_none=True,
+)
+def get_demo_presets():
+    return _demo_preset_bundle_payload()
 
 
 @app.get(

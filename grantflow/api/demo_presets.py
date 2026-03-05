@@ -238,6 +238,16 @@ def load_generate_legacy_preset(preset_key: str) -> dict[str, Any]:
     return payload
 
 
+def list_generate_legacy_preset_details() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in list_generate_legacy_preset_summaries():
+        key = str(item.get("preset_key") or "").strip()
+        if not key:
+            continue
+        rows.append(load_generate_legacy_preset(key))
+    return rows
+
+
 def list_ingest_preset_summaries() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for preset_key in sorted(_DEMO_INGEST_PRESETS.keys()):
@@ -262,3 +272,13 @@ def load_ingest_preset(preset_key: str) -> dict[str, Any]:
     payload = deepcopy(_DEMO_INGEST_PRESETS[token])
     payload["preset_key"] = token
     return payload
+
+
+def list_ingest_preset_details() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in list_ingest_preset_summaries():
+        key = str(item.get("preset_key") or "").strip()
+        if not key:
+            continue
+        rows.append(load_ingest_preset(key))
+    return rows

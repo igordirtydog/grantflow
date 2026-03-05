@@ -4,6 +4,8 @@ import pytest
 
 from grantflow.api.demo_presets import (
     list_generate_legacy_preset_summaries,
+    list_generate_legacy_preset_details,
+    list_ingest_preset_details,
     list_ingest_preset_summaries,
     load_generate_legacy_preset,
     load_ingest_preset,
@@ -36,6 +38,13 @@ def test_load_generate_legacy_preset_raises_for_unknown_key():
         load_generate_legacy_preset("missing-generate-preset")
 
 
+def test_list_generate_legacy_preset_details_contains_payloads():
+    rows = list_generate_legacy_preset_details()
+    assert isinstance(rows, list) and rows
+    first = rows[0]
+    assert isinstance(first.get("generate_payload"), dict)
+
+
 def test_list_ingest_preset_summaries_contains_expected_keys():
     rows = list_ingest_preset_summaries()
     assert isinstance(rows, list) and rows
@@ -57,3 +66,11 @@ def test_load_ingest_preset_returns_expected_structure():
 def test_load_ingest_preset_raises_for_unknown_key():
     with pytest.raises(ValueError, match="Unknown preset_key"):
         load_ingest_preset("missing-preset")
+
+
+def test_list_ingest_preset_details_contains_payloads():
+    rows = list_ingest_preset_details()
+    assert isinstance(rows, list) and rows
+    first = rows[0]
+    assert isinstance(first.get("metadata"), dict)
+    assert isinstance(first.get("checklist_items"), list)
