@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pydantic import BaseModel, Field
+
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.swarm.nodes import mel_specialist as mel_module
 
@@ -230,6 +232,70 @@ def test_mel_llm_prompt_receives_full_input_context_and_schema_contract(monkeypa
     retrieval_hint = str(captured.get("retrieval_trace_hint") or "")
     assert retrieval_hint
     assert "used_results" in retrieval_hint
+
+
+def test_mel_llm_mode_uses_strategy_mel_schema_contract(monkeypatch):
+    monkeypatch.setattr(mel_module, "openai_compatible_llm_available", lambda: True)
+
+    class DonorSpecificIndicator(BaseModel):
+        indicator_id: str
+        name: str
+        justification: str
+        citation: str
+        baseline: str = "0"
+        target: str = "1"
+        evidence_excerpt: str | None = None
+
+    class DonorSpecificMELDraft(BaseModel):
+        mel_indicators: list[DonorSpecificIndicator] = Field(default_factory=list)
+
+    def fake_query(*, namespace, query_texts, n_results):  # noqa: ARG001
+        return {
+            "documents": [["Donor indicator guidance excerpt"]],
+            "metadatas": [[{"doc_id": "usaid_ads201_p10_c1", "chunk_id": "usaid_ads201_p10_c1", "page": 10}]],
+            "ids": [["usaid_ads201_p10_c1"]],
+            "distances": [[0.1]],
+        }
+
+    monkeypatch.setattr(mel_module.vector_store, "query", fake_query)
+    strategy = DonorFactory.get_strategy("usaid")
+    monkeypatch.setattr(strategy, "get_mel_schema", lambda: DonorSpecificMELDraft)
+    captured: dict[str, object] = {}
+
+    def fake_llm_structured_mel(**kwargs):
+        captured["schema_cls"] = kwargs.get("schema_cls")
+        return (
+            {
+                "mel_indicators": [
+                    {
+                        "indicator_id": "IND_777",
+                        "name": "Civil servants trained on AI governance",
+                        "justification": "Tracks capability development outcome.",
+                        "citation": "usaid_ads201_p10_c1",
+                        "baseline": "0",
+                        "target": "300",
+                        "evidence_excerpt": "Donor indicator guidance excerpt",
+                    }
+                ]
+            },
+            "llm:stub-mel-model",
+            None,
+        )
+
+    monkeypatch.setattr(mel_module, "_llm_structured_mel", fake_llm_structured_mel)
+
+    state = _base_state(llm_mode=True)
+    state["strategy"] = strategy
+    state["donor_strategy"] = strategy
+    out = mel_module.mel_assign_indicators(state)
+    generation = out.get("mel_generation_meta") or {}
+    indicators = out["logframe_draft"]["indicators"]
+
+    assert captured.get("schema_cls") is DonorSpecificMELDraft
+    assert generation.get("schema_name") == "DonorSpecificMELDraft"
+    assert generation.get("llm_used") is True
+    assert len(indicators) == 1
+    assert indicators[0]["indicator_id"] == "IND_777"
 
 
 def test_mel_llm_tries_fallback_model_chain_and_selects_first_success(monkeypatch):

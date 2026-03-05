@@ -171,6 +171,28 @@ def _schema_contract_hint(schema_cls: Type[BaseModel], *, max_fields: int = 24) 
     return "\n".join(lines)
 
 
+def _resolve_mel_schema_cls(strategy: Any) -> Type[BaseModel]:
+    getter = getattr(strategy, "get_mel_schema", None)
+    if callable(getter):
+        try:
+            candidate = getter()
+        except Exception:
+            candidate = None
+        if isinstance(candidate, type) and issubclass(candidate, BaseModel):
+            return candidate
+    return MELDraftOutput
+
+
+def _extract_mel_indicators(payload: Dict[str, Any]) -> Any:
+    if not isinstance(payload, dict):
+        return []
+    for key in ("indicators", "mel_indicators", "logframe_indicators"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
 def _build_query_text(state: Dict[str, Any]) -> str:
     input_context = state_input_context(state)
     project = str(input_context.get("project") or "project")
@@ -625,6 +647,7 @@ def _normalize_llm_indicators(
 
 def _llm_structured_mel(
     *,
+    schema_cls: Type[BaseModel],
     model_name: str,
     system_prompt: str,
     donor_id: str,
@@ -689,7 +712,7 @@ def _llm_structured_mel(
         )
 
         llm = ChatOpenAI(**llm_kwargs)
-        structured = llm.with_structured_output(MELDraftOutput)
+        structured = llm.with_structured_output(schema_cls)
         result = structured.invoke(
             [
                 SystemMessage(content=system_prompt or "You are a MEL specialist drafting indicator sets."),
@@ -855,7 +878,8 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     )
     query_variants = _query_variants(state, query_text, max_variants=query_variants_limit)
     input_context = state_input_context(state)
-    schema_contract_hint = _schema_contract_hint(MELDraftOutput)
+    schema_cls = _resolve_mel_schema_cls(strategy)
+    schema_contract_hint = _schema_contract_hint(schema_cls)
     project = str(input_context.get("project") or "TBD project")
     country = str(input_context.get("country") or "TBD")
     toc = state.get("toc_draft", {}) or {}
@@ -970,6 +994,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
             llm_attempted = True
             llm_models_tried.append(model_name)
             raw_payload, llm_engine, llm_error = _llm_structured_mel(
+                schema_cls=schema_cls,
                 model_name=model_name,
                 system_prompt=str(prompts.get("MEL_Specialist") or ""),
                 donor_id=donor_id,
@@ -986,15 +1011,16 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
             if raw_payload is not None:
                 generation_engine = llm_engine or f"llm:{model_name}"
                 try:
-                    parsed = _model_validate(MELDraftOutput, raw_payload)
+                    parsed = _model_validate(schema_cls, raw_payload)
                     indicators = _normalize_llm_indicators(
-                        _model_dump(parsed).get("indicators"),
+                        _extract_mel_indicators(_model_dump(parsed)),
                         namespace=namespace,
                         input_context=input_context,
                     )
                 except Exception as exc:
                     llm_repair_attempted = True
                     raw_payload_retry, llm_engine_retry, llm_error_retry = _llm_structured_mel(
+                        schema_cls=schema_cls,
                         model_name=model_name,
                         system_prompt=str(prompts.get("MEL_Specialist") or ""),
                         donor_id=donor_id,
@@ -1011,9 +1037,9 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
                     if raw_payload_retry is not None:
                         generation_engine = llm_engine_retry or generation_engine
                         try:
-                            parsed_retry = _model_validate(MELDraftOutput, raw_payload_retry)
+                            parsed_retry = _model_validate(schema_cls, raw_payload_retry)
                             indicators = _normalize_llm_indicators(
-                                _model_dump(parsed_retry).get("indicators"),
+                                _extract_mel_indicators(_model_dump(parsed_retry)),
                                 namespace=namespace,
                                 input_context=input_context,
                             )
@@ -1074,6 +1100,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         "retrieval_used": bool(retrieval_hits),
         "fallback_used": fallback_used,
         "fallback_class": fallback_class,
+        "schema_name": getattr(schema_cls, "__name__", "MELDraftOutput"),
         "schema_contract_hint_present": bool(schema_contract_hint),
         "input_context_key_count": len(input_context),
         "retrieval_prompt_hit_count": min(len(retrieval_hits), MEL_MAX_EVIDENCE_PROMPT_HITS),

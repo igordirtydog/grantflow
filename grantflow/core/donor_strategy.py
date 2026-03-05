@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Type
+from typing import Optional, Type
 
 from pydantic import BaseModel
 
@@ -27,3 +27,7 @@ class DonorStrategy(ABC):
     def get_system_prompts(self) -> dict:
         """Return persona instructions for Architect, MEL Specialist, and Red Team Critic."""
         ...
+
+    def get_mel_schema(self) -> Optional[Type[BaseModel]]:
+        """Optional donor-specific MEL schema for structured output validation."""
+        return None
