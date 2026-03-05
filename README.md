@@ -525,6 +525,9 @@ python -m grantflow.eval.harness \
   --seed-rag-manifest docs/rag_seed_corpus/ingest_manifest.jsonl \
   --require-seed-readiness \
   --seed-readiness-min-per-family 1 \
+  --compare-to-baseline grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json \
+  --comparison-text-out eval-artifacts/llm-eval-grounded-strict-comparison.txt \
+  --comparison-json-out eval-artifacts/llm-eval-grounded-strict-comparison.json \
   --text-out eval-artifacts/llm-eval-grounded-strict-report.txt \
   --json-out eval-artifacts/llm-eval-grounded-strict-report.json
 ```
@@ -563,7 +566,7 @@ GROUNDED_GUARD_DONORS=usaid,worldbank GROUNDED_MAX_NON_RETRIEVAL=0.25 GROUNDED_M
 ```
 
 CI uploads `eval-report`; grounded tail artifacts (`grounded-tail-eval-report`) are published by nightly workflow `.github/workflows/nightly-grounded-tail.yml` (or manual dispatch).
-Strict grounded LLM gate artifacts (`llm-eval-grounded-strict-report`) are published by `.github/workflows/llm-eval-grounded-strict.yml` (nightly + manual dispatch).
+Strict grounded LLM gate artifacts (`llm-eval-grounded-strict-report` + `llm-eval-grounded-strict-comparison`) are published by `.github/workflows/llm-eval-grounded-strict.yml` (nightly + manual dispatch).
 
 Refresh grounded trend baseline intentionally after expected quality changes:
 

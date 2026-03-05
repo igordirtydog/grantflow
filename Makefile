@@ -5,6 +5,7 @@ EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
 GROUNDED_TAIL_CASES_FILE ?= grantflow/eval/cases/grounded_tail_cases.json
 LLM_GROUNDED_STRICT_CASES_FILE ?= grantflow/eval/cases/llm_grounded_strict_cases.json
+LLM_GROUNDED_STRICT_BASELINE ?= grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json
 GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
 GROUNDED_BASELINE ?= grantflow/eval/fixtures/grounded_regression_snapshot.json
 GROUNDED_TAIL_BASELINE ?= grantflow/eval/fixtures/grounded_tail_regression_snapshot.json
@@ -138,6 +139,9 @@ eval-llm-grounded-strict:
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--require-seed-readiness \
 		--seed-readiness-min-per-family $(LLM_GROUNDED_STRICT_MIN_SEED_PER_FAMILY) \
+		--compare-to-baseline $(LLM_GROUNDED_STRICT_BASELINE) \
+		--comparison-text-out $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-comparison.txt \
+		--comparison-json-out $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-comparison.json \
 		--text-out $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-report.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-report.json
 

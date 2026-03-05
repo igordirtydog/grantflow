@@ -102,6 +102,9 @@ jobs:
             --seed-rag-manifest "$SEED_MANIFEST" \
             --require-seed-readiness \
             --seed-readiness-min-per-family "$MIN_SEED_PER_FAMILY" \
+            --compare-to-baseline grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json \
+            --comparison-text-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.txt \
+            --comparison-json-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.json \
             "${EXTRA_ARGS[@]}" \
             --text-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-report.txt \
             --json-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-report.json

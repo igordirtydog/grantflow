@@ -33,6 +33,7 @@ HIGHER_IS_BETTER_METRICS = (
     "quality_score",
     "critic_score",
     "citations_total",
+    "retrieval_grounded_citation_rate",
     "architect_citation_count",
     "architect_claim_citation_count",
     "mel_citation_count",

@@ -484,6 +484,33 @@ def test_grounded_tail_regression_snapshot_covers_grounded_tail_cases():
     assert snapshot_case_ids == expected_case_ids
 
 
+def test_llm_grounded_strict_cases_have_grounding_expectations():
+    rows = load_eval_cases(case_files=[Path("grantflow/eval/cases/llm_grounded_strict_cases.json")])
+    assert rows, "Expected llm grounded strict fixtures"
+    for case in rows:
+        expectations = case.get("expectations") if isinstance(case.get("expectations"), dict) else {}
+        assert expectations.get("min_quality_score") >= 6.5
+        assert expectations.get("min_critic_score") >= 6.5
+        assert expectations.get("min_retrieval_grounded_citation_rate") >= 0.65
+        assert expectations.get("max_non_retrieval_citation_rate") <= 0.35
+        assert expectations.get("max_traceability_gap_citation_rate") <= 0.2
+        assert expectations.get("max_errors") == 0
+        expected_doc_families = case.get("expected_doc_families")
+        assert isinstance(expected_doc_families, list) and expected_doc_families
+
+
+def test_llm_grounded_strict_regression_snapshot_covers_strict_cases():
+    cases = load_eval_cases(case_files=[Path("grantflow/eval/cases/llm_grounded_strict_cases.json")])
+    expected_case_ids = {str(case.get("case_id") or "").strip() for case in cases if case.get("case_id")}
+    assert expected_case_ids, "Expected non-empty llm strict case ids"
+    snapshot = json.loads(
+        Path("grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json").read_text(encoding="utf-8")
+    )
+    snapshot_cases = snapshot.get("cases") if isinstance(snapshot.get("cases"), dict) else {}
+    snapshot_case_ids = {str(case_id).strip() for case_id in snapshot_cases}
+    assert snapshot_case_ids == expected_case_ids
+
+
 def test_filter_eval_cases_supports_donor_and_case_filters():
     source_cases = [
         {"case_id": "usaid_a", "donor_id": "usaid"},
