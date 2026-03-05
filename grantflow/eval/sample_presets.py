@@ -29,6 +29,14 @@ def _sample_path(sample_id: str) -> Path:
     return REPO_ROOT / relative
 
 
+def sample_file_path(sample_id: str) -> Path:
+    normalized = str(sample_id or "").strip().lower()
+    if normalized not in SAMPLE_PRESET_FILES:
+        known = ", ".join(available_sample_ids())
+        raise ValueError(f"Unknown sample_id '{sample_id}'. Available: {known}")
+    return _sample_path(normalized)
+
+
 def _normalize_sample_ids(sample_ids: list[str]) -> list[str]:
     normalized = [str(item or "").strip().lower() for item in sample_ids if str(item or "").strip()]
     if not normalized:
@@ -61,6 +69,63 @@ def _format_timeframe(time_horizon: dict[str, Any]) -> str | None:
     if not parts:
         return None
     return "; ".join(parts)
+
+
+def _normalized_sample_id(sample_id: str) -> str:
+    token = str(sample_id or "").strip().lower()
+    if token not in SAMPLE_PRESET_FILES:
+        known = ", ".join(available_sample_ids())
+        raise ValueError(f"Unknown sample_id '{sample_id}'. Available: {known}")
+    return token
+
+
+def load_sample_payload(sample_id: str) -> dict[str, Any]:
+    normalized = _normalized_sample_id(sample_id)
+    path = _sample_path(normalized)
+    if not path.exists():
+        raise ValueError(f"Sample '{normalized}' file not found: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"Sample '{normalized}' payload must be an object: {path}")
+    return payload
+
+
+def build_generate_payload(
+    sample_id: str,
+    *,
+    llm_mode: bool = False,
+    hitl_enabled: bool = False,
+    architect_rag_enabled: bool = False,
+    strict_preflight: bool = False,
+) -> dict[str, Any]:
+    case = load_sample_eval_cases([sample_id])[0]
+    return {
+        "donor_id": str(case.get("donor_id") or ""),
+        "input_context": _dict_from(case.get("input_context")),
+        "llm_mode": bool(llm_mode),
+        "hitl_enabled": bool(hitl_enabled),
+        "architect_rag_enabled": bool(architect_rag_enabled),
+        "strict_preflight": bool(strict_preflight),
+    }
+
+
+def list_sample_preset_summaries() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for sample_id in available_sample_ids():
+        payload = load_sample_payload(sample_id)
+        program_context = _dict_from(payload.get("program_context"))
+        time_horizon = _dict_from(program_context.get("time_horizon"))
+        rows.append(
+            {
+                "sample_id": sample_id,
+                "donor_id": str(payload.get("donor_id") or "").strip().lower() or None,
+                "title": str(program_context.get("title") or "").strip() or None,
+                "country": str(program_context.get("country") or "").strip() or None,
+                "timeframe": _format_timeframe(time_horizon),
+                "source_file": SAMPLE_PRESET_FILES[sample_id],
+            }
+        )
+    return rows
 
 
 def _case_from_sample_payload(sample_id: str, payload: dict[str, Any], *, source_path: Path) -> dict[str, Any]:
@@ -147,12 +212,7 @@ def load_sample_eval_cases(sample_ids: list[str]) -> list[dict[str, Any]]:
         return []
     cases: list[dict[str, Any]] = []
     for sample_id in resolved_ids:
-        path = _sample_path(sample_id)
-        if not path.exists():
-            raise ValueError(f"Sample '{sample_id}' file not found: {path}")
-        payload = json.loads(path.read_text(encoding="utf-8"))
-        if not isinstance(payload, dict):
-            raise ValueError(f"Sample '{sample_id}' payload must be an object: {path}")
+        path = sample_file_path(sample_id)
+        payload = load_sample_payload(sample_id)
         cases.append(_case_from_sample_payload(sample_id, payload, source_path=path))
     return cases
-

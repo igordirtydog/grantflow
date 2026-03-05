@@ -1573,3 +1573,29 @@ class DeadLetterQueueMutationPublicResponse(BaseModel):
     skipped_count: Optional[int] = None
 
     model_config = ConfigDict(extra="allow")
+
+
+class RBMSamplePresetSummaryPublicResponse(BaseModel):
+    sample_id: str
+    donor_id: Optional[str] = None
+    title: Optional[str] = None
+    country: Optional[str] = None
+    timeframe: Optional[str] = None
+    source_file: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class RBMSamplePresetListPublicResponse(BaseModel):
+    presets: list[RBMSamplePresetSummaryPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class RBMSamplePresetDetailPublicResponse(BaseModel):
+    sample_id: str
+    source_file: Optional[str] = None
+    payload: Dict[str, Any]
+    generate_payload: Dict[str, Any]
+
+    model_config = ConfigDict(extra="allow")

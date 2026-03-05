@@ -107,6 +107,8 @@ from grantflow.api.schemas import (
     PortfolioReviewWorkflowSLATrendsPublicResponse,
     PortfolioReviewWorkflowTrendsPublicResponse,
     QueueWorkerHeartbeatPublicResponse,
+    RBMSamplePresetDetailPublicResponse,
+    RBMSamplePresetListPublicResponse,
     ReviewCommentPublicResponse,
 )
 from grantflow.api.security import (
@@ -121,6 +123,11 @@ from grantflow.core.job_runner import InMemoryJobRunner, RedisJobRunner
 from grantflow.core.stores import create_ingest_audit_store_from_env, create_job_store_from_env
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.core.version import __version__
+from grantflow.eval.sample_presets import (
+    build_generate_payload as build_sample_generate_payload,
+    list_sample_preset_summaries,
+    load_sample_payload,
+)
 from grantflow.exporters.donor_contracts import (
     DONOR_XLSX_PRIMARY_SHEET,
     evaluate_export_contract_gate,
@@ -4361,6 +4368,53 @@ def export_dead_letter_queue(
 @app.get("/donors")
 def list_donors():
     return {"donors": DonorFactory.list_supported()}
+
+
+@app.get(
+    "/generate/presets/rbm",
+    response_model=RBMSamplePresetListPublicResponse,
+    response_model_exclude_none=True,
+)
+def list_rbm_generate_presets():
+    return {"presets": list_sample_preset_summaries()}
+
+
+@app.get(
+    "/generate/presets/rbm/{sample_id}",
+    response_model=RBMSamplePresetDetailPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_rbm_generate_preset(
+    sample_id: str,
+    llm_mode: bool = Query(default=False),
+    hitl_enabled: bool = Query(default=False),
+    architect_rag_enabled: bool = Query(default=False),
+    strict_preflight: bool = Query(default=False),
+):
+    try:
+        payload = load_sample_payload(sample_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    source_file = None
+    normalized = str(sample_id or "").strip().lower()
+    for row in list_sample_preset_summaries():
+        if str(row.get("sample_id") or "").strip().lower() == normalized:
+            source_file = row.get("source_file")
+            break
+
+    return {
+        "sample_id": normalized,
+        "source_file": source_file,
+        "payload": payload,
+        "generate_payload": build_sample_generate_payload(
+            normalized,
+            llm_mode=bool(llm_mode),
+            hitl_enabled=bool(hitl_enabled),
+            architect_rag_enabled=bool(architect_rag_enabled),
+            strict_preflight=bool(strict_preflight),
+        ),
+    }
 
 
 @app.get("/demo", response_class=HTMLResponse, include_in_schema=False)

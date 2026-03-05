@@ -1018,6 +1018,50 @@ def test_list_donors():
     assert "worldbank" in donor_ids
 
 
+def test_list_rbm_generate_presets():
+    response = client.get("/generate/presets/rbm")
+    assert response.status_code == 200
+    body = response.json()
+    presets = body.get("presets")
+    assert isinstance(presets, list) and presets
+    sample_ids = {str(item.get("sample_id") or "") for item in presets if isinstance(item, dict)}
+    assert "rbm-usaid-ai-civil-service-kazakhstan" in sample_ids
+    assert "rbm-eu-youth-employment-jordan" in sample_ids
+
+
+def test_get_rbm_generate_preset_with_runtime_flags():
+    response = client.get(
+        "/generate/presets/rbm/rbm-eu-youth-employment-jordan",
+        params={
+            "llm_mode": "true",
+            "hitl_enabled": "true",
+            "architect_rag_enabled": "true",
+            "strict_preflight": "true",
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["sample_id"] == "rbm-eu-youth-employment-jordan"
+    assert isinstance(body.get("payload"), dict)
+    generate_payload = body.get("generate_payload")
+    assert isinstance(generate_payload, dict)
+    assert generate_payload.get("donor_id") == "eu"
+    assert generate_payload.get("llm_mode") is True
+    assert generate_payload.get("hitl_enabled") is True
+    assert generate_payload.get("architect_rag_enabled") is True
+    assert generate_payload.get("strict_preflight") is True
+    input_context = generate_payload.get("input_context")
+    assert isinstance(input_context, dict)
+    assert str(input_context.get("project") or "").strip() != ""
+    assert str(input_context.get("country") or "").strip().lower() == "jordan"
+
+
+def test_get_rbm_generate_preset_unknown_sample_returns_404():
+    response = client.get("/generate/presets/rbm/unknown-sample-id")
+    assert response.status_code == 404
+    assert "Unknown sample_id" in str(response.json().get("detail") or "")
+
+
 def test_generate_preflight_reports_high_risk_when_namespace_empty():
     api_app_module.INGEST_AUDIT_STORE.clear()
 
