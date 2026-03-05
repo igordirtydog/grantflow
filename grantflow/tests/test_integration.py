@@ -10071,6 +10071,51 @@ def test_openapi_declares_api_key_security_scheme():
         .get("application/json", {})
         .get("schema")
     )
+    generate_presets_response_schema = (
+        ((((spec.get("paths") or {}).get("/generate/presets") or {}).get("get") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    generate_presets_legacy_list_response_schema = (
+        ((((spec.get("paths") or {}).get("/generate/presets/legacy") or {}).get("get") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    generate_presets_legacy_detail_response_schema = (
+        (
+            (((spec.get("paths") or {}).get("/generate/presets/legacy/{preset_key}") or {}).get("get") or {}).get(
+                "responses"
+            )
+            or {}
+        )
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    generate_presets_rbm_list_response_schema = (
+        ((((spec.get("paths") or {}).get("/generate/presets/rbm") or {}).get("get") or {}).get("responses") or {})
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
+    generate_presets_rbm_detail_response_schema = (
+        (
+            (((spec.get("paths") or {}).get("/generate/presets/rbm/{sample_id}") or {}).get("get") or {}).get(
+                "responses"
+            )
+            or {}
+        )
+        .get("200", {})
+        .get("content", {})
+        .get("application/json", {})
+        .get("schema")
+    )
     generate_preflight_response_schema = (
         ((((spec.get("paths") or {}).get("/generate/preflight") or {}).get("post") or {}).get("responses") or {})
         .get("200", {})
@@ -10547,6 +10592,17 @@ def test_openapi_declares_api_key_security_scheme():
     }
     assert generate_from_preset_batch_response_schema == {
         "$ref": "#/components/schemas/GenerateFromPresetBatchPublicResponse"
+    }
+    assert generate_presets_response_schema == {"$ref": "#/components/schemas/GeneratePresetListPublicResponse"}
+    assert generate_presets_legacy_list_response_schema == {
+        "$ref": "#/components/schemas/GenerateLegacyPresetListPublicResponse"
+    }
+    assert generate_presets_legacy_detail_response_schema == {
+        "$ref": "#/components/schemas/GenerateLegacyPresetDetailPublicResponse"
+    }
+    assert generate_presets_rbm_list_response_schema == {"$ref": "#/components/schemas/RBMSamplePresetListPublicResponse"}
+    assert generate_presets_rbm_detail_response_schema == {
+        "$ref": "#/components/schemas/RBMSamplePresetDetailPublicResponse"
     }
     assert generate_preflight_response_schema == {"$ref": "#/components/schemas/GeneratePreflightPublicResponse"}
     assert ingest_readiness_response_schema == {"$ref": "#/components/schemas/GeneratePreflightPublicResponse"}
