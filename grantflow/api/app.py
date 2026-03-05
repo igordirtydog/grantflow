@@ -4259,6 +4259,25 @@ def _redis_queue_admin_runner(required_methods: tuple[str, ...]) -> Any:
 
 
 @app.get(
+    "/queue/worker-heartbeat",
+)
+def get_queue_worker_heartbeat(
+    request: Request,
+):
+    require_api_key_if_configured(request, for_read=True)
+    runner = _redis_queue_admin_runner(("worker_heartbeat_status",))
+    status_payload = runner.worker_heartbeat_status()
+    if not isinstance(status_payload, dict):
+        status_payload = {"present": False, "healthy": False, "error": "invalid_worker_heartbeat_payload"}
+    return {
+        "mode": "redis_queue",
+        "policy": {"mode": _dispatcher_worker_heartbeat_policy_mode()},
+        "consumer_enabled": bool(getattr(runner, "consumer_enabled", True)),
+        "heartbeat": status_payload,
+    }
+
+
+@app.get(
     "/queue/dead-letter",
     response_model=DeadLetterQueueListPublicResponse,
     response_model_exclude_none=True,

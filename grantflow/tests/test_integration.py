@@ -9393,6 +9393,16 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     assert ingest_inventory_export_auth.status_code == 200
 
     class _QueueAdminRunnerStub:
+        def worker_heartbeat_status(self):
+            return {
+                "key": "grantflow:jobs:worker_heartbeat",
+                "ttl_seconds": 45.0,
+                "present": True,
+                "healthy": True,
+                "age_seconds": 0.2,
+                "source": "worker_process",
+            }
+
         def list_dead_letters(self, limit: int = 50):
             return {
                 "mode": "redis_queue",
@@ -9429,6 +9439,12 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
 
     queue_dead_letter_unauth = client.get("/queue/dead-letter")
     assert queue_dead_letter_unauth.status_code == 401
+
+    queue_worker_heartbeat_unauth = client.get("/queue/worker-heartbeat")
+    assert queue_worker_heartbeat_unauth.status_code == 401
+
+    queue_worker_heartbeat_auth = client.get("/queue/worker-heartbeat", headers={"X-API-Key": "test-secret"})
+    assert queue_worker_heartbeat_auth.status_code == 200
 
     queue_dead_letter_auth = client.get("/queue/dead-letter", headers={"X-API-Key": "test-secret"})
     assert queue_dead_letter_auth.status_code == 200
@@ -9487,6 +9503,9 @@ def test_openapi_declares_api_key_security_scheme():
     queue_dead_letter_security = (((spec.get("paths") or {}).get("/queue/dead-letter") or {}).get("get") or {}).get(
         "security"
     )
+    queue_worker_heartbeat_security = (
+        ((spec.get("paths") or {}).get("/queue/worker-heartbeat") or {}).get("get") or {}
+    ).get("security")
     queue_dead_letter_export_security = (
         ((spec.get("paths") or {}).get("/queue/dead-letter/export") or {}).get("get") or {}
     ).get("security")
@@ -10054,6 +10073,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert ingest_recent_security == [{"ApiKeyAuth": []}]
     assert ingest_inventory_security == [{"ApiKeyAuth": []}]
     assert ingest_inventory_export_security == [{"ApiKeyAuth": []}]
+    assert queue_worker_heartbeat_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_export_security == [{"ApiKeyAuth": []}]
     assert queue_dead_letter_requeue_security == [{"ApiKeyAuth": []}]
@@ -11679,6 +11699,10 @@ def test_generate_returns_503_when_redis_queue_is_unavailable(monkeypatch):
 def test_dead_letter_queue_endpoints_require_redis_queue_mode(monkeypatch):
     monkeypatch.setattr(api_app_module.config.job_runner, "mode", "background_tasks")
 
+    heartbeat_resp = client.get("/queue/worker-heartbeat")
+    assert heartbeat_resp.status_code == 409
+    assert "redis_queue" in str(heartbeat_resp.json()["detail"])
+
     list_resp = client.get("/queue/dead-letter")
     assert list_resp.status_code == 409
     assert "redis_queue" in str(list_resp.json()["detail"])
@@ -11698,6 +11722,18 @@ def test_dead_letter_queue_endpoints_require_redis_queue_mode(monkeypatch):
 
 def test_dead_letter_queue_endpoints_use_runner_in_redis_mode(monkeypatch):
     class _StubRunner:
+        consumer_enabled = False
+
+        def worker_heartbeat_status(self):
+            return {
+                "key": "grantflow:jobs:worker_heartbeat",
+                "ttl_seconds": 45.0,
+                "present": True,
+                "healthy": True,
+                "age_seconds": 0.5,
+                "source": "worker_process",
+            }
+
         def list_dead_letters(self, limit: int = 50):
             return {
                 "mode": "redis_queue",
@@ -11731,6 +11767,14 @@ def test_dead_letter_queue_endpoints_use_runner_in_redis_mode(monkeypatch):
 
     monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
     monkeypatch.setattr(api_app_module, "JOB_RUNNER", _StubRunner())
+
+    heartbeat = client.get("/queue/worker-heartbeat")
+    assert heartbeat.status_code == 200
+    heartbeat_body = heartbeat.json()
+    assert heartbeat_body["mode"] == "redis_queue"
+    assert heartbeat_body["policy"]["mode"] in {"off", "warn", "strict"}
+    assert heartbeat_body["consumer_enabled"] is False
+    assert heartbeat_body["heartbeat"]["healthy"] is True
 
     listed = client.get("/queue/dead-letter", params={"limit": 5})
     assert listed.status_code == 200

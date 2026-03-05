@@ -89,6 +89,7 @@ python -m grantflow.worker
 ```
 
 This runs API as dispatcher-only and executes pipeline tasks in a dedicated worker process.
+Use `GET /queue/worker-heartbeat` for a lightweight worker liveness check in redis dispatcher setups.
 
 ### Health/readiness
 

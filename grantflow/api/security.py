@@ -14,6 +14,7 @@ PROTECTED_OPERATIONS = {
     ("get", "/ingest/recent"),
     ("get", "/ingest/inventory"),
     ("get", "/ingest/inventory/export"),
+    ("get", "/queue/worker-heartbeat"),
     ("get", "/queue/dead-letter"),
     ("get", "/queue/dead-letter/export"),
     ("post", "/queue/dead-letter/requeue"),

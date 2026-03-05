@@ -156,6 +156,7 @@ Notes:
 - `warn` keeps `/ready` green but surfaces alert in `checks.job_runner.alerts`.
 - `/health` includes `diagnostics.job_runner.dispatcher_worker_heartbeat` with `age_seconds`/`source` when available.
 - Dead-letter ops (redis mode only):
+  - `GET /queue/worker-heartbeat`
   - `GET /queue/dead-letter?limit=50`
   - `GET /queue/dead-letter/export?limit=500&format=json` (or `format=csv`)
   - `POST /queue/dead-letter/requeue?limit=10&reset_attempts=true`
