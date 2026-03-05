@@ -591,6 +591,18 @@ def render_demo_ui_html() -> str:
                 </select>
               </div>
             </div>
+            <div class="row4" style="margin-top:10px;">
+              <div>
+                <label for="portfolioMelRiskLevelFilter">MEL Risk</label>
+                <select id="portfolioMelRiskLevelFilter">
+                  <option value="">all</option>
+                  <option value="high">high</option>
+                  <option value="medium">medium</option>
+                  <option value="low">low</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </div>
+            </div>
             <div class="row" style="margin-top:10px;">
               <button id="portfolioBtn" class="ghost">Load Portfolio Metrics</button>
               <button id="portfolioClearBtn" class="ghost">Clear Portfolio Filters</button>
@@ -1546,6 +1558,7 @@ def render_demo_ui_html() -> str:
         ["portfolioFindingStatusFilter", "grantflow_demo_portfolio_finding_status"],
         ["portfolioFindingSeverityFilter", "grantflow_demo_portfolio_finding_severity"],
         ["portfolioToCTextRiskLevelFilter", "grantflow_demo_portfolio_toc_text_risk_level"],
+        ["portfolioMelRiskLevelFilter", "grantflow_demo_portfolio_mel_risk_level"],
         ["portfolioSlaHotspotKindFilter", "grantflow_demo_portfolio_sla_hotspot_kind"],
         ["portfolioSlaHotspotSeverityFilter", "grantflow_demo_portfolio_sla_hotspot_severity"],
         ["portfolioSlaMinOverdueHoursFilter", "grantflow_demo_portfolio_sla_min_overdue_hours"],
@@ -1906,6 +1919,7 @@ def render_demo_ui_html() -> str:
         portfolioFindingStatusFilter: $("portfolioFindingStatusFilter"),
         portfolioFindingSeverityFilter: $("portfolioFindingSeverityFilter"),
         portfolioToCTextRiskLevelFilter: $("portfolioToCTextRiskLevelFilter"),
+        portfolioMelRiskLevelFilter: $("portfolioMelRiskLevelFilter"),
         portfolioSlaHotspotKindFilter: $("portfolioSlaHotspotKindFilter"),
         portfolioSlaHotspotSeverityFilter: $("portfolioSlaHotspotSeverityFilter"),
         portfolioSlaMinOverdueHoursFilter: $("portfolioSlaMinOverdueHoursFilter"),
@@ -2365,6 +2379,7 @@ def render_demo_ui_html() -> str:
         els.portfolioFindingStatusFilter.value = "";
         els.portfolioFindingSeverityFilter.value = "";
         els.portfolioToCTextRiskLevelFilter.value = "";
+        els.portfolioMelRiskLevelFilter.value = "";
         els.portfolioSlaHotspotKindFilter.value = "";
         els.portfolioSlaHotspotSeverityFilter.value = "";
         els.portfolioSlaMinOverdueHoursFilter.value = "";
@@ -6584,6 +6599,12 @@ def render_demo_ui_html() -> str:
         refreshPortfolioBundle().catch(showError);
       }
 
+      function applyPortfolioMelRiskLevelFilter(melRiskLevelValue) {
+        els.portfolioMelRiskLevelFilter.value = melRiskLevelValue || "";
+        persistUiState();
+        refreshPortfolioBundle().catch(showError);
+      }
+
       function buildPortfolioFilterQueryString() {
         const params = new URLSearchParams();
         if (els.portfolioDonorFilter.value.trim()) params.set("donor_id", els.portfolioDonorFilter.value.trim());
@@ -6601,6 +6622,9 @@ def render_demo_ui_html() -> str:
         }
         if (els.portfolioToCTextRiskLevelFilter.value) {
           params.set("toc_text_risk_level", els.portfolioToCTextRiskLevelFilter.value);
+        }
+        if (els.portfolioMelRiskLevelFilter.value) {
+          params.set("mel_risk_level", els.portfolioMelRiskLevelFilter.value);
         }
         const q = params.toString();
         return q ? `?${q}` : "";
@@ -8371,6 +8395,9 @@ def render_demo_ui_html() -> str:
         });
         els.portfolioToCTextRiskLevelFilter.addEventListener("change", () => {
           applyPortfolioToCTextRiskLevelFilter(els.portfolioToCTextRiskLevelFilter.value);
+        });
+        els.portfolioMelRiskLevelFilter.addEventListener("change", () => {
+          applyPortfolioMelRiskLevelFilter(els.portfolioMelRiskLevelFilter.value);
         });
         els.portfolioDonorFilter.addEventListener("change", () => {
           persistUiState();

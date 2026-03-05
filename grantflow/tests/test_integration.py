@@ -283,6 +283,7 @@ def test_demo_console_page_loads():
     assert "grantflow_demo_portfolio_finding_status" in body
     assert "grantflow_demo_portfolio_finding_severity" in body
     assert "grantflow_demo_portfolio_toc_text_risk_level" in body
+    assert "grantflow_demo_portfolio_mel_risk_level" in body
     assert "grantflow_demo_portfolio_sla_hotspot_kind" in body
     assert "grantflow_demo_portfolio_sla_hotspot_severity" in body
     assert "grantflow_demo_portfolio_sla_min_overdue_hours" in body
@@ -301,6 +302,7 @@ def test_demo_console_page_loads():
     assert "portfolioFindingStatusFilter" in body
     assert "portfolioFindingSeverityFilter" in body
     assert "portfolioToCTextRiskLevelFilter" in body
+    assert "portfolioMelRiskLevelFilter" in body
     assert "/portfolio/quality" in body
     assert "/portfolio/metrics/export" in body
     assert "/portfolio/quality/export" in body
@@ -433,6 +435,7 @@ def test_demo_console_page_loads():
     assert 'params.set("finding_status",' in body
     assert 'params.set("finding_severity",' in body
     assert 'params.set("toc_text_risk_level",' in body
+    assert 'params.set("mel_risk_level",' in body
     assert "clearPortfolioToCTextRiskFilter" in body
     assert "copyPortfolioMetricsJsonBtn" in body
     assert "downloadPortfolioMetricsJsonBtn" in body
@@ -6929,6 +6932,15 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     assert body["grounding_risk_job_rates"]["medium"] is not None
     assert body["grounding_risk_job_rates"]["low"] is not None
     assert body["grounding_risk_job_rates"]["unknown"] is not None
+    assert body["mel_risk_counts"].get("high", 0) >= 0
+    assert body["mel_risk_counts"].get("medium", 0) >= 0
+    assert body["mel_risk_counts"].get("low", 0) >= 0
+    assert body["mel_risk_counts"].get("unknown", 0) >= 0
+    assert sum(int(v or 0) for v in body["mel_risk_job_counts"].values()) == body["job_count"]
+    assert body["mel_risk_job_rates"]["high"] is not None
+    assert body["mel_risk_job_rates"]["medium"] is not None
+    assert body["mel_risk_job_rates"]["low"] is not None
+    assert body["mel_risk_job_rates"]["unknown"] is not None
     assert body["terminal_job_count"] >= 2
     assert body["hitl_job_count"] >= 1
     assert body["total_pause_count"] >= 1
@@ -6942,6 +6954,7 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     assert filtered_body["filters"]["status"] == "done"
     assert filtered_body["filters"]["hitl_enabled"] is True
     assert filtered_body["filters"].get("toc_text_risk_level") is None
+    assert filtered_body["filters"].get("mel_risk_level") is None
     assert filtered_body["job_count"] >= 1
     assert "error" not in filtered_body["status_counts"]
     assert filtered_body["warning_level_counts"]["medium"] >= 1
@@ -6972,6 +6985,17 @@ def test_portfolio_metrics_endpoint_aggregates_jobs_and_filters():
     assert toc_text_filtered_body["job_count"] >= 1
     assert toc_text_filtered_body["status_counts"].get("done", 0) >= 1
     assert toc_text_filtered_body["status_counts"].get("error", 0) == 0
+
+    mel_level = next(
+        (level for level, count in (body.get("mel_risk_job_counts") or {}).items() if int(count or 0) > 0),
+        "unknown",
+    )
+    mel_filtered = client.get("/portfolio/metrics", params={"mel_risk_level": mel_level})
+    assert mel_filtered.status_code == 200
+    mel_filtered_body = mel_filtered.json()
+    assert mel_filtered_body["filters"]["mel_risk_level"] == mel_level
+    assert mel_filtered_body["job_count"] >= 1
+    assert mel_filtered_body["mel_risk_job_counts"][mel_level] == mel_filtered_body["job_count"]
 
 
 def test_portfolio_quality_endpoint_aggregates_quality_signals():
@@ -7233,6 +7257,7 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["filters"].get("finding_status") is None
     assert body["filters"].get("finding_severity") is None
     assert body["filters"].get("toc_text_risk_level") is None
+    assert body["filters"].get("mel_risk_level") is None
     assert body["warning_level_counts"]["medium"] >= 1
     assert body["warning_level_counts"]["low"] >= 1
     assert body["warning_level_high_job_count"] >= 0
@@ -7513,6 +7538,17 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["low"] == 0
     assert toc_text_risk_filtered_body["toc_text_quality"]["risk_counts"]["unknown"] == 0
 
+    mel_level = next(
+        (level for level, count in (body.get("mel_risk_job_counts") or {}).items() if int(count or 0) > 0),
+        "unknown",
+    )
+    mel_risk_filtered = client.get("/portfolio/quality", params={"mel_risk_level": mel_level})
+    assert mel_risk_filtered.status_code == 200
+    mel_risk_filtered_body = mel_risk_filtered.json()
+    assert mel_risk_filtered_body["filters"]["mel_risk_level"] == mel_level
+    assert mel_risk_filtered_body["job_count"] >= 1
+    assert mel_risk_filtered_body["mel_risk_job_counts"][mel_level] == mel_risk_filtered_body["job_count"]
+
 
 def test_portfolio_quality_endpoint_includes_grounded_gate_block_metrics():
     donor = "grounded_gate_metrics_test_donor"
@@ -7765,6 +7801,24 @@ def test_portfolio_quality_export_endpoint_supports_json_and_gzip():
     assert toc_payload["filters"]["donor_id"] == "usaid"
     assert toc_payload["filters"]["toc_text_risk_level"] == "high"
 
+    mel_csv_resp = client.get(
+        "/portfolio/quality/export",
+        params={"donor_id": "usaid", "mel_risk_level": "medium", "format": "csv"},
+    )
+    assert mel_csv_resp.status_code == 200
+    assert mel_csv_resp.headers["content-type"].startswith("text/csv")
+    mel_csv_text = mel_csv_resp.text
+    assert "filters.mel_risk_level,medium" in mel_csv_text
+
+    mel_json_resp = client.get(
+        "/portfolio/quality/export",
+        params={"donor_id": "usaid", "mel_risk_level": "medium", "format": "json"},
+    )
+    assert mel_json_resp.status_code == 200
+    mel_payload = mel_json_resp.json()
+    assert mel_payload["filters"]["donor_id"] == "usaid"
+    assert mel_payload["filters"]["mel_risk_level"] == "medium"
+
     csv_gzip_resp = client.get(
         "/portfolio/quality/export", params={"donor_id": "usaid", "format": "csv", "gzip": "true"}
     )
@@ -7836,6 +7890,23 @@ def test_portfolio_metrics_export_endpoint_supports_csv_json_and_gzip():
     toc_payload = toc_json_resp.json()
     assert toc_payload["filters"]["donor_id"] == "usaid"
     assert toc_payload["filters"]["toc_text_risk_level"] == "high"
+
+    mel_csv_resp = client.get(
+        "/portfolio/metrics/export",
+        params={"donor_id": "usaid", "mel_risk_level": "medium", "format": "csv"},
+    )
+    assert mel_csv_resp.status_code == 200
+    mel_csv_text = mel_csv_resp.text
+    assert "filters.mel_risk_level,medium" in mel_csv_text
+
+    mel_json_resp = client.get(
+        "/portfolio/metrics/export",
+        params={"donor_id": "usaid", "mel_risk_level": "medium", "format": "json"},
+    )
+    assert mel_json_resp.status_code == 200
+    mel_payload = mel_json_resp.json()
+    assert mel_payload["filters"]["donor_id"] == "usaid"
+    assert mel_payload["filters"]["mel_risk_level"] == "medium"
 
     csv_gzip_resp = client.get(
         "/portfolio/metrics/export", params={"donor_id": "usaid", "format": "csv", "gzip": "true"}
@@ -11024,11 +11095,19 @@ def test_openapi_declares_api_key_security_scheme():
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow/sla/export") or {}).get("get") or {}
     ).get("parameters") or []
     assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_metrics_params if isinstance(p, dict)]
+    assert "mel_risk_level" in [str(p.get("name") or "") for p in portfolio_metrics_params if isinstance(p, dict)]
     assert "toc_text_risk_level" in [
         str(p.get("name") or "") for p in portfolio_metrics_export_params if isinstance(p, dict)
     ]
+    assert "mel_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_metrics_export_params if isinstance(p, dict)
+    ]
     assert "toc_text_risk_level" in [str(p.get("name") or "") for p in portfolio_quality_params if isinstance(p, dict)]
+    assert "mel_risk_level" in [str(p.get("name") or "") for p in portfolio_quality_params if isinstance(p, dict)]
     assert "toc_text_risk_level" in [
+        str(p.get("name") or "") for p in portfolio_quality_export_params if isinstance(p, dict)
+    ]
+    assert "mel_risk_level" in [
         str(p.get("name") or "") for p in portfolio_quality_export_params if isinstance(p, dict)
     ]
     assert "toc_text_risk_level" in [
@@ -11302,6 +11381,7 @@ def test_openapi_declares_api_key_security_scheme():
         else {}
     )
     assert "toc_text_risk_level" in portfolio_filters_schema_props
+    assert "mel_risk_level" in portfolio_filters_schema_props
     for name in (
         "donor_id",
         "status",

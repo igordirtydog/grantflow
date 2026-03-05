@@ -209,6 +209,17 @@ def _normalize_toc_text_risk_filter(toc_text_risk_level: Optional[str]) -> Optio
     return token
 
 
+def _normalize_mel_risk_filter(mel_risk_level: Optional[str]) -> Optional[str]:
+    if mel_risk_level is None:
+        return None
+    token = str(mel_risk_level or "").strip().lower()
+    if not token:
+        return None
+    if token not in MEL_RISK_LEVELS:
+        return token
+    return token
+
+
 def _normalize_review_workflow_state_filter(workflow_state: Optional[str]) -> Optional[str]:
     if workflow_state is None:
         return None
@@ -239,6 +250,18 @@ def _grounding_risk_breakdown(
     normalized_rates: Dict[str, Optional[float]] = {}
     for level in GROUNDING_RISK_LEVEL_ORDER:
         count = int(grounding_risk_counts.get(level) or 0)
+        normalized_counts[level] = count
+        normalized_rates[level] = round(count / total_jobs, 4) if total_jobs else None
+    return normalized_counts, normalized_rates
+
+
+def _mel_risk_breakdown(
+    mel_risk_counts: Dict[str, int], total_jobs: int
+) -> tuple[Dict[str, int], Dict[str, Optional[float]]]:
+    normalized_counts: Dict[str, int] = {}
+    normalized_rates: Dict[str, Optional[float]] = {}
+    for level in MEL_RISK_LEVEL_ORDER:
+        count = int(mel_risk_counts.get(level) or 0)
         normalized_counts[level] = count
         normalized_rates[level] = round(count / total_jobs, 4) if total_jobs else None
     return normalized_counts, normalized_rates
@@ -2141,6 +2164,30 @@ def _job_toc_text_risk_level(job: Dict[str, Any]) -> str:
     return "unknown"
 
 
+def _job_mel_risk_level(job: Dict[str, Any]) -> str:
+    state_dict = _job_state_dict(job)
+    mel_generation_meta = state_dict.get("mel_generation_meta")
+    mel_generation_meta_dict = mel_generation_meta if isinstance(mel_generation_meta, dict) else {}
+    mel_meta_risk_level = str(mel_generation_meta_dict.get("risk_level") or "").strip().lower()
+    if mel_meta_risk_level in MEL_RISK_LEVELS:
+        return mel_meta_risk_level
+
+    raw_logframe = state_dict.get("logframe_draft")
+    logframe_draft = raw_logframe if isinstance(raw_logframe, dict) else {}
+    if not logframe_draft:
+        raw_mel = state_dict.get("mel")
+        if isinstance(raw_mel, dict):
+            logframe_draft = raw_mel
+    if not logframe_draft:
+        return "unknown"
+
+    mel_summary = _mel_indicator_coverage_summary(logframe_draft)
+    mel_risk_level = str(mel_summary.get("risk_level") or "unknown").strip().lower()
+    if mel_risk_level in MEL_RISK_LEVELS:
+        return mel_risk_level
+    return "unknown"
+
+
 def _rule_check_status_by_code(rule_checks: list[Dict[str, Any]], code: str) -> str:
     rank = {"unknown": 0, "pass": 1, "warn": 2, "fail": 3}
     best = "unknown"
@@ -2989,10 +3036,12 @@ def public_portfolio_metrics_payload(
     warning_level: Optional[str] = None,
     grounding_risk_level: Optional[str] = None,
     toc_text_risk_level: Optional[str] = None,
+    mel_risk_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     warning_level_filter = _normalize_warning_level_filter(warning_level)
     grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
     toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
+    mel_risk_filter = _normalize_mel_risk_filter(mel_risk_level)
     filtered: list[tuple[str, Dict[str, Any]]] = []
     for job_id, job in jobs_by_id.items():
         if not isinstance(job, dict):
@@ -3013,12 +3062,15 @@ def public_portfolio_metrics_payload(
             continue
         if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
             continue
+        if mel_risk_filter is not None and _job_mel_risk_level(job) != mel_risk_filter:
+            continue
         filtered.append((str(job_id), job))
 
     status_counts: Dict[str, int] = {}
     donor_counts: Dict[str, int] = {}
     warning_level_counts: Dict[str, int] = {}
     grounding_risk_counts: Dict[str, int] = {}
+    mel_risk_counts: Dict[str, int] = {}
     total_pause_count = 0
     total_resume_count = 0
     metrics_rows: list[Dict[str, Any]] = []
@@ -3032,6 +3084,8 @@ def public_portfolio_metrics_payload(
         warning_level_counts[job_warning_level] = warning_level_counts.get(job_warning_level, 0) + 1
         job_grounding_risk_level = _job_grounding_risk_level(job)
         grounding_risk_counts[job_grounding_risk_level] = grounding_risk_counts.get(job_grounding_risk_level, 0) + 1
+        job_mel_risk_level = _job_mel_risk_level(job)
+        mel_risk_counts[job_mel_risk_level] = mel_risk_counts.get(job_mel_risk_level, 0) + 1
 
         m = public_job_metrics_payload(job_id, job)
         metrics_rows.append(m)
@@ -3050,6 +3104,7 @@ def public_portfolio_metrics_payload(
     job_count = len(filtered)
     warning_level_job_counts, warning_level_job_rates = _warning_level_breakdown(warning_level_counts, job_count)
     grounding_risk_job_counts, grounding_risk_job_rates = _grounding_risk_breakdown(grounding_risk_counts, job_count)
+    mel_risk_job_counts, mel_risk_job_rates = _mel_risk_breakdown(mel_risk_counts, job_count)
 
     return {
         "job_count": job_count,
@@ -3060,6 +3115,7 @@ def public_portfolio_metrics_payload(
             "warning_level": warning_level_filter,
             "grounding_risk_level": grounding_risk_filter,
             "toc_text_risk_level": toc_text_risk_filter,
+            "mel_risk_level": mel_risk_filter,
         },
         "status_counts": status_counts,
         "donor_counts": donor_counts,
@@ -3073,6 +3129,13 @@ def public_portfolio_metrics_payload(
         "grounding_risk_medium_job_count": int(grounding_risk_job_counts.get("medium") or 0),
         "grounding_risk_low_job_count": int(grounding_risk_job_counts.get("low") or 0),
         "grounding_risk_unknown_job_count": int(grounding_risk_job_counts.get("unknown") or 0),
+        "mel_risk_counts": mel_risk_counts,
+        "mel_risk_job_counts": mel_risk_job_counts,
+        "mel_risk_job_rates": mel_risk_job_rates,
+        "mel_risk_high_job_count": int(mel_risk_job_counts.get("high") or 0),
+        "mel_risk_medium_job_count": int(mel_risk_job_counts.get("medium") or 0),
+        "mel_risk_low_job_count": int(mel_risk_job_counts.get("low") or 0),
+        "mel_risk_unknown_job_count": int(mel_risk_job_counts.get("unknown") or 0),
         "terminal_job_count": len(terminal_rows),
         "hitl_job_count": sum(1 for _, job in filtered if bool(job.get("hitl_enabled"))),
         "total_pause_count": total_pause_count,
@@ -3136,12 +3199,14 @@ def public_portfolio_quality_payload(
     finding_status: Optional[str] = None,
     finding_severity: Optional[str] = None,
     toc_text_risk_level: Optional[str] = None,
+    mel_risk_level: Optional[str] = None,
 ) -> Dict[str, Any]:
     warning_level_filter = _normalize_warning_level_filter(warning_level)
     grounding_risk_filter = _normalize_grounding_risk_filter(grounding_risk_level)
     finding_status_filter = _normalize_finding_status_filter(finding_status)
     finding_severity_filter = _normalize_finding_severity_filter(finding_severity)
     toc_text_risk_filter = _normalize_toc_text_risk_filter(toc_text_risk_level)
+    mel_risk_filter = _normalize_mel_risk_filter(mel_risk_level)
     filtered: list[tuple[str, Dict[str, Any]]] = []
     for job_id, job in jobs_by_id.items():
         if not isinstance(job, dict):
@@ -3161,6 +3226,8 @@ def public_portfolio_quality_payload(
         if grounding_risk_filter is not None and _job_grounding_risk_level(job) != grounding_risk_filter:
             continue
         if toc_text_risk_filter is not None and _job_toc_text_risk_level(job) != toc_text_risk_filter:
+            continue
+        if mel_risk_filter is not None and _job_mel_risk_level(job) != mel_risk_filter:
             continue
         if not _job_matches_finding_filters(
             job,
@@ -4378,6 +4445,7 @@ def public_portfolio_quality_payload(
             "finding_status": finding_status_filter,
             "finding_severity": finding_severity_filter,
             "toc_text_risk_level": toc_text_risk_filter,
+            "mel_risk_level": mel_risk_filter,
         },
         "status_counts": status_counts,
         "donor_counts": donor_counts,

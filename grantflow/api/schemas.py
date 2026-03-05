@@ -1115,6 +1115,7 @@ class PortfolioMetricsFiltersPublicResponse(BaseModel):
     finding_status: Optional[str] = None
     finding_severity: Optional[str] = None
     toc_text_risk_level: Optional[str] = None
+    mel_risk_level: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -1134,6 +1135,13 @@ class PortfolioMetricsPublicResponse(BaseModel):
     grounding_risk_medium_job_count: int
     grounding_risk_low_job_count: int
     grounding_risk_unknown_job_count: int
+    mel_risk_counts: Optional[Dict[str, int]] = None
+    mel_risk_job_counts: Optional[Dict[str, int]] = None
+    mel_risk_job_rates: Optional[Dict[str, Optional[float]]] = None
+    mel_risk_high_job_count: Optional[int] = None
+    mel_risk_medium_job_count: Optional[int] = None
+    mel_risk_low_job_count: Optional[int] = None
+    mel_risk_unknown_job_count: Optional[int] = None
     terminal_job_count: int
     hitl_job_count: int
     total_pause_count: int
