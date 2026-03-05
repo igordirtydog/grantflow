@@ -12099,6 +12099,125 @@ def test_hitl_logframe_reject_then_resume_flow_supports_export_payload_and_expor
     assert export.content[:2] == b"PK"
 
 
+def test_hitl_mixed_checkpoints_reject_approve_flow_records_history_events():
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Education", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+            "hitl_checkpoints": ["toc", "logframe"],
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "toc"
+    toc_cp_1 = str(status["checkpoint_id"] or "")
+    assert toc_cp_1
+
+    reject_toc = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": toc_cp_1, "approved": False, "feedback": "Need ToC rewrite"},
+    )
+    assert reject_toc.status_code == 200
+    assert reject_toc.json()["status"] == "rejected"
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "architect"
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "toc"
+    toc_cp_2 = str(status["checkpoint_id"] or "")
+    assert toc_cp_2 and toc_cp_2 != toc_cp_1
+
+    approve_toc = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": toc_cp_2, "approved": True, "feedback": "ToC accepted"},
+    )
+    assert approve_toc.status_code == 200
+    assert approve_toc.json()["status"] == "approved"
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "mel"
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "logframe"
+    log_cp_1 = str(status["checkpoint_id"] or "")
+    assert log_cp_1
+
+    reject_log = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": log_cp_1, "approved": False, "feedback": "Need LogFrame adjustments"},
+    )
+    assert reject_log.status_code == 200
+    assert reject_log.json()["status"] == "rejected"
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "mel"
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "logframe"
+    log_cp_2 = str(status["checkpoint_id"] or "")
+    assert log_cp_2 and log_cp_2 != log_cp_1
+
+    approve_log = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": log_cp_2, "approved": True, "feedback": "LogFrame accepted"},
+    )
+    assert approve_log.status_code == 200
+    assert approve_log.json()["status"] == "approved"
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "critic"
+
+    status = _wait_for_terminal_status(job_id)
+    if status["status"] != "done":
+        status = _drain_hitl_to_done(job_id, initial_status=status, max_cycles=20)
+    assert status["status"] == "done"
+
+    decision_history = client.get(
+        f"/status/{job_id}/hitl/history",
+        params={"event_type": "hitl_checkpoint_decision"},
+    )
+    assert decision_history.status_code == 200
+    decision_body = decision_history.json()
+    assert int(decision_body["event_count"]) >= 4
+    assert int(decision_body["event_type_counts"]["hitl_checkpoint_decision"]) >= 4
+    decisions = decision_body["events"]
+    assert all(row["type"] == "hitl_checkpoint_decision" for row in decisions)
+    assert {str(row.get("checkpoint_stage") or "") for row in decisions} == {"toc", "logframe"}
+    assert sum(1 for row in decisions if row.get("approved") is True) >= 2
+    assert sum(1 for row in decisions if row.get("approved") is False) == 2
+    assert sum(1 for row in decisions if str(row.get("checkpoint_status") or "") == "approved") >= 2
+    assert sum(1 for row in decisions if str(row.get("checkpoint_status") or "") == "rejected") == 2
+
+    resume_history = client.get(
+        f"/status/{job_id}/hitl/history",
+        params={"event_type": "resume_requested"},
+    )
+    assert resume_history.status_code == 200
+    resume_body = resume_history.json()
+    assert int(resume_body["event_count"]) >= 4
+    assert int(resume_body["event_type_counts"]["resume_requested"]) >= 4
+    resume_events = resume_body["events"]
+    assert all(row["type"] == "resume_requested" for row in resume_events)
+    resume_targets = [str(row.get("resuming_from") or "") for row in resume_events]
+    assert resume_targets.count("architect") >= 1
+    assert resume_targets.count("mel") >= 2
+    assert resume_targets.count("critic") >= 1
+
+
 def test_hitl_checkpoint_selection_logframe_only_flow():
     response = client.post(
         "/generate",
