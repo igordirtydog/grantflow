@@ -13,6 +13,7 @@ from grantflow.eval.harness import (
     filter_eval_cases,
     format_eval_comparison_report,
     format_eval_suite_report,
+    limit_eval_cases,
     load_eval_cases,
     run_eval_suite,
 )
@@ -405,6 +406,19 @@ def test_filter_eval_cases_supports_donor_and_case_filters():
     assert [case["case_id"] for case in filtered] == ["usaid_a", "eu_a"]
 
 
+def test_limit_eval_cases_supports_head_and_seeded_sampling():
+    source_cases = [
+        {"case_id": "c1", "donor_id": "usaid"},
+        {"case_id": "c2", "donor_id": "eu"},
+        {"case_id": "c3", "donor_id": "worldbank"},
+        {"case_id": "c4", "donor_id": "state_department"},
+    ]
+    head = limit_eval_cases(source_cases, max_cases=2, sample_seed=None)
+    seeded = limit_eval_cases(source_cases, max_cases=2, sample_seed=42)
+    assert [case["case_id"] for case in head] == ["c1", "c2"]
+    assert [case["case_id"] for case in seeded] == ["c1", "c4"]
+
+
 def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_path, monkeypatch):
     json_out = tmp_path / "llm-eval-report.json"
     text_out = tmp_path / "llm-eval-report.txt"
@@ -461,6 +475,8 @@ def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_pa
     assert payload["runtime_overrides"]["donor_filters"] == ["usaid"]
     assert payload["runtime_overrides"]["case_filters"] == ["stub"]
     assert payload["runtime_overrides"]["cases_files"] == []
+    assert payload["runtime_overrides"]["max_cases"] is None
+    assert payload["runtime_overrides"]["sample_seed"] is None
     assert payload["expectations_skipped"] is True
     assert captured["suite_label"] == "llm-eval"
     assert captured["skip_expectations"] is True
@@ -520,6 +536,60 @@ def test_eval_harness_cli_supports_force_no_architect_rag(tmp_path, monkeypatch)
     captured_cases = captured["cases"]
     assert isinstance(captured_cases, list) and captured_cases
     assert captured_cases[0]["architect_rag_enabled"] is False
+
+
+def test_eval_harness_cli_supports_max_cases_and_sample_seed(tmp_path, monkeypatch):
+    json_out = tmp_path / "sampled-report.json"
+    text_out = tmp_path / "sampled-report.txt"
+
+    monkeypatch.setattr(
+        harness,
+        "load_eval_cases",
+        lambda fixtures_dir=None, case_files=None: [
+            {"case_id": "c1", "donor_id": "usaid"},
+            {"case_id": "c2", "donor_id": "eu"},
+            {"case_id": "c3", "donor_id": "worldbank"},
+            {"case_id": "c4", "donor_id": "state_department"},
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run_eval_suite(cases, *, suite_label=None, skip_expectations=False):
+        captured["cases"] = cases
+        return {
+            "suite_label": suite_label or "baseline",
+            "expectations_skipped": bool(skip_expectations),
+            "case_count": len(cases),
+            "passed_count": len(cases),
+            "failed_count": 0,
+            "all_passed": True,
+            "cases": [],
+        }
+
+    monkeypatch.setattr(harness, "run_eval_suite", fake_run_eval_suite)
+
+    exit_code = harness.main(
+        [
+            "--suite-label",
+            "llm-eval-sampled",
+            "--max-cases",
+            "2",
+            "--sample-seed",
+            "42",
+            "--json-out",
+            str(json_out),
+            "--text-out",
+            str(text_out),
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["runtime_overrides"]["max_cases"] == 2
+    assert payload["runtime_overrides"]["sample_seed"] == 42
+    captured_cases = captured["cases"]
+    assert isinstance(captured_cases, list)
+    assert [str(case.get("case_id")) for case in captured_cases] == ["c1", "c4"]
 
 
 def test_eval_harness_cli_supports_cases_file_argument(tmp_path):

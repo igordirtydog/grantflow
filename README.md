@@ -440,6 +440,20 @@ python scripts/check_seeded_corpus.py \
   --min-seeded-total 1
 ```
 
+Low-budget LLM exploratory run (subset only, deterministic sample):
+
+```bash
+python -m grantflow.eval.harness \
+  --suite-label llm-eval-sampled \
+  --force-llm \
+  --force-architect-rag \
+  --skip-expectations \
+  --max-cases 2 \
+  --sample-seed 42 \
+  --text-out eval-artifacts/llm-eval-sampled.txt \
+  --json-out eval-artifacts/llm-eval-sampled.json
+```
+
 Tune guard via environment variables if needed:
 
 ```bash

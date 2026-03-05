@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 import sys
 from copy import deepcopy
 from pathlib import Path
@@ -222,6 +223,24 @@ def filter_eval_cases(
             continue
         filtered.append(case)
     return filtered
+
+
+def limit_eval_cases(
+    cases: list[dict[str, Any]],
+    *,
+    max_cases: int | None = None,
+    sample_seed: int | None = None,
+) -> list[dict[str, Any]]:
+    if max_cases is None:
+        return cases
+    max_items = int(max_cases)
+    if max_items <= 0 or max_items >= len(cases):
+        return cases
+    if sample_seed is None:
+        return cases[:max_items]
+    rng = random.Random(int(sample_seed))
+    selected_indices = set(rng.sample(range(len(cases)), max_items))
+    return [case for idx, case in enumerate(cases) if idx in selected_indices]
 
 
 def _split_csv_args(values: list[str] | None) -> list[str]:
@@ -1321,6 +1340,18 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         help="Explicit JSON file(s) with eval cases (repeat flag or use comma-separated values).",
     )
     parser.add_argument(
+        "--max-cases",
+        type=int,
+        default=0,
+        help="Limit number of selected cases after donor/case filters (0 = no limit).",
+    )
+    parser.add_argument(
+        "--sample-seed",
+        type=int,
+        default=None,
+        help="Deterministic random seed for case subsampling when --max-cases is set.",
+    )
+    parser.add_argument(
         "--seed-rag-manifest",
         type=Path,
         default=None,
@@ -1378,6 +1409,12 @@ def main(argv: list[str] | None = None) -> int:
     donor_filters = _split_csv_args(args.donor_id)
     case_filters = _split_csv_args(args.case_id)
     cases = filter_eval_cases(cases, donor_ids=donor_filters, case_ids=case_filters)
+    max_cases = int(args.max_cases or 0)
+    cases = limit_eval_cases(
+        cases,
+        max_cases=max_cases if max_cases > 0 else None,
+        sample_seed=(int(args.sample_seed) if args.sample_seed is not None else None),
+    )
     if not cases:
         print("No eval cases matched the provided filters.", file=sys.stderr)
         return 2
@@ -1412,6 +1449,10 @@ def main(argv: list[str] | None = None) -> int:
     suite["runtime_overrides"]["donor_filters"] = donor_filters
     suite["runtime_overrides"]["case_filters"] = case_filters
     suite["runtime_overrides"]["cases_files"] = case_file_tokens
+    suite["runtime_overrides"]["max_cases"] = max_cases if max_cases > 0 else None
+    suite["runtime_overrides"]["sample_seed"] = (
+        int(args.sample_seed) if args.sample_seed is not None and max_cases > 0 else None
+    )
     if args.seed_rag_manifest is not None:
         suite["runtime_overrides"]["seed_rag_manifest"] = str(args.seed_rag_manifest)
         suite["runtime_overrides"]["seed_rag_best_effort"] = bool(args.seed_rag_best_effort)
