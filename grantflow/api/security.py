@@ -31,6 +31,7 @@ PROTECTED_OPERATIONS = {
     ("get", "/status/{job_id}/versions"),
     ("get", "/status/{job_id}/diff"),
     ("get", "/status/{job_id}/events"),
+    ("get", "/status/{job_id}/events/export"),
     ("get", "/status/{job_id}/hitl/history"),
     ("get", "/status/{job_id}/hitl/history/export"),
     ("get", "/status/{job_id}/metrics"),

@@ -4010,6 +4010,67 @@ def test_status_includes_draft_versions_traceability():
     assert "done" in statuses
 
 
+def test_status_events_export_endpoint_supports_csv_json_and_gzip():
+    job_id = "events-export-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {"donor_id": "usaid"},
+            "job_events": [
+                {
+                    "event_id": "evt-1",
+                    "ts": "2026-03-01T10:00:00+00:00",
+                    "type": "status_changed",
+                    "from_status": "accepted",
+                    "to_status": "running",
+                    "status": "running",
+                },
+                {
+                    "event_id": "evt-2",
+                    "ts": "2026-03-01T10:00:10+00:00",
+                    "type": "review_workflow_sla_recomputed",
+                    "actor": "qa",
+                    "total_updated_count": 3,
+                    "applied_finding_sla_hours": {"high": 12, "medium": 48, "low": 96},
+                },
+                {
+                    "event_id": "evt-3",
+                    "ts": "2026-03-01T10:00:20+00:00",
+                    "type": "status_changed",
+                    "from_status": "running",
+                    "to_status": "done",
+                    "status": "done",
+                },
+            ],
+        },
+    )
+
+    export_csv = client.get(f"/status/{job_id}/events/export", params={"format": "csv"})
+    assert export_csv.status_code == 200
+    assert "text/csv" in (export_csv.headers.get("content-type") or "")
+    assert f'grantflow_job_events_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert "event_id,ts,type,status,from_status,to_status,checkpoint_id" in export_csv.text
+    assert "review_workflow_sla_recomputed" in export_csv.text
+    assert "applied_finding_sla_hours" in export_csv.text
+
+    export_json = client.get(f"/status/{job_id}/events/export", params={"format": "json"})
+    assert export_json.status_code == 200
+    assert "application/json" in (export_json.headers.get("content-type") or "")
+    export_json_body = json.loads(export_json.text)
+    assert export_json_body["job_id"] == job_id
+    assert export_json_body["event_count"] == 3
+    assert export_json_body["events"][1]["type"] == "review_workflow_sla_recomputed"
+
+    export_csv_gzip = client.get(
+        f"/status/{job_id}/events/export",
+        params={"format": "csv", "gzip": "true"},
+    )
+    assert export_csv_gzip.status_code == 200
+    assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
+
+
 def test_versions_and_diff_endpoints():
     job_id = "test-job-versions-1"
     api_app_module._set_job(
@@ -9610,6 +9671,12 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     events_auth = client.get(f"/status/{job_id}/events", headers={"X-API-Key": "test-secret"})
     assert events_auth.status_code == 200
 
+    events_export_unauth = client.get(f"/status/{job_id}/events/export")
+    assert events_export_unauth.status_code == 401
+
+    events_export_auth = client.get(f"/status/{job_id}/events/export", headers={"X-API-Key": "test-secret"})
+    assert events_export_auth.status_code == 200
+
     hitl_history_unauth = client.get(f"/status/{job_id}/hitl/history")
     assert hitl_history_unauth.status_code == 401
 
@@ -10164,6 +10231,9 @@ def test_openapi_declares_api_key_security_scheme():
     status_events_security = (((spec.get("paths") or {}).get("/status/{job_id}/events") or {}).get("get") or {}).get(
         "security"
     )
+    status_events_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/events/export") or {}).get("get") or {}
+    ).get("security")
     status_hitl_history_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/hitl/history") or {}).get("get") or {}
     ).get("security")
@@ -10808,6 +10878,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_versions_security == [{"ApiKeyAuth": []}]
     assert status_diff_security == [{"ApiKeyAuth": []}]
     assert status_events_security == [{"ApiKeyAuth": []}]
+    assert status_events_export_security == [{"ApiKeyAuth": []}]
     assert status_hitl_history_security == [{"ApiKeyAuth": []}]
     assert status_hitl_history_export_security == [{"ApiKeyAuth": []}]
     assert status_metrics_security == [{"ApiKeyAuth": []}]
