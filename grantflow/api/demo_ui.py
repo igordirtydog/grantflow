@@ -224,9 +224,6 @@ def render_demo_ui_html() -> str:
                 <label for="generatePresetSelect">Generate Preset</label>
                 <select id="generatePresetSelect">
                   <option value="">none</option>
-                  <option value="usaid_gov_ai_kazakhstan">USAID: AI civil service (KZ)</option>
-                  <option value="eu_digital_governance_moldova">EU: digital governance (MD)</option>
-                  <option value="worldbank_public_sector_uzbekistan">World Bank: public sector performance (UZ)</option>
                 </select>
               </div>
               <div style="align-self:end;">
@@ -1594,7 +1591,7 @@ def render_demo_ui_html() -> str:
         ingestChecklistProgress: {},
         zeroReadinessWarningPrefs: {},
       };
-      const GENERATE_PRESETS = {
+      let GENERATE_PRESETS = {
         usaid_gov_ai_kazakhstan: {
           donor_id: "usaid",
           project: "Responsible AI Skills for Civil Service Modernization",
@@ -1669,6 +1666,12 @@ def render_demo_ui_html() -> str:
           },
         },
       };
+      const LOCAL_GENERATE_PRESET_LABELS = {
+        usaid_gov_ai_kazakhstan: "USAID: AI civil service (KZ)",
+        eu_digital_governance_moldova: "EU: digital governance (MD)",
+        worldbank_public_sector_uzbekistan: "World Bank: public sector performance (UZ)",
+      };
+      const SERVER_GENERATE_PRESET_LABELS = {};
       const INGEST_PRESETS = {
         usaid_gov_ai_kazakhstan: {
           donor_id: "usaid",
@@ -2073,6 +2076,7 @@ def render_demo_ui_html() -> str:
         els.jobIdInput.value = localStorage.getItem("grantflow_demo_job_id") || "";
         state.ingestChecklistProgress = loadIngestChecklistProgress();
         state.zeroReadinessWarningPrefs = loadZeroReadinessWarningPrefs();
+        renderGeneratePresetOptions();
         restoreUiState();
         if (!String(els.productionExportMode?.value || "").trim()) {
           els.productionExportMode.value = "false";
@@ -2120,6 +2124,99 @@ def render_demo_ui_html() -> str:
           const el = els[elKey];
           if (!el) continue;
           localStorage.setItem(storageKey, String(el.value || ""));
+        }
+      }
+
+      function generatePresetLabel(key) {
+        const token = String(key || "").trim();
+        if (!token) return "Preset";
+        if (SERVER_GENERATE_PRESET_LABELS[token]) return SERVER_GENERATE_PRESET_LABELS[token];
+        if (LOCAL_GENERATE_PRESET_LABELS[token]) return LOCAL_GENERATE_PRESET_LABELS[token];
+        return token;
+      }
+
+      function renderGeneratePresetOptions({ preferredValue = null } = {}) {
+        if (!els.generatePresetSelect) return;
+        const selected = preferredValue == null
+          ? String(els.generatePresetSelect.value || "").trim()
+          : String(preferredValue || "").trim();
+        const keys = Object.keys(GENERATE_PRESETS || {});
+        els.generatePresetSelect.innerHTML = "";
+        const noneOption = document.createElement("option");
+        noneOption.value = "";
+        noneOption.textContent = "none";
+        els.generatePresetSelect.appendChild(noneOption);
+        for (const key of keys) {
+          const option = document.createElement("option");
+          option.value = key;
+          option.textContent = generatePresetLabel(key);
+          els.generatePresetSelect.appendChild(option);
+        }
+        if (selected && GENERATE_PRESETS[selected]) {
+          els.generatePresetSelect.value = selected;
+        } else {
+          els.generatePresetSelect.value = "";
+        }
+      }
+
+      async function loadServerGeneratePresets() {
+        let listBody;
+        try {
+          listBody = await apiFetch("/generate/presets/rbm");
+        } catch (err) {
+          return;
+        }
+        const rows = Array.isArray(listBody?.presets) ? listBody.presets : [];
+        if (!rows.length) return;
+
+        const merged = { ...(GENERATE_PRESETS || {}) };
+        let changed = false;
+        for (const row of rows) {
+          if (!row || typeof row !== "object") continue;
+          const sampleId = String(row.sample_id || "").trim();
+          if (!sampleId) continue;
+          try {
+            const detail = await apiFetch(
+              `/generate/presets/rbm/${encodeURIComponent(sampleId)}?llm_mode=true&hitl_enabled=true`
+            );
+            const generatePayload =
+              detail && typeof detail.generate_payload === "object" && !Array.isArray(detail.generate_payload)
+                ? detail.generate_payload
+                : {};
+            const inputContext =
+              generatePayload.input_context &&
+              typeof generatePayload.input_context === "object" &&
+              !Array.isArray(generatePayload.input_context)
+                ? { ...generatePayload.input_context }
+                : {};
+            const donorId = String(generatePayload.donor_id || row.donor_id || "").trim();
+            const project = String(inputContext.project || row.title || sampleId).trim();
+            const country = String(inputContext.country || row.country || "").trim();
+            merged[sampleId] = {
+              donor_id: donorId,
+              project,
+              country,
+              llm_mode: Boolean(generatePayload.llm_mode),
+              hitl_enabled: Boolean(generatePayload.hitl_enabled),
+              strict_preflight: Boolean(generatePayload.strict_preflight),
+              input_context: inputContext,
+            };
+            const donorLabel = donorId ? donorId.toUpperCase() : "RBM";
+            const title = String(row.title || project || sampleId).trim();
+            SERVER_GENERATE_PRESET_LABELS[sampleId] = `RBM (${donorLabel}): ${title}`;
+            changed = true;
+          } catch (err) {
+            // Ignore individual preset fetch failures; keep local fallback presets available.
+          }
+        }
+
+        if (changed) {
+          GENERATE_PRESETS = merged;
+          const storedPreset = localStorage.getItem("grantflow_demo_generate_preset") || "";
+          const preferredValue = String(els.generatePresetSelect.value || "").trim() || String(storedPreset || "").trim();
+          renderGeneratePresetOptions({ preferredValue });
+          renderGeneratePresetReadiness();
+          renderZeroReadinessWarningPreference();
         }
       }
 
@@ -8169,6 +8266,7 @@ def render_demo_ui_html() -> str:
 
       initDefaults();
       bind();
+      loadServerGeneratePresets().catch(() => {});
       if (currentJobId()) {
         refreshAll().catch(() => {});
       } else {

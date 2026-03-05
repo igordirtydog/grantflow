@@ -196,6 +196,7 @@ def test_demo_console_page_loads():
     assert "ingestInventoryJson" in body
     assert "grantflow_demo_ingest_checklist_progress" in body
     assert "doc_family=" in body
+    assert "/generate/presets/rbm" in body
     assert "/ingest" in body
     assert "/ingest/inventory?" in body
     assert "/ingest/inventory/export?" in body
