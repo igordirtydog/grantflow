@@ -22,6 +22,7 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from openpyxl import load_workbook
 from pydantic import ValidationError
 
+from grantflow.api.constants import CRITIC_FINDING_STATUSES, REVIEW_COMMENT_SECTIONS
 from grantflow.api.demo_ui import render_demo_ui_html
 from grantflow.api.demo_presets import (
     list_generate_legacy_preset_details,
@@ -199,8 +200,6 @@ JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
-REVIEW_COMMENT_SECTIONS = {"toc", "logframe", "general"}
-CRITIC_FINDING_STATUSES = {"open", "acknowledged", "resolved"}
 CRITIC_FINDING_SLA_HOURS = {"high": 24, "medium": 72, "low": 120}
 REVIEW_COMMENT_DEFAULT_SLA_HOURS = 72
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")

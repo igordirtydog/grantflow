@@ -1,27 +1,11 @@
 from __future__ import annotations
 
+import uuid
+from typing import Any, Dict, Optional
+
+from fastapi import BackgroundTasks, HTTPException, Query, Request
+
 from grantflow.api.app import (
-    Any,
-    BackgroundTasks,
-    Dict,
-    DonorFactory,
-    GenerateAcceptedPublicResponse,
-    GenerateFromPresetAcceptedPublicResponse,
-    GenerateFromPresetBatchPublicResponse,
-    GeneratePreflightPublicResponse,
-    HITLStatus,
-    HTTPException,
-    JobCitationsPublicResponse,
-    JobDiffPublicResponse,
-    JobEventsPublicResponse,
-    JobGroundingGatePublicResponse,
-    JobMetricsPublicResponse,
-    JobQualitySummaryPublicResponse,
-    JobStatusPublicResponse,
-    JobVersionsPublicResponse,
-    Optional,
-    Query,
-    Request,
     _build_generate_preflight,
     _checkpoint_status_token,
     _clear_hitl_runtime_state,
@@ -53,10 +37,8 @@ from grantflow.api.app import (
     _store_idempotency_response,
     _update_job,
     _uses_redis_queue_runner,
-    build_graph_state,
-    config,
-    hitl_manager,
-    normalize_state_contract,
+)
+from grantflow.api.public_views import (
     public_job_citations_payload,
     public_job_diff_payload,
     public_job_events_payload,
@@ -65,16 +47,31 @@ from grantflow.api.app import (
     public_job_payload,
     public_job_quality_payload,
     public_job_versions_payload,
-    require_api_key_if_configured,
-    uuid,
 )
 from grantflow.api.schemas import (
+    GenerateAcceptedPublicResponse,
+    GenerateFromPresetAcceptedPublicResponse,
     GenerateFromPresetBatchRequest,
+    GenerateFromPresetBatchPublicResponse,
     GenerateFromPresetRequest,
     GeneratePreflightRequest,
+    GeneratePreflightPublicResponse,
     GenerateRequest,
+    JobCitationsPublicResponse,
+    JobDiffPublicResponse,
+    JobEventsPublicResponse,
+    JobGroundingGatePublicResponse,
+    JobMetricsPublicResponse,
+    JobQualitySummaryPublicResponse,
+    JobStatusPublicResponse,
+    JobVersionsPublicResponse,
 )
+from grantflow.api.security import require_api_key_if_configured
 from grantflow.api.routers import jobs_router
+from grantflow.core.config import config
+from grantflow.core.strategies.factory import DonorFactory
+from grantflow.swarm.hitl import HITLStatus, hitl_manager
+from grantflow.swarm.state_contract import build_graph_state, normalize_state_contract
 
 
 @jobs_router.post(

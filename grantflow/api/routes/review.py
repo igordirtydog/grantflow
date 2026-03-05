@@ -1,32 +1,10 @@
 from __future__ import annotations
 
+from typing import Optional
+
+from fastapi import HTTPException, Query, Request
+
 from grantflow.api.app import (
-    CRITIC_FINDING_STATUSES,
-    CriticFatalFlawPublicResponse,
-    CriticFatalFlawStatusUpdatePublicResponse,
-    CriticFindingsBulkStatusPublicResponse,
-    CriticFindingsListPublicResponse,
-    HITLPendingListPublicResponse,
-    HITLStatus,
-    HTTPException,
-    JobCommentsPublicResponse,
-    JobCriticPublicResponse,
-    JobHITLHistoryPublicResponse,
-    JobReviewWorkflowPublicResponse,
-    JobReviewWorkflowSLAHotspotsPublicResponse,
-    JobReviewWorkflowSLAHotspotsTrendsPublicResponse,
-    JobReviewWorkflowSLAProfilePublicResponse,
-    JobReviewWorkflowSLAPublicResponse,
-    JobReviewWorkflowSLARecomputePublicResponse,
-    JobReviewWorkflowSLATrendsPublicResponse,
-    JobReviewWorkflowTrendsPublicResponse,
-    Optional,
-    Query,
-    REVIEW_COMMENT_SECTIONS,
-    REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
-    REVIEW_WORKFLOW_STATE_FILTER_VALUES,
-    Request,
-    ReviewCommentPublicResponse,
     _append_review_comment,
     _checkpoint_status_token,
     _checkpoint_tenant_id,
@@ -54,8 +32,11 @@ from grantflow.api.app import (
     _set_review_comment_status,
     _store_global_idempotency_response,
     _validated_filter_token,
-    finding_primary_id,
-    hitl_manager,
+)
+from grantflow.api.constants import CRITIC_FINDING_STATUSES, REVIEW_COMMENT_SECTIONS
+from grantflow.api.public_views import (
+    REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    REVIEW_WORKFLOW_STATE_FILTER_VALUES,
     public_checkpoint_payload,
     public_job_comments_payload,
     public_job_critic_payload,
@@ -65,15 +46,34 @@ from grantflow.api.app import (
     public_job_review_workflow_sla_payload,
     public_job_review_workflow_sla_trends_payload,
     public_job_review_workflow_trends_payload,
-    require_api_key_if_configured,
 )
 from grantflow.api.schemas import (
+    CriticFatalFlawPublicResponse,
+    CriticFatalFlawStatusUpdatePublicResponse,
+    CriticFindingsBulkStatusPublicResponse,
     CriticFindingsBulkStatusRequest,
+    CriticFindingsListPublicResponse,
     HITLApprovalRequest,
+    HITLPendingListPublicResponse,
     JobCommentCreateRequest,
+    JobCommentsPublicResponse,
+    JobCriticPublicResponse,
+    JobHITLHistoryPublicResponse,
+    JobReviewWorkflowPublicResponse,
+    JobReviewWorkflowSLAHotspotsPublicResponse,
+    JobReviewWorkflowSLAHotspotsTrendsPublicResponse,
+    JobReviewWorkflowSLAProfilePublicResponse,
+    JobReviewWorkflowSLAPublicResponse,
+    JobReviewWorkflowSLARecomputePublicResponse,
+    JobReviewWorkflowSLATrendsPublicResponse,
+    JobReviewWorkflowTrendsPublicResponse,
+    ReviewCommentPublicResponse,
     ReviewWorkflowSLARecomputeRequest,
 )
+from grantflow.api.security import require_api_key_if_configured
 from grantflow.api.routers import review_router
+from grantflow.swarm.findings import finding_primary_id
+from grantflow.swarm.hitl import HITLStatus, hitl_manager
 
 
 @review_router.get(

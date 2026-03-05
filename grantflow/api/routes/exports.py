@@ -1,14 +1,13 @@
 from __future__ import annotations
 
+import io
+import zipfile
+from typing import Optional
+
+from fastapi import HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+
 from grantflow.api.app import (
-    HTTPException,
-    JobExportPayloadPublicResponse,
-    Optional,
-    Query,
-    REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
-    REVIEW_WORKFLOW_STATE_FILTER_VALUES,
-    Request,
-    StreamingResponse,
     _configured_export_require_grounded_gate_pass,
     _dead_letter_queue_csv_text,
     _ensure_job_tenant_read_access,
@@ -34,9 +33,10 @@ from grantflow.api.app import (
     _resolve_tenant_id,
     _validated_filter_token,
     _xlsx_contract_validation_context,
-    build_docx_from_toc,
-    build_xlsx_from_logframe,
-    io,
+)
+from grantflow.api.public_views import (
+    REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
+    REVIEW_WORKFLOW_STATE_FILTER_VALUES,
     public_ingest_inventory_csv_text,
     public_ingest_inventory_payload,
     public_job_comments_payload,
@@ -70,11 +70,12 @@ from grantflow.api.app import (
     public_portfolio_review_workflow_sla_trends_payload,
     public_portfolio_review_workflow_trends_csv_text,
     public_portfolio_review_workflow_trends_payload,
-    require_api_key_if_configured,
-    zipfile,
 )
-from grantflow.api.schemas import ExportRequest
+from grantflow.api.schemas import ExportRequest, JobExportPayloadPublicResponse
+from grantflow.api.security import require_api_key_if_configured
 from grantflow.api.routers import exports_router
+from grantflow.exporters.excel_builder import build_xlsx_from_logframe
+from grantflow.exporters.word_builder import build_docx_from_toc
 
 
 @exports_router.get("/queue/dead-letter/export")

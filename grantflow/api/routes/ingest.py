@@ -1,21 +1,12 @@
 from __future__ import annotations
 
+import json
+import tempfile
+from typing import Any, Dict, Optional
+
+from fastapi import File, Form, HTTPException, Query, Request, UploadFile
+
 from grantflow.api.app import (
-    Any,
-    Dict,
-    DonorFactory,
-    File,
-    Form,
-    GeneratePreflightPublicResponse,
-    HTTPException,
-    IngestInventoryPublicResponse,
-    IngestPresetDetailPublicResponse,
-    IngestPresetListPublicResponse,
-    IngestRecentListPublicResponse,
-    Optional,
-    Query,
-    Request,
-    UploadFile,
     _build_generate_preflight,
     _ingest_inventory,
     _list_ingest_events,
@@ -23,18 +14,22 @@ from grantflow.api.app import (
     _resolve_preflight_request_context,
     _resolve_tenant_id,
     _tenant_rag_namespace,
-    ingest_pdf_to_namespace,
-    json,
-    list_ingest_preset_summaries,
-    load_ingest_preset,
-    public_ingest_inventory_payload,
-    public_ingest_recent_payload,
-    require_api_key_if_configured,
-    tempfile,
-    vector_store,
 )
-from grantflow.api.schemas import IngestReadinessRequest
+from grantflow.api.demo_presets import list_ingest_preset_summaries, load_ingest_preset
+from grantflow.api.public_views import public_ingest_inventory_payload, public_ingest_recent_payload
+from grantflow.api.schemas import (
+    GeneratePreflightPublicResponse,
+    IngestInventoryPublicResponse,
+    IngestPresetDetailPublicResponse,
+    IngestPresetListPublicResponse,
+    IngestReadinessRequest,
+    IngestRecentListPublicResponse,
+)
+from grantflow.api.security import require_api_key_if_configured
 from grantflow.api.routers import ingest_router
+from grantflow.core.strategies.factory import DonorFactory
+from grantflow.memory_bank.ingest import ingest_pdf_to_namespace
+from grantflow.memory_bank.vector_store import vector_store
 
 
 @ingest_router.get(
