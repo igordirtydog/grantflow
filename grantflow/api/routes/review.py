@@ -5,13 +5,10 @@ from grantflow.api.app import (
     CriticFatalFlawPublicResponse,
     CriticFatalFlawStatusUpdatePublicResponse,
     CriticFindingsBulkStatusPublicResponse,
-    CriticFindingsBulkStatusRequest,
     CriticFindingsListPublicResponse,
-    HITLApprovalRequest,
     HITLPendingListPublicResponse,
     HITLStatus,
     HTTPException,
-    JobCommentCreateRequest,
     JobCommentsPublicResponse,
     JobCriticPublicResponse,
     JobHITLHistoryPublicResponse,
@@ -30,7 +27,6 @@ from grantflow.api.app import (
     REVIEW_WORKFLOW_STATE_FILTER_VALUES,
     Request,
     ReviewCommentPublicResponse,
-    ReviewWorkflowSLARecomputeRequest,
     _append_review_comment,
     _checkpoint_status_token,
     _checkpoint_tenant_id,
@@ -70,6 +66,12 @@ from grantflow.api.app import (
     public_job_review_workflow_sla_trends_payload,
     public_job_review_workflow_trends_payload,
     require_api_key_if_configured,
+)
+from grantflow.api.schemas import (
+    CriticFindingsBulkStatusRequest,
+    HITLApprovalRequest,
+    JobCommentCreateRequest,
+    ReviewWorkflowSLARecomputeRequest,
 )
 from grantflow.api.routers import review_router
 

@@ -11,7 +11,6 @@ from grantflow.api.app import (
     IngestInventoryPublicResponse,
     IngestPresetDetailPublicResponse,
     IngestPresetListPublicResponse,
-    IngestReadinessRequest,
     IngestRecentListPublicResponse,
     Optional,
     Query,
@@ -34,6 +33,7 @@ from grantflow.api.app import (
     tempfile,
     vector_store,
 )
+from grantflow.api.schemas import IngestReadinessRequest
 from grantflow.api.routers import ingest_router
 
 

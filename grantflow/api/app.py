@@ -20,7 +20,7 @@ from typing import Any, AsyncIterator, Callable, Dict, Literal, Optional
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from openpyxl import load_workbook
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
 from grantflow.api.demo_ui import render_demo_ui_html
 from grantflow.api.demo_presets import (
@@ -80,6 +80,7 @@ from grantflow.api.public_views import (
 )
 from grantflow.api.routers import include_api_routers
 from grantflow.api.schemas import (
+    CriticFindingsBulkStatusRequest,
     CriticFatalFlawPublicResponse,
     CriticFatalFlawStatusUpdatePublicResponse,
     CriticFindingsBulkStatusPublicResponse,
@@ -88,19 +89,27 @@ from grantflow.api.schemas import (
     DeadLetterQueueListPublicResponse,
     DeadLetterQueueMutationPublicResponse,
     DemoPresetBundlePublicResponse,
+    ExportRequest,
     GenerateAcceptedPublicResponse,
+    GenerateFromPresetBatchRequest,
     GenerateFromPresetAcceptedPublicResponse,
     GenerateFromPresetBatchPublicResponse,
+    GenerateFromPresetRequest,
+    GeneratePreflightRequest,
     GeneratePresetListPublicResponse,
     GeneratePreflightPublicResponse,
     GenerateLegacyPresetDetailPublicResponse,
     GenerateLegacyPresetListPublicResponse,
+    GenerateRequest,
+    HITLApprovalRequest,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
+    IngestReadinessRequest,
     IngestPresetDetailPublicResponse,
     IngestPresetListPublicResponse,
     IngestRecentListPublicResponse,
     JobCitationsPublicResponse,
+    JobCommentCreateRequest,
     JobCommentsPublicResponse,
     JobCriticPublicResponse,
     JobDiffPublicResponse,
@@ -131,6 +140,7 @@ from grantflow.api.schemas import (
     QueueWorkerHeartbeatPublicResponse,
     RBMSamplePresetDetailPublicResponse,
     RBMSamplePresetListPublicResponse,
+    ReviewWorkflowSLARecomputeRequest,
     ReviewCommentPublicResponse,
 )
 from grantflow.api.security import (
@@ -2532,125 +2542,6 @@ def _filter_jobs_by_tenant(jobs: Dict[str, Dict[str, Any]], tenant_id: Optional[
         if _job_tenant_id(job) == token:
             filtered[job_id] = job
     return filtered
-
-
-class GenerateRequest(BaseModel):
-    donor_id: str
-    input_context: Dict[str, Any]
-    tenant_id: Optional[str] = None
-    request_id: Optional[str] = None
-    llm_mode: bool = False
-    architect_rag_enabled: bool = True
-    require_grounded_generation: bool = False
-    hitl_enabled: bool = False
-    hitl_checkpoints: Optional[list[Literal["architect", "toc", "mel", "logframe"]]] = None
-    strict_preflight: bool = False
-    webhook_url: Optional[str] = None
-    webhook_secret: Optional[str] = None
-    client_metadata: Optional[Dict[str, Any]] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class GenerateFromPresetRequest(BaseModel):
-    preset_key: str
-    preset_type: Literal["auto", "legacy", "rbm"] = "auto"
-    tenant_id: Optional[str] = None
-    request_id: Optional[str] = None
-    llm_mode: Optional[bool] = None
-    architect_rag_enabled: Optional[bool] = None
-    require_grounded_generation: Optional[bool] = None
-    hitl_enabled: Optional[bool] = None
-    hitl_checkpoints: Optional[list[Literal["architect", "toc", "mel", "logframe"]]] = None
-    strict_preflight: Optional[bool] = None
-    webhook_url: Optional[str] = None
-    webhook_secret: Optional[str] = None
-    input_context_patch: Optional[Dict[str, Any]] = None
-    client_metadata_patch: Optional[Dict[str, Any]] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class GenerateFromPresetBatchRequest(BaseModel):
-    items: list[GenerateFromPresetRequest]
-    continue_on_error: bool = True
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class GeneratePreflightRequest(BaseModel):
-    donor_id: str
-    tenant_id: Optional[str] = None
-    architect_rag_enabled: bool = True
-    client_metadata: Optional[Dict[str, Any]] = None
-    input_context: Optional[Dict[str, Any]] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class IngestReadinessRequest(BaseModel):
-    donor_id: str
-    tenant_id: Optional[str] = None
-    architect_rag_enabled: bool = True
-    expected_doc_families: Optional[list[str]] = None
-    client_metadata: Optional[Dict[str, Any]] = None
-    input_context: Optional[Dict[str, Any]] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class HITLApprovalRequest(BaseModel):
-    checkpoint_id: str
-    approved: bool
-    feedback: Optional[str] = None
-    request_id: Optional[str] = None
-
-
-class ExportRequest(BaseModel):
-    payload: Optional[Dict[str, Any]] = None
-    toc_draft: Optional[Dict[str, Any]] = None
-    logframe_draft: Optional[Dict[str, Any]] = None
-    donor_id: Optional[str] = None
-    review_comments: Optional[list[Dict[str, Any]]] = None
-    critic_findings: Optional[list[Dict[str, Any]]] = None
-    format: str = "both"
-    allow_unsafe_export: bool = False
-    production_export: bool = False
-
-    model_config = ConfigDict(extra="allow")
-
-
-class JobCommentCreateRequest(BaseModel):
-    section: str
-    message: str
-    author: Optional[str] = None
-    version_id: Optional[str] = None
-    linked_finding_id: Optional[str] = None
-    request_id: Optional[str] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class CriticFindingsBulkStatusRequest(BaseModel):
-    next_status: str
-    apply_to_all: bool = False
-    dry_run: bool = False
-    request_id: Optional[str] = None
-    if_match_status: Optional[str] = None
-    finding_status: Optional[str] = None
-    severity: Optional[str] = None
-    section: Optional[str] = None
-    finding_ids: Optional[list[str]] = None
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ReviewWorkflowSLARecomputeRequest(BaseModel):
-    finding_sla_hours: Optional[Dict[str, int]] = None
-    default_comment_sla_hours: Optional[int] = None
-    use_saved_profile: bool = False
-
-    model_config = ConfigDict(extra="forbid")
 
 
 def _resolve_export_inputs(

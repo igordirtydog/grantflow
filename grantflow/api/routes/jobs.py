@@ -8,11 +8,7 @@ from grantflow.api.app import (
     GenerateAcceptedPublicResponse,
     GenerateFromPresetAcceptedPublicResponse,
     GenerateFromPresetBatchPublicResponse,
-    GenerateFromPresetBatchRequest,
-    GenerateFromPresetRequest,
     GeneratePreflightPublicResponse,
-    GeneratePreflightRequest,
-    GenerateRequest,
     HITLStatus,
     HTTPException,
     JobCitationsPublicResponse,
@@ -71,6 +67,12 @@ from grantflow.api.app import (
     public_job_versions_payload,
     require_api_key_if_configured,
     uuid,
+)
+from grantflow.api.schemas import (
+    GenerateFromPresetBatchRequest,
+    GenerateFromPresetRequest,
+    GeneratePreflightRequest,
+    GenerateRequest,
 )
 from grantflow.api.routers import jobs_router
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from grantflow.api.app import (
-    ExportRequest,
     HTTPException,
     JobExportPayloadPublicResponse,
     Optional,
@@ -74,6 +73,7 @@ from grantflow.api.app import (
     require_api_key_if_configured,
     zipfile,
 )
+from grantflow.api.schemas import ExportRequest
 from grantflow.api.routers import exports_router
 
 
