@@ -84,6 +84,7 @@ Optional queue mode (`redis_queue`):
 export GRANTFLOW_JOB_RUNNER_MODE=redis_queue
 export GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED=false
 export GRANTFLOW_JOB_RUNNER_REDIS_URL=redis://127.0.0.1:6379/0
+export GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_POLICY_MODE=strict
 python -m grantflow.worker
 ```
 
@@ -97,7 +98,11 @@ curl -s http://127.0.0.1:8000/ready
 ```
 
 `/ready` includes `checks.configuration_warnings` for non-blocking config risks (for example `CHROMA_HOST` with `CHROMA_PORT=8000`).
-In dispatcher mode (`redis_queue` with local consumer disabled), `/ready` also checks external worker heartbeat and degrades when heartbeat is missing/stale.
+In dispatcher mode (`redis_queue` with local consumer disabled), heartbeat policy is controlled by `GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_POLICY_MODE`:
+- `strict`: `/ready` degrades when heartbeat is missing/stale
+- `warn`: alert is emitted but `/ready` stays green
+- `off`: heartbeat gate is disabled
+`/health` includes `diagnostics.job_runner.dispatcher_worker_heartbeat` with `age_seconds` and `source` when available.
 
 ### Start job
 
@@ -254,6 +259,7 @@ Common env vars:
 - `GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_KEY`
 - `GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_TTL_SECONDS`
 - `GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_INTERVAL_SECONDS`
+- `GRANTFLOW_JOB_RUNNER_REDIS_WORKER_HEARTBEAT_POLICY_MODE` (`off|warn|strict`)
 
 Store alignment rule:
 - `GRANTFLOW_JOB_STORE` and `GRANTFLOW_HITL_STORE` must match (`inmem` or `sqlite`).

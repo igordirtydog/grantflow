@@ -237,6 +237,13 @@ def _dead_letter_alert_blocking() -> bool:
     return bool(getattr(config.job_runner, "dead_letter_alert_blocking", False))
 
 
+def _dispatcher_worker_heartbeat_policy_mode() -> str:
+    token = str(getattr(config.job_runner, "redis_worker_heartbeat_policy_mode", "strict") or "strict").strip().lower()
+    if token not in GROUNDING_POLICY_MODES:
+        return "strict"
+    return token
+
+
 def _build_job_runner():
     worker_count = int(getattr(config.job_runner, "worker_count", 2) or 2)
     queue_maxsize = int(getattr(config.job_runner, "queue_maxsize", 200) or 200)
@@ -3938,6 +3945,10 @@ def _health_diagnostics() -> dict[str, Any]:
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
+    job_runner_diag = JOB_RUNNER.diagnostics()
+    dispatcher_heartbeat_status = (
+        job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
+    )
     diagnostics: dict[str, Any] = {
         "job_store": {"mode": job_store_mode},
         "hitl_store": {"mode": hitl_store_mode},
@@ -3945,7 +3956,11 @@ def _health_diagnostics() -> dict[str, Any]:
         "job_runner": {
             "mode": _job_runner_mode(),
             "queue_enabled": _uses_queue_runner(),
-            "queue": JOB_RUNNER.diagnostics(),
+            "queue": job_runner_diag,
+            "dispatcher_worker_heartbeat_policy": {
+                "mode": _dispatcher_worker_heartbeat_policy_mode(),
+            },
+            "dispatcher_worker_heartbeat": dispatcher_heartbeat_status,
         },
         "auth": {
             "api_key_configured": bool(api_key_configured()),
@@ -4114,6 +4129,10 @@ def readiness_check():
     vector_ready = _vector_store_readiness()
     job_runner_mode = _job_runner_mode()
     job_runner_diag = JOB_RUNNER.diagnostics()
+    dispatcher_heartbeat_status = (
+        job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
+    )
+    dispatcher_heartbeat_policy_mode = _dispatcher_worker_heartbeat_policy_mode()
     alerts: list[dict[str, Any]] = []
     dead_letter_threshold = _dead_letter_alert_threshold()
     dead_letter_queue_size_raw = job_runner_diag.get("dead_letter_queue_size")
@@ -4134,22 +4153,25 @@ def readiness_check():
         consumer_enabled = bool(job_runner_diag.get("consumer_enabled", True))
         running_ok = bool(job_runner_diag.get("running")) if consumer_enabled else True
         job_runner_ready = running_ok and bool(job_runner_diag.get("redis_available"))
-        if not consumer_enabled:
-            heartbeat = job_runner_diag.get("worker_heartbeat")
-            heartbeat_healthy = bool(heartbeat.get("healthy")) if isinstance(heartbeat, dict) else False
+        if not consumer_enabled and dispatcher_heartbeat_policy_mode != "off":
+            heartbeat_healthy = (
+                bool(dispatcher_heartbeat_status.get("healthy")) if isinstance(dispatcher_heartbeat_status, dict) else False
+            )
             if not heartbeat_healthy:
+                blocking = dispatcher_heartbeat_policy_mode == "strict"
                 alerts.append(
                     {
                         "code": "REDIS_DISPATCHER_WORKER_HEARTBEAT_MISSING",
-                        "severity": "high",
+                        "severity": "high" if blocking else "medium",
                         "message": (
                             "Redis dispatcher mode is enabled with local consumer disabled, "
                             "but no healthy external worker heartbeat was detected."
                         ),
-                        "blocking": True,
+                        "blocking": blocking,
                     }
                 )
-                job_runner_ready = False
+                if blocking:
+                    job_runner_ready = False
     if dead_letter_alert_triggered and _dead_letter_alert_blocking():
         job_runner_ready = False
     ready = bool(vector_ready.get("ready")) and job_runner_ready
@@ -4184,6 +4206,10 @@ def readiness_check():
                 "mode": job_runner_mode,
                 "ready": job_runner_ready,
                 "queue": job_runner_diag,
+                "dispatcher_worker_heartbeat_policy": {
+                    "mode": dispatcher_heartbeat_policy_mode,
+                },
+                "dispatcher_worker_heartbeat": dispatcher_heartbeat_status,
                 "dead_letter_alert": dead_letter_alert,
                 "alerts": alerts,
             },

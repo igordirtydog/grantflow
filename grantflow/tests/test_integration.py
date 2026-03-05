@@ -102,6 +102,10 @@ def test_health_endpoint():
     export_runtime_gate_policy = diagnostics["export_runtime_grounded_gate_policy"]
     assert isinstance(export_runtime_gate_policy["require_pass"], bool)
     assert isinstance(diagnostics.get("configuration_warnings"), list)
+    dispatcher_policy = diagnostics["job_runner"]["dispatcher_worker_heartbeat_policy"]
+    assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
+    dispatcher_heartbeat = diagnostics["job_runner"]["dispatcher_worker_heartbeat"]
+    assert dispatcher_heartbeat is None or isinstance(dispatcher_heartbeat, dict)
 
 
 def test_store_backend_alignment_validation_detects_job_hitl_mismatch(monkeypatch):
@@ -585,10 +589,15 @@ def test_ready_endpoint():
     export_runtime_gate_policy = checks["export_runtime_grounded_gate_policy"]
     assert isinstance(export_runtime_gate_policy["require_pass"], bool)
     assert isinstance(checks.get("configuration_warnings"), list)
+    dispatcher_policy = checks["job_runner"]["dispatcher_worker_heartbeat_policy"]
+    assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
+    dispatcher_heartbeat = checks["job_runner"]["dispatcher_worker_heartbeat"]
+    assert dispatcher_heartbeat is None or isinstance(dispatcher_heartbeat, dict)
 
 
 def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch):
     monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "redis_worker_heartbeat_policy_mode", "strict")
     monkeypatch.setattr(
         api_app_module,
         "JOB_RUNNER",
@@ -622,6 +631,7 @@ def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch
 
 def test_ready_endpoint_degrades_when_dispatcher_worker_heartbeat_missing(monkeypatch):
     monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "redis_worker_heartbeat_policy_mode", "strict")
     monkeypatch.setattr(
         api_app_module,
         "JOB_RUNNER",
@@ -656,6 +666,51 @@ def test_ready_endpoint_degrades_when_dispatcher_worker_heartbeat_missing(monkey
         for item in alerts
         if isinstance(item, dict)
     )
+
+
+def test_ready_endpoint_warn_mode_allows_missing_dispatcher_heartbeat(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "redis_worker_heartbeat_policy_mode", "warn")
+    monkeypatch.setattr(
+        api_app_module,
+        "JOB_RUNNER",
+        type(
+            "_Runner",
+            (),
+            {
+                "diagnostics": staticmethod(
+                    lambda: {
+                        "backend": "redis",
+                        "consumer_enabled": False,
+                        "running": False,
+                        "redis_available": True,
+                        "queue_size": 0,
+                        "worker_heartbeat": {"present": False, "healthy": False},
+                    }
+                )
+            },
+        )(),
+    )
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    checks = body["checks"]
+    assert checks["job_runner"]["ready"] is True
+    assert checks["job_runner"]["dispatcher_worker_heartbeat_policy"]["mode"] == "warn"
+    alerts = checks["job_runner"]["alerts"]
+    alert = next(
+        (
+            item
+            for item in alerts
+            if isinstance(item, dict)
+            and str(item.get("code") or "") == "REDIS_DISPATCHER_WORKER_HEARTBEAT_MISSING"
+        ),
+        None,
+    )
+    assert isinstance(alert, dict)
+    assert alert["blocking"] is False
 
 
 def test_ready_endpoint_reports_dead_letter_alert_when_threshold_exceeded(monkeypatch):
@@ -891,6 +946,47 @@ def test_health_endpoint_reports_chroma_port_conflict_warning(monkeypatch):
     body = response.json()
     warnings = body["diagnostics"].get("configuration_warnings") or []
     assert any(w.get("code") == "CHROMA_PORT_MAY_CONFLICT_WITH_API_DEFAULT" for w in warnings if isinstance(w, dict))
+
+
+def test_health_endpoint_reports_dispatcher_worker_heartbeat_metrics(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.job_runner, "mode", "redis_queue")
+    monkeypatch.setattr(api_app_module.config.job_runner, "redis_worker_heartbeat_policy_mode", "warn")
+    monkeypatch.setattr(
+        api_app_module,
+        "JOB_RUNNER",
+        type(
+            "_Runner",
+            (),
+            {
+                "diagnostics": staticmethod(
+                    lambda: {
+                        "backend": "redis",
+                        "consumer_enabled": False,
+                        "running": False,
+                        "redis_available": True,
+                        "queue_size": 0,
+                        "worker_heartbeat": {
+                            "present": True,
+                            "healthy": True,
+                            "age_seconds": 0.4,
+                            "source": "worker_process",
+                        },
+                    }
+                )
+            },
+        )(),
+    )
+
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    diagnostics = body["diagnostics"]
+    assert diagnostics["job_runner"]["dispatcher_worker_heartbeat_policy"]["mode"] == "warn"
+    heartbeat = diagnostics["job_runner"]["dispatcher_worker_heartbeat"]
+    assert isinstance(heartbeat, dict)
+    assert heartbeat["healthy"] is True
+    assert heartbeat["source"] == "worker_process"
+    assert float(heartbeat["age_seconds"]) >= 0.0
 
 
 def test_ready_endpoint_reports_chroma_port_conflict_warning(monkeypatch):
