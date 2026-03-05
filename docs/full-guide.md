@@ -72,6 +72,10 @@ Development setup (tests/type checks/formatters):
 pip install ".[dev]"
 ```
 
+Dependency policy:
+- canonical source of truth: `pyproject.toml`
+- compatibility shims: `requirements.txt`, `requirements-dev.txt`, `grantflow/requirements.txt`
+
 ### Start API
 
 ```bash

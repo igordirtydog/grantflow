@@ -59,6 +59,20 @@ jobs:
         run: |
           python scripts/release_guard.py
 
+  dependency-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate dependency packaging contract
+        run: |
+          python scripts/dependency_contract_guard.py
+
   mypy:
     runs-on: ubuntu-latest
     env:

@@ -1,4 +1,4 @@
-.PHONY: eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-rbm-samples refresh-grounded-baseline
+.PHONY: deps-guard eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-rbm-samples refresh-grounded-baseline
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -20,6 +20,9 @@ ALLOW_BASELINE_REFRESH ?= 0
 LLM_EVAL_SAMPLE_MAX_CASES ?= 2
 LLM_EVAL_SAMPLE_SEED ?= 42
 RBM_SAMPLE_IDS ?= rbm-usaid-ai-civil-service-kazakhstan,rbm-eu-youth-employment-jordan
+
+deps-guard:
+	$(PYTHON) scripts/dependency_contract_guard.py
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
