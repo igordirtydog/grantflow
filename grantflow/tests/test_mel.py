@@ -104,6 +104,38 @@ def test_mel_deterministic_no_hits_uses_strategy_reference_citations(monkeypatch
     assert all(float(c.get("citation_confidence") or 0.0) >= 0.7 for c in citations)
 
 
+def test_mel_deterministic_mode_builds_multiple_indicators_from_toc_results(monkeypatch):
+    def fake_query(*, namespace, query_texts, n_results):  # noqa: ARG001
+        return {"documents": [[]], "metadatas": [[]], "ids": [[]], "distances": [[]]}
+
+    monkeypatch.setattr(mel_module.vector_store, "query", fake_query)
+    state = _base_state(llm_mode=False)
+    state["toc_draft"] = {
+        "toc": {
+            "project_goal": "Improve digital service quality in municipal agencies.",
+            "development_objectives": [
+                {
+                    "description": "Civil servants apply AI-assisted service workflows in daily operations.",
+                },
+                {
+                    "description": "Municipal service turnaround time is reduced for priority services.",
+                },
+            ],
+        }
+    }
+
+    out = mel_module.mel_assign_indicators(state)
+    indicators = out["logframe_draft"]["indicators"]
+    citations = [c for c in (out.get("citations") or []) if isinstance(c, dict) and c.get("stage") == "mel"]
+    generation = out.get("mel_generation_meta") or {}
+
+    assert len(indicators) >= 2
+    assert all(str(item.get("toc_statement_path") or "").startswith("toc.") for item in indicators)
+    assert all(c.get("citation_type") == "strategy_reference" for c in citations)
+    assert generation.get("engine") == "deterministic:toc_results_template"
+    assert generation.get("deterministic_source") == "toc_results_template"
+
+
 def test_mel_llm_mode_uses_structured_output_when_available(monkeypatch):
     monkeypatch.setattr(mel_module, "openai_compatible_llm_available", lambda: True)
 

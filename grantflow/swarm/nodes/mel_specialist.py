@@ -193,6 +193,136 @@ def _extract_mel_indicators(payload: Dict[str, Any]) -> Any:
     return []
 
 
+def _mel_statement_priority(path: str) -> int:
+    lowered = str(path or "").lower()
+    if any(token in lowered for token in (".project_goal", ".program_goal", ".programme_objective")):
+        return 5
+    if any(
+        token in lowered
+        for token in (
+            ".development_objectives[",
+            ".specific_objectives[",
+            ".objectives[",
+            ".project_development_objective",
+        )
+    ):
+        return 4
+    if any(token in lowered for token in (".expected_outcomes[", ".results_chain[", ".outcomes[", ".outputs[")):
+        return 3
+    if any(token in lowered for token in ("goal", "objective", "outcome", "result", "output", "change")):
+        return 2
+    return 1
+
+
+def _extract_toc_result_statements(value: Any, path: str = "toc") -> list[tuple[str, str, int]]:
+    statements: list[tuple[str, str, int]] = []
+    if isinstance(value, dict):
+        for key, inner in value.items():
+            statements.extend(_extract_toc_result_statements(inner, f"{path}.{key}"))
+        return statements
+    if isinstance(value, list):
+        for idx, inner in enumerate(value):
+            statements.extend(_extract_toc_result_statements(inner, f"{path}[{idx}]"))
+        return statements
+    if not isinstance(value, str):
+        return statements
+
+    text = " ".join(value.split()).strip()
+    if not text:
+        return statements
+    lowered_path = path.lower()
+    skip_tokens = (
+        "_id",
+        ".id",
+        "indicator_code",
+        ".citation",
+        ".code",
+        ".assumption",
+        ".assumptions",
+        ".risk",
+        ".risks",
+        ".stakeholder",
+        ".context",
+    )
+    if any(token in lowered_path for token in skip_tokens):
+        return statements
+    if len(text) < 12:
+        return statements
+
+    statements.append((path, text, _mel_statement_priority(path)))
+    return statements
+
+
+def _dedupe_toc_result_statements(items: list[tuple[str, str, int]]) -> list[tuple[str, str, int]]:
+    seen: set[tuple[str, str]] = set()
+    out: list[tuple[str, str, int]] = []
+    for path, statement, priority in sorted(
+        items,
+        key=lambda row: (-int(row[2]), len(str(row[0])), str(row[0])),
+    ):
+        key = (str(path).strip().lower(), str(statement).strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((path, statement, priority))
+    return out
+
+
+def _indicator_name_from_toc_statement(statement: str, *, idx: int) -> str:
+    compact = " ".join(str(statement or "").split()).strip()
+    if not compact:
+        return f"Results indicator {idx + 1}"
+    if len(compact) <= 90:
+        return compact
+    return f"{compact[:87].rstrip()}..."
+
+
+def _deterministic_indicators_from_toc(
+    *,
+    toc_payload: Dict[str, Any],
+    retrieval_hits: list[Dict[str, Any]],
+    namespace: str,
+    input_context: Optional[Dict[str, Any]] = None,
+    max_indicators: int = 6,
+) -> list[Dict[str, Any]]:
+    candidates = _dedupe_toc_result_statements(
+        _extract_toc_result_statements(toc_payload if isinstance(toc_payload, dict) else {}, "toc")
+    )
+    if not candidates:
+        return []
+
+    indicators: list[Dict[str, Any]] = []
+    bounded_candidates = candidates[: max(1, max_indicators)]
+    for idx, (statement_path, statement, _priority) in enumerate(bounded_candidates):
+        hit, _score = _pick_best_mel_evidence_hit(statement, retrieval_hits)
+        name = str(hit.get("name") or _indicator_name_from_toc_statement(statement, idx=idx)).strip()
+        baseline, target = _resolve_baseline_target(
+            baseline_raw=hit.get("baseline") if hit else "",
+            target_raw=hit.get("target") if hit else "",
+            indicator_name=name,
+            input_context=input_context or {},
+            idx=idx,
+        )
+        citation = str(hit.get("label") or hit.get("source") or hit.get("doc_id") or namespace)
+        justification = (
+            f"Deterministic MEL mapping for ToC result '{statement_path}'. "
+            "Tracks delivery of the causal results chain."
+        )
+        indicators.append(
+            {
+                "indicator_id": str(hit.get("indicator_id") or f"IND_{idx + 1:03d}"),
+                "name": name or f"Results indicator {idx + 1}",
+                "justification": justification,
+                "citation": citation,
+                "baseline": baseline,
+                "target": target,
+                "evidence_excerpt": str(hit.get("excerpt") or statement)[:240],
+                "toc_statement_path": statement_path,
+            }
+        )
+    return indicators
+
+
 def _build_query_text(state: Dict[str, Any]) -> str:
     input_context = state_input_context(state)
     project = str(input_context.get("project") or "project")
@@ -933,6 +1063,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
     generation_engine = "deterministic:retrieval_template"
     fallback_used = False
     fallback_class = "deterministic_mode"
+    deterministic_source = "retrieval_template"
 
     try:
         result = vector_store.query(namespace=namespace, query_texts=query_variants, n_results=rerank_pool_size)
@@ -1088,19 +1219,31 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         llm_error = "; ".join(llm_failure_reasons[:3])
 
     if not indicators:
-        if retrieval_hits:
+        deterministic_indicators = _deterministic_indicators_from_toc(
+            toc_payload=toc_payload if isinstance(toc_payload, dict) else {},
+            retrieval_hits=retrieval_hits,
+            namespace=namespace,
+            input_context=input_context,
+            max_indicators=max(top_k, 2),
+        )
+        if deterministic_indicators:
+            indicators = deterministic_indicators
+            deterministic_source = "toc_results_template"
+        elif retrieval_hits:
             indicators = [
                 _indicator_from_hit(hit, idx=idx, namespace=namespace, input_context=input_context)
                 for idx, hit in enumerate(retrieval_hits)
             ]
+            deterministic_source = "retrieval_template"
         else:
             indicators = [_fallback_indicator(namespace, input_context=input_context)]
+            deterministic_source = "fallback_single_indicator"
         if llm_mode:
-            generation_engine = "fallback:retrieval_template"
+            generation_engine = f"fallback:{deterministic_source}"
             fallback_used = True
             fallback_class = "emergency"
         else:
-            generation_engine = "deterministic:retrieval_template"
+            generation_engine = f"deterministic:{deterministic_source}"
             fallback_class = "deterministic_mode"
 
     citation_records = _build_mel_citations(
@@ -1129,6 +1272,7 @@ def mel_assign_indicators(state: Dict[str, Any]) -> Dict[str, Any]:
         "retrieval_prompt_hit_count": min(len(retrieval_hits), MEL_MAX_EVIDENCE_PROMPT_HITS),
         "retrieval_trace_hint_present": bool(retrieval_trace_hint),
         "max_prompt_evidence_hits": MEL_MAX_EVIDENCE_PROMPT_HITS,
+        "deterministic_source": deterministic_source if not generation_engine.startswith("llm:") else None,
     }
     if llm_error:
         mel_generation_meta["llm_fallback_reason"] = llm_error
