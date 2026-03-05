@@ -1159,6 +1159,81 @@ def test_get_rbm_generate_preset_unknown_sample_returns_404():
     assert "Unknown sample_id" in str(response.json().get("detail") or "")
 
 
+def test_generate_from_preset_auto_legacy_with_overrides():
+    response = client.post(
+        "/generate/from-preset",
+        json={
+            "preset_key": "usaid_gov_ai_kazakhstan",
+            "preset_type": "auto",
+            "llm_mode": False,
+            "hitl_enabled": False,
+            "architect_rag_enabled": False,
+            "strict_preflight": False,
+            "input_context_patch": {"project": "Preset Override Project", "country": "Kenya"},
+            "client_metadata_patch": {"scenario": "integration-generate-from-preset"},
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["preset_key"] == "usaid_gov_ai_kazakhstan"
+    assert body["preset_source"] == "legacy"
+    job_id = body["job_id"]
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "done"
+    state = status["state"]
+    input_context = state.get("input_context") or {}
+    assert input_context.get("project") == "Preset Override Project"
+    assert str(input_context.get("country") or "").strip().lower() == "kenya"
+    stored_job = api_app_module.JOB_STORE.get(job_id) or {}
+    metadata = stored_job.get("client_metadata") or {}
+    assert metadata.get("demo_generate_preset_key") == "usaid_gov_ai_kazakhstan"
+    assert metadata.get("demo_generate_preset_source") == "legacy"
+    assert metadata.get("scenario") == "integration-generate-from-preset"
+
+
+def test_generate_from_preset_rbm_resolves_sample_payload():
+    response = client.post(
+        "/generate/from-preset",
+        json={
+            "preset_key": "rbm-eu-youth-employment-jordan",
+            "preset_type": "rbm",
+            "llm_mode": False,
+            "hitl_enabled": False,
+            "architect_rag_enabled": False,
+            "strict_preflight": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["preset_source"] == "rbm"
+    job_id = body["job_id"]
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "done"
+    state = status["state"]
+    assert state["donor_id"] == "eu"
+    input_context = state.get("input_context") or {}
+    assert str(input_context.get("country") or "").strip().lower() == "jordan"
+    stored_job = api_app_module.JOB_STORE.get(job_id) or {}
+    metadata = stored_job.get("client_metadata") or {}
+    assert metadata.get("demo_generate_preset_key") == "rbm-eu-youth-employment-jordan"
+    assert metadata.get("demo_generate_preset_source") == "rbm"
+
+
+def test_generate_from_preset_unknown_returns_404():
+    response = client.post(
+        "/generate/from-preset",
+        json={"preset_key": "missing-generate-preset", "preset_type": "auto"},
+    )
+    assert response.status_code == 404
+    detail = response.json().get("detail") or {}
+    assert detail.get("reason") == "generate_preset_not_found"
+    assert detail.get("preset_key") == "missing-generate-preset"
+
+
 def test_generate_preflight_reports_high_risk_when_namespace_empty():
     api_app_module.INGEST_AUDIT_STORE.clear()
 
@@ -9094,6 +9169,25 @@ def test_generate_requires_api_key_when_configured(monkeypatch):
     assert response.status_code == 200
     assert response.json()["status"] == "accepted"
 
+    from_preset_payload = {
+        "preset_key": "usaid_gov_ai_kazakhstan",
+        "preset_type": "legacy",
+        "llm_mode": False,
+        "hitl_enabled": False,
+        "architect_rag_enabled": False,
+        "strict_preflight": False,
+    }
+    from_preset_unauth = client.post("/generate/from-preset", json=from_preset_payload)
+    assert from_preset_unauth.status_code == 401
+
+    from_preset_auth = client.post(
+        "/generate/from-preset",
+        json=from_preset_payload,
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert from_preset_auth.status_code == 200
+    assert from_preset_auth.json()["status"] == "accepted"
+
 
 def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     monkeypatch.setenv("GRANTFLOW_API_KEY", "test-secret")
@@ -9635,6 +9729,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert schemes["ApiKeyAuth"]["name"] == "X-API-Key"
 
     generate_security = (((spec.get("paths") or {}).get("/generate") or {}).get("post") or {}).get("security")
+    generate_from_preset_security = (
+        (((spec.get("paths") or {}).get("/generate/from-preset") or {}).get("post") or {})
+    ).get("security")
     generate_preflight_security = (((spec.get("paths") or {}).get("/generate/preflight") or {}).get("post") or {}).get(
         "security"
     )
@@ -10223,6 +10320,7 @@ def test_openapi_declares_api_key_security_scheme():
         .get("schema")
     )
     assert generate_security == [{"ApiKeyAuth": []}]
+    assert generate_from_preset_security == [{"ApiKeyAuth": []}]
     assert generate_preflight_security == [{"ApiKeyAuth": []}]
     assert ingest_security == [{"ApiKeyAuth": []}]
     assert ingest_readiness_security == [{"ApiKeyAuth": []}]

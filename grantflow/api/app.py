@@ -17,7 +17,7 @@ from typing import Any, AsyncIterator, Callable, Dict, Literal, Optional
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse, StreamingResponse
 from openpyxl import load_workbook
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from grantflow.api.demo_ui import render_demo_ui_html
 from grantflow.api.demo_presets import (
@@ -137,6 +137,7 @@ from grantflow.core.stores import create_ingest_audit_store_from_env, create_job
 from grantflow.core.strategies.factory import DonorFactory
 from grantflow.core.version import __version__
 from grantflow.eval.sample_presets import (
+    available_sample_ids,
     build_generate_payload as build_sample_generate_payload,
     list_sample_preset_summaries,
     load_sample_payload,
@@ -2277,6 +2278,25 @@ class GenerateRequest(BaseModel):
     webhook_url: Optional[str] = None
     webhook_secret: Optional[str] = None
     client_metadata: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GenerateFromPresetRequest(BaseModel):
+    preset_key: str
+    preset_type: Literal["auto", "legacy", "rbm"] = "auto"
+    tenant_id: Optional[str] = None
+    request_id: Optional[str] = None
+    llm_mode: Optional[bool] = None
+    architect_rag_enabled: Optional[bool] = None
+    require_grounded_generation: Optional[bool] = None
+    hitl_enabled: Optional[bool] = None
+    hitl_checkpoints: Optional[list[Literal["architect", "toc", "mel", "logframe"]]] = None
+    strict_preflight: Optional[bool] = None
+    webhook_url: Optional[str] = None
+    webhook_secret: Optional[str] = None
+    input_context_patch: Optional[Dict[str, Any]] = None
+    client_metadata_patch: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="forbid")
 
@@ -5569,6 +5589,148 @@ def ingest_readiness(req: IngestReadinessRequest, request: Request):
         client_metadata=client_metadata,
         architect_rag_enabled=bool(req.architect_rag_enabled),
     )
+
+
+def _resolve_generate_payload_from_preset(
+    preset_key: str,
+    *,
+    preset_type: Literal["auto", "legacy", "rbm"],
+) -> tuple[str, Dict[str, Any]]:
+    token = str(preset_key or "").strip()
+    if not token:
+        raise HTTPException(status_code=400, detail="Missing preset_key")
+
+    legacy_error: Optional[str] = None
+    rbm_error: Optional[str] = None
+
+    if preset_type in {"auto", "legacy"}:
+        try:
+            legacy = load_generate_legacy_preset(token)
+            payload = legacy.get("generate_payload")
+            if not isinstance(payload, dict):
+                raise HTTPException(status_code=500, detail=f"Preset '{token}' has invalid generate_payload")
+            return "legacy", dict(payload)
+        except ValueError as exc:
+            legacy_error = str(exc)
+            if preset_type == "legacy":
+                raise HTTPException(status_code=404, detail=legacy_error) from exc
+
+    if preset_type in {"auto", "rbm"}:
+        try:
+            sample_payload = load_sample_payload(token)
+            default_llm_mode = bool(sample_payload.get("llm_mode", False))
+            default_architect_rag = bool(sample_payload.get("architect_rag_enabled", False))
+            return "rbm", build_sample_generate_payload(
+                token,
+                llm_mode=default_llm_mode,
+                hitl_enabled=False,
+                architect_rag_enabled=default_architect_rag,
+                strict_preflight=False,
+            )
+        except ValueError as exc:
+            rbm_error = str(exc)
+            if preset_type == "rbm":
+                raise HTTPException(status_code=404, detail=rbm_error) from exc
+
+    legacy_keys = sorted(
+        str(row.get("preset_key") or "").strip()
+        for row in list_generate_legacy_preset_summaries()
+        if isinstance(row, dict) and str(row.get("preset_key") or "").strip()
+    )
+    rbm_keys = available_sample_ids()
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "reason": "generate_preset_not_found",
+            "preset_key": token,
+            "preset_type": preset_type,
+            "legacy_error": legacy_error,
+            "rbm_error": rbm_error,
+            "available": {"legacy": legacy_keys, "rbm": rbm_keys},
+        },
+    )
+
+
+def _build_generate_request_from_preset(req: GenerateFromPresetRequest) -> tuple[GenerateRequest, str]:
+    preset_key = str(req.preset_key or "").strip()
+    source_kind, base_payload = _resolve_generate_payload_from_preset(
+        preset_key,
+        preset_type=req.preset_type,
+    )
+    payload: Dict[str, Any] = dict(base_payload)
+
+    input_context_raw = payload.get("input_context")
+    input_context: Dict[str, Any] = dict(input_context_raw) if isinstance(input_context_raw, dict) else {}
+    if isinstance(req.input_context_patch, dict) and req.input_context_patch:
+        input_context.update(dict(req.input_context_patch))
+    payload["input_context"] = input_context
+
+    client_metadata_raw = payload.get("client_metadata")
+    client_metadata: Dict[str, Any] = dict(client_metadata_raw) if isinstance(client_metadata_raw, dict) else {}
+    if preset_key:
+        client_metadata.setdefault("demo_generate_preset_key", preset_key)
+    client_metadata.setdefault("demo_generate_preset_source", source_kind)
+    if isinstance(req.client_metadata_patch, dict) and req.client_metadata_patch:
+        client_metadata.update(dict(req.client_metadata_patch))
+    payload["client_metadata"] = client_metadata
+
+    if req.tenant_id is not None:
+        payload["tenant_id"] = req.tenant_id
+    if req.request_id is not None:
+        payload["request_id"] = req.request_id
+    if req.webhook_url is not None:
+        payload["webhook_url"] = req.webhook_url
+    if req.webhook_secret is not None:
+        payload["webhook_secret"] = req.webhook_secret
+
+    if req.llm_mode is not None:
+        payload["llm_mode"] = bool(req.llm_mode)
+    if req.architect_rag_enabled is not None:
+        payload["architect_rag_enabled"] = bool(req.architect_rag_enabled)
+    if req.require_grounded_generation is not None:
+        payload["require_grounded_generation"] = bool(req.require_grounded_generation)
+    if req.hitl_enabled is not None:
+        payload["hitl_enabled"] = bool(req.hitl_enabled)
+    if req.hitl_checkpoints is not None:
+        payload["hitl_checkpoints"] = list(req.hitl_checkpoints)
+    if req.strict_preflight is not None:
+        payload["strict_preflight"] = bool(req.strict_preflight)
+
+    try:
+        return GenerateRequest(**payload), source_kind
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "reason": "invalid_generate_preset_payload",
+                "preset_key": preset_key,
+                "preset_source": source_kind,
+                "errors": exc.errors(),
+            },
+        ) from exc
+
+
+@app.post("/generate/from-preset")
+async def generate_from_preset(
+    req: GenerateFromPresetRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    request_id: Optional[str] = Query(default=None),
+):
+    require_api_key_if_configured(request)
+    generate_req, source_kind = _build_generate_request_from_preset(req)
+    generated = await generate(
+        generate_req,
+        background_tasks,
+        request,
+        request_id=request_id if request_id is not None else generate_req.request_id,
+    )
+    if isinstance(generated, dict):
+        response = dict(generated)
+        response["preset_key"] = str(req.preset_key or "").strip()
+        response["preset_source"] = source_kind
+        return response
+    return generated
 
 
 @app.post("/generate")
