@@ -196,6 +196,7 @@ def test_demo_console_page_loads():
     assert "ingestInventoryJson" in body
     assert "grantflow_demo_ingest_checklist_progress" in body
     assert "doc_family=" in body
+    assert "/generate/presets/legacy" in body
     assert "/generate/presets/rbm" in body
     assert "/ingest/presets" in body
     assert "/ingest" in body
@@ -1050,6 +1051,40 @@ def test_get_ingest_preset():
 
 def test_get_ingest_preset_unknown_returns_404():
     response = client.get("/ingest/presets/not-a-real-preset")
+    assert response.status_code == 404
+    assert "Unknown preset_key" in str(response.json().get("detail") or "")
+
+
+def test_list_generate_legacy_presets():
+    response = client.get("/generate/presets/legacy")
+    assert response.status_code == 200
+    body = response.json()
+    presets = body.get("presets")
+    assert isinstance(presets, list) and presets
+    preset_keys = {str(item.get("preset_key") or "") for item in presets if isinstance(item, dict)}
+    assert "usaid_gov_ai_kazakhstan" in preset_keys
+    assert "eu_digital_governance_moldova" in preset_keys
+    assert "worldbank_public_sector_uzbekistan" in preset_keys
+
+
+def test_get_generate_legacy_preset():
+    response = client.get("/generate/presets/legacy/usaid_gov_ai_kazakhstan")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["preset_key"] == "usaid_gov_ai_kazakhstan"
+    assert body["donor_id"] == "usaid"
+    generate_payload = body.get("generate_payload")
+    assert isinstance(generate_payload, dict)
+    assert generate_payload.get("donor_id") == "usaid"
+    assert generate_payload.get("llm_mode") is True
+    assert generate_payload.get("hitl_enabled") is True
+    input_context = generate_payload.get("input_context")
+    assert isinstance(input_context, dict)
+    assert str(input_context.get("country") or "").strip().lower() == "kazakhstan"
+
+
+def test_get_generate_legacy_preset_unknown_returns_404():
+    response = client.get("/generate/presets/legacy/not-a-real-preset")
     assert response.status_code == 404
     assert "Unknown preset_key" in str(response.json().get("detail") or "")
 

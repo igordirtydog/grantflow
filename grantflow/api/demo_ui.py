@@ -1588,86 +1588,7 @@ def render_demo_ui_html() -> str:
         ingestChecklistProgress: {},
         zeroReadinessWarningPrefs: {},
       };
-      let GENERATE_PRESETS = {
-        usaid_gov_ai_kazakhstan: {
-          donor_id: "usaid",
-          project: "Responsible AI Skills for Civil Service Modernization",
-          country: "Kazakhstan",
-          llm_mode: true,
-          hitl_enabled: true,
-          strict_preflight: false,
-          input_context: {
-            region: "National with pilot cohorts in Astana and Almaty",
-            timeframe: "2026-2027 (24 months)",
-            problem:
-              "Civil servants have uneven practical skills in safe, ethical, and effective AI use for public administration.",
-            target_population:
-              "Mid-level and senior civil servants in policy, service delivery, and digital transformation units.",
-            expected_change:
-              "Agencies improve AI readiness, adopt governance guidance, and demonstrate early workflow efficiency gains.",
-            key_activities: [
-              "Needs assessment and baseline competency mapping",
-              "Responsible AI curriculum design for public administration",
-              "Cohort-based training and training-of-trainers",
-              "Applied labs for policy and service workflows",
-              "SOP and governance guidance drafting support",
-            ],
-          },
-        },
-        eu_digital_governance_moldova: {
-          donor_id: "eu",
-          project: "Digital Governance Service Quality and Administrative Capacity",
-          country: "Moldova",
-          llm_mode: true,
-          hitl_enabled: true,
-          strict_preflight: false,
-          input_context: {
-            region: "National and selected municipalities",
-            timeframe: "2026-2028 (30 months)",
-            problem:
-              "Public institutions face uneven digital service management capacity and inconsistent service quality.",
-            target_population:
-              "Civil servants and municipal service managers in digital transformation and service delivery units.",
-            expected_change:
-              "Institutions adopt stronger service quality procedures and improve processing efficiency.",
-            key_activities: [
-              "Institutional workflow assessments",
-              "Training on service design and process improvement",
-              "Coaching for agency and municipal teams",
-              "Support for SOPs and service quality dashboards",
-            ],
-          },
-        },
-        worldbank_public_sector_uzbekistan: {
-          donor_id: "worldbank",
-          project: "Public Sector Performance and Service Delivery Capacity Strengthening",
-          country: "Uzbekistan",
-          llm_mode: true,
-          hitl_enabled: true,
-          strict_preflight: false,
-          input_context: {
-            region: "National ministries and selected subnational administrations",
-            timeframe: "2026-2028 (36 months)",
-            problem:
-              "Public agencies have uneven capabilities in performance management and evidence-based decision-making.",
-            target_population:
-              "Government managers and civil servants in reform, performance, and service delivery functions.",
-            expected_change:
-              "Participating institutions adopt stronger performance management practices and improve selected services.",
-            key_activities: [
-              "Institutional diagnostics and process mapping",
-              "Capacity development for performance management and data use",
-              "Technical assistance for service improvement plans",
-              "Process optimization pilots and adaptive reviews",
-            ],
-          },
-        },
-      };
-      const LOCAL_GENERATE_PRESET_LABELS = {
-        usaid_gov_ai_kazakhstan: "USAID: AI civil service (KZ)",
-        eu_digital_governance_moldova: "EU: digital governance (MD)",
-        worldbank_public_sector_uzbekistan: "World Bank: public sector performance (UZ)",
-      };
+      let GENERATE_PRESETS = {};
       const SERVER_GENERATE_PRESET_LABELS = {};
       let INGEST_PRESETS = {
         usaid_gov_ai_kazakhstan: {
@@ -2135,7 +2056,6 @@ def render_demo_ui_html() -> str:
         const token = String(key || "").trim();
         if (!token) return "Preset";
         if (SERVER_GENERATE_PRESET_LABELS[token]) return SERVER_GENERATE_PRESET_LABELS[token];
-        if (LOCAL_GENERATE_PRESET_LABELS[token]) return LOCAL_GENERATE_PRESET_LABELS[token];
         return token;
       }
 
@@ -2163,65 +2083,107 @@ def render_demo_ui_html() -> str:
         }
       }
 
-      async function loadServerGeneratePresets() {
-        let listBody;
+      function normalizeGeneratePresetRecord({
+        presetKey,
+        row,
+        detail,
+        prefix = "",
+      }) {
+        const generatePayload =
+          detail && typeof detail.generate_payload === "object" && !Array.isArray(detail.generate_payload)
+            ? detail.generate_payload
+            : {};
+        const inputContext =
+          generatePayload.input_context &&
+          typeof generatePayload.input_context === "object" &&
+          !Array.isArray(generatePayload.input_context)
+            ? { ...generatePayload.input_context }
+            : {};
+        const donorId = String(generatePayload.donor_id || row?.donor_id || "").trim();
+        const project = String(inputContext.project || row?.title || presetKey).trim();
+        const country = String(inputContext.country || row?.country || "").trim();
+        const donorLabel = donorId ? donorId.toUpperCase() : "RBM";
+        const title = String(row?.title || project || presetKey).trim();
+        const label = prefix ? `${prefix} (${donorLabel}): ${title}` : `${donorLabel}: ${title}`;
+        return {
+          preset: {
+            donor_id: donorId,
+            project,
+            country,
+            llm_mode: Boolean(generatePayload.llm_mode),
+            hitl_enabled: Boolean(generatePayload.hitl_enabled),
+            strict_preflight: Boolean(generatePayload.strict_preflight),
+            input_context: inputContext,
+          },
+          label,
+        };
+      }
+
+      async function loadAllServerGeneratePresets() {
+        const merged = {};
+        const labels = {};
+
         try {
-          listBody = await apiFetch("/generate/presets/rbm");
-        } catch (err) {
-          return;
-        }
-        const rows = Array.isArray(listBody?.presets) ? listBody.presets : [];
-        if (!rows.length) return;
-
-        const merged = { ...(GENERATE_PRESETS || {}) };
-        let changed = false;
-        for (const row of rows) {
-          if (!row || typeof row !== "object") continue;
-          const sampleId = String(row.sample_id || "").trim();
-          if (!sampleId) continue;
-          try {
-            const detail = await apiFetch(
-              `/generate/presets/rbm/${encodeURIComponent(sampleId)}?llm_mode=true&hitl_enabled=true`
-            );
-            const generatePayload =
-              detail && typeof detail.generate_payload === "object" && !Array.isArray(detail.generate_payload)
-                ? detail.generate_payload
-                : {};
-            const inputContext =
-              generatePayload.input_context &&
-              typeof generatePayload.input_context === "object" &&
-              !Array.isArray(generatePayload.input_context)
-                ? { ...generatePayload.input_context }
-                : {};
-            const donorId = String(generatePayload.donor_id || row.donor_id || "").trim();
-            const project = String(inputContext.project || row.title || sampleId).trim();
-            const country = String(inputContext.country || row.country || "").trim();
-            merged[sampleId] = {
-              donor_id: donorId,
-              project,
-              country,
-              llm_mode: Boolean(generatePayload.llm_mode),
-              hitl_enabled: Boolean(generatePayload.hitl_enabled),
-              strict_preflight: Boolean(generatePayload.strict_preflight),
-              input_context: inputContext,
-            };
-            const donorLabel = donorId ? donorId.toUpperCase() : "RBM";
-            const title = String(row.title || project || sampleId).trim();
-            SERVER_GENERATE_PRESET_LABELS[sampleId] = `RBM (${donorLabel}): ${title}`;
-            changed = true;
-          } catch (err) {
-            // Ignore individual preset fetch failures; keep local fallback presets available.
+          const legacyListBody = await apiFetch("/generate/presets/legacy");
+          const legacyRows = Array.isArray(legacyListBody?.presets) ? legacyListBody.presets : [];
+          for (const row of legacyRows) {
+            if (!row || typeof row !== "object") continue;
+            const presetKey = String(row.preset_key || "").trim();
+            if (!presetKey) continue;
+            try {
+              const detail = await apiFetch(`/generate/presets/legacy/${encodeURIComponent(presetKey)}`);
+              const normalized = normalizeGeneratePresetRecord({ presetKey, row, detail });
+              merged[presetKey] = normalized.preset;
+              labels[presetKey] = normalized.label;
+            } catch (err) {
+              // Skip broken preset entries and continue loading others.
+            }
           }
+        } catch (err) {
+          // Ignore endpoint failure and continue with RBM presets.
         }
 
-        if (changed) {
-          GENERATE_PRESETS = merged;
-          const storedPreset = localStorage.getItem("grantflow_demo_generate_preset") || "";
-          const preferredValue = String(els.generatePresetSelect.value || "").trim() || String(storedPreset || "").trim();
-          renderGeneratePresetOptions({ preferredValue });
-          renderGeneratePresetReadiness();
-          renderZeroReadinessWarningPreference();
+        try {
+          const rbmListBody = await apiFetch("/generate/presets/rbm");
+          const rbmRows = Array.isArray(rbmListBody?.presets) ? rbmListBody.presets : [];
+          for (const row of rbmRows) {
+            if (!row || typeof row !== "object") continue;
+            const sampleId = String(row.sample_id || "").trim();
+            if (!sampleId) continue;
+            try {
+              const detail = await apiFetch(
+                `/generate/presets/rbm/${encodeURIComponent(sampleId)}?llm_mode=true&hitl_enabled=true`
+              );
+              const normalized = normalizeGeneratePresetRecord({
+                presetKey: sampleId,
+                row,
+                detail,
+                prefix: "RBM",
+              });
+              merged[sampleId] = normalized.preset;
+              labels[sampleId] = normalized.label;
+            } catch (err) {
+              // Skip broken preset entries and continue loading others.
+            }
+          }
+        } catch (err) {
+          // Ignore endpoint failure if RBM presets are unavailable.
         }
+
+        if (!Object.keys(merged).length) return;
+
+        GENERATE_PRESETS = merged;
+        for (const key of Object.keys(SERVER_GENERATE_PRESET_LABELS)) {
+          delete SERVER_GENERATE_PRESET_LABELS[key];
+        }
+        for (const [key, value] of Object.entries(labels)) {
+          SERVER_GENERATE_PRESET_LABELS[key] = value;
+        }
+        const storedPreset = localStorage.getItem("grantflow_demo_generate_preset") || "";
+        const preferredValue = String(els.generatePresetSelect.value || "").trim() || String(storedPreset || "").trim();
+        renderGeneratePresetOptions({ preferredValue });
+        renderGeneratePresetReadiness();
+        renderZeroReadinessWarningPreference();
       }
 
       function ingestPresetLabel(key) {
@@ -8354,7 +8316,7 @@ def render_demo_ui_html() -> str:
 
       initDefaults();
       bind();
-      loadServerGeneratePresets().catch(() => {});
+      loadAllServerGeneratePresets().catch(() => {});
       loadServerIngestPresets().catch(() => {});
       if (currentJobId()) {
         refreshAll().catch(() => {});

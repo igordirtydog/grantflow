@@ -20,7 +20,12 @@ from openpyxl import load_workbook
 from pydantic import BaseModel, ConfigDict
 
 from grantflow.api.demo_ui import render_demo_ui_html
-from grantflow.api.demo_presets import list_ingest_preset_summaries, load_ingest_preset
+from grantflow.api.demo_presets import (
+    list_generate_legacy_preset_summaries,
+    list_ingest_preset_summaries,
+    load_generate_legacy_preset,
+    load_ingest_preset,
+)
 from grantflow.api.public_views import (
     REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
     REVIEW_WORKFLOW_STATE_FILTER_VALUES,
@@ -76,6 +81,8 @@ from grantflow.api.schemas import (
     DeadLetterQueueListPublicResponse,
     DeadLetterQueueMutationPublicResponse,
     GeneratePreflightPublicResponse,
+    GenerateLegacyPresetDetailPublicResponse,
+    GenerateLegacyPresetListPublicResponse,
     HITLPendingListPublicResponse,
     IngestInventoryPublicResponse,
     IngestPresetDetailPublicResponse,
@@ -4371,6 +4378,27 @@ def export_dead_letter_queue(
 @app.get("/donors")
 def list_donors():
     return {"donors": DonorFactory.list_supported()}
+
+
+@app.get(
+    "/generate/presets/legacy",
+    response_model=GenerateLegacyPresetListPublicResponse,
+    response_model_exclude_none=True,
+)
+def list_generate_legacy_presets():
+    return {"presets": list_generate_legacy_preset_summaries()}
+
+
+@app.get(
+    "/generate/presets/legacy/{preset_key}",
+    response_model=GenerateLegacyPresetDetailPublicResponse,
+    response_model_exclude_none=True,
+)
+def get_generate_legacy_preset(preset_key: str):
+    try:
+        return load_generate_legacy_preset(preset_key)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get(

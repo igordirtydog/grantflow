@@ -1608,6 +1608,29 @@ class IngestPresetDetailPublicResponse(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class GenerateLegacyPresetSummaryPublicResponse(BaseModel):
+    preset_key: str
+    donor_id: Optional[str] = None
+    title: Optional[str] = None
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GenerateLegacyPresetListPublicResponse(BaseModel):
+    presets: list[GenerateLegacyPresetSummaryPublicResponse]
+
+    model_config = ConfigDict(extra="allow")
+
+
+class GenerateLegacyPresetDetailPublicResponse(BaseModel):
+    preset_key: str
+    donor_id: Optional[str] = None
+    title: Optional[str] = None
+    generate_payload: Dict[str, Any]
+
+    model_config = ConfigDict(extra="allow")
+
+
 class RBMSamplePresetSummaryPublicResponse(BaseModel):
     sample_id: str
     donor_id: Optional[str] = None
