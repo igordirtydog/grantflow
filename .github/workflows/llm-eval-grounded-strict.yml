@@ -23,6 +23,11 @@ on:
         required: true
         default: "1"
         type: string
+      compare_to_baseline:
+        description: "Baseline snapshot JSON path (empty disables trend comparison)"
+        required: false
+        default: "grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json"
+        type: string
   schedule:
     - cron: "20 2 * * *"
 
@@ -61,6 +66,7 @@ jobs:
           INPUT_CASE_IDS: ${{ github.event.inputs.case_ids }}
           INPUT_SEED_MANIFEST: ${{ github.event.inputs.seed_manifest }}
           INPUT_MIN_SEED_READINESS_PER_FAMILY: ${{ github.event.inputs.min_seed_readiness_per_family }}
+          INPUT_COMPARE_BASELINE: ${{ github.event.inputs.compare_to_baseline }}
         run: |
           mkdir -p llm-eval-grounded-strict-artifacts
           export CHROMA_HOST="${CHROMA_HOST:-localhost}"
@@ -76,6 +82,7 @@ jobs:
           CASE_IDS="${INPUT_CASE_IDS:-}"
           SEED_MANIFEST="${INPUT_SEED_MANIFEST:-docs/rag_seed_corpus/ingest_manifest.jsonl}"
           MIN_SEED_PER_FAMILY="${INPUT_MIN_SEED_READINESS_PER_FAMILY:-1}"
+          COMPARE_BASELINE="${INPUT_COMPARE_BASELINE:-grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json}"
           FULL_DONOR_IDS="usaid,eu,worldbank,giz,state_department"
           PARTIAL_BASELINE=false
 
@@ -93,6 +100,11 @@ jobs:
           if [ "${PARTIAL_BASELINE}" = "true" ]; then
             EXTRA_ARGS+=(--baseline-ignore-missing-current-cases)
           fi
+          if [ -n "${COMPARE_BASELINE}" ]; then
+            EXTRA_ARGS+=(--compare-to-baseline "$COMPARE_BASELINE")
+            EXTRA_ARGS+=(--comparison-text-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.txt)
+            EXTRA_ARGS+=(--comparison-json-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.json)
+          fi
 
           python -m grantflow.eval.harness \
             --suite-label llm-eval-grounded-strict \
@@ -102,9 +114,6 @@ jobs:
             --seed-rag-manifest "$SEED_MANIFEST" \
             --require-seed-readiness \
             --seed-readiness-min-per-family "$MIN_SEED_PER_FAMILY" \
-            --compare-to-baseline grantflow/eval/fixtures/llm_grounded_strict_regression_snapshot.json \
-            --comparison-text-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.txt \
-            --comparison-json-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.json \
             "${EXTRA_ARGS[@]}" \
             --text-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-report.txt \
             --json-out llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-report.json
@@ -126,15 +135,16 @@ jobs:
             --out-text llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-donor-gate.txt \
             --out-md llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comment.md
 
-      - name: Publish strict donor summary
+      - name: Build strict workflow summary
         if: always()
         run: |
-          if [ -f llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comment.md ]; then
-            cat llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comment.md >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "## LLM Grounded Strict Donor Gate" >> "$GITHUB_STEP_SUMMARY"
-            echo "- Summary file was not generated." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          python scripts/build_llm_eval_summary.py \
+            --report-json llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-report.json \
+            --comparison-json llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-comparison.json \
+            --gate-json llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-donor-gate.json \
+            --title "LLM Grounded Strict Summary" \
+            --out-md llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-summary.md
+          cat llm-eval-grounded-strict-artifacts/llm-eval-grounded-strict-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce strict donor gate
         if: always()

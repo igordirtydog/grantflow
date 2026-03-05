@@ -28,6 +28,11 @@ on:
         required: true
         default: "grantflow/eval/cases/grounded_cases.json"
         type: string
+      compare_to_baseline:
+        description: "Optional baseline snapshot JSON path (empty disables trend comparison)"
+        required: false
+        default: ""
+        type: string
 
 jobs:
   llm_eval_grounded:
@@ -65,6 +70,7 @@ jobs:
           INPUT_FORCE_ARCH_RAG: ${{ github.event.inputs.force_architect_rag }}
           INPUT_ENFORCE_EXPECTATIONS: ${{ github.event.inputs.enforce_expectations }}
           INPUT_CASES_FILE: ${{ github.event.inputs.cases_file }}
+          INPUT_COMPARE_BASELINE: ${{ github.event.inputs.compare_to_baseline }}
         run: |
           mkdir -p llm-eval-grounded-artifacts
           export CHROMA_HOST="${CHROMA_HOST:-localhost}"
@@ -92,6 +98,16 @@ jobs:
           if [ "${INPUT_ENFORCE_EXPECTATIONS:-false}" != "true" ]; then
             EXTRA_ARGS+=(--skip-expectations)
           fi
+          COMPARE_BASELINE="${INPUT_COMPARE_BASELINE:-}"
+          if [ -n "${COMPARE_BASELINE}" ]; then
+            EXTRA_ARGS+=(--compare-to-baseline "$COMPARE_BASELINE")
+            EXTRA_ARGS+=(--comparison-text-out llm-eval-grounded-artifacts/llm-eval-grounded-comparison.txt)
+            EXTRA_ARGS+=(--comparison-json-out llm-eval-grounded-artifacts/llm-eval-grounded-comparison.json)
+            FULL_DONORS="usaid,eu,worldbank"
+            if [ -n "${INPUT_CASE_IDS:-}" ] || [ "${INPUT_DONOR_IDS:-$FULL_DONORS}" != "${FULL_DONORS}" ]; then
+              EXTRA_ARGS+=(--baseline-ignore-missing-current-cases)
+            fi
+          fi
 
           python -m grantflow.eval.harness \
             --suite-label llm-eval-grounded \
@@ -99,6 +115,16 @@ jobs:
             "${EXTRA_ARGS[@]}" \
             --text-out llm-eval-grounded-artifacts/llm-eval-grounded-report.txt \
             --json-out llm-eval-grounded-artifacts/llm-eval-grounded-report.json
+
+      - name: Build grounded workflow summary
+        if: always()
+        run: |
+          python scripts/build_llm_eval_summary.py \
+            --report-json llm-eval-grounded-artifacts/llm-eval-grounded-report.json \
+            --comparison-json llm-eval-grounded-artifacts/llm-eval-grounded-comparison.json \
+            --title "LLM Grounded Summary" \
+            --out-md llm-eval-grounded-artifacts/llm-eval-grounded-summary.md
+          cat llm-eval-grounded-artifacts/llm-eval-grounded-summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload grounded LLM evaluation report
         uses: actions/upload-artifact@v4

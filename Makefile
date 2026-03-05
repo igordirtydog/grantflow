@@ -153,6 +153,12 @@ eval-llm-grounded-strict:
 		--out-json $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-donor-gate.json \
 		--out-text $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-donor-gate.txt \
 		--out-md $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-comment.md
+	$(PYTHON) scripts/build_llm_eval_summary.py \
+		--report-json $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-report.json \
+		--comparison-json $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-comparison.json \
+		--gate-json $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-donor-gate.json \
+		--title "LLM Grounded Strict Summary" \
+		--out-md $(EVAL_ARTIFACTS_DIR)/llm-eval-grounded-strict-summary.md
 
 eval-rbm-samples:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)

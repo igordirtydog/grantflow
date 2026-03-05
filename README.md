@@ -559,12 +559,17 @@ make eval-llm-grounded-strict
 - `eval-artifacts/llm-eval-grounded-strict-donor-gate.json`
 - `eval-artifacts/llm-eval-grounded-strict-donor-gate.txt`
 - `eval-artifacts/llm-eval-grounded-strict-comment.md`
+- `eval-artifacts/llm-eval-grounded-strict-summary.md` (unified donor table + gate/comparison status)
 
 GitHub workflow `.github/workflows/llm-eval-grounded-strict.yml` enforces strict mode:
 it does not expose `skip_expectations` input; strict lane runs with expectations enabled only.
 For filtered manual runs (subset `donor_ids` or explicit `case_ids`), workflow auto-enables
 `--baseline-ignore-missing-current-cases` to suppress expected baseline "missing case" warnings.
 Local `make eval-llm-grounded-strict` enforces the same policy via donor gate check.
+
+`LLM Eval (Grounded)` workflow also publishes unified summary (`llm-eval-grounded-summary.md`) and supports
+optional trend comparison via workflow input `compare_to_baseline`; subset runs auto-enable
+`--baseline-ignore-missing-current-cases` for cleaner comparison output.
 
 `llm_grounded_strict_cases.json` includes explicit `expected_doc_families` per donor.
 When `--require-seed-readiness` is enabled, harness fails before case execution if required
