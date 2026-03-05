@@ -321,9 +321,28 @@ def _validate_store_backend_alignment() -> None:
     )
 
 
+def _validate_tenant_authz_configuration() -> None:
+    status = _tenant_authz_configuration_status()
+    policy_mode = str(status.get("policy_mode") or "warn")
+    enabled = bool(status.get("enabled"))
+    allowed_tenant_count = int(status.get("allowed_tenant_count") or 0)
+    valid = bool(status.get("valid"))
+    if policy_mode != "strict":
+        return
+    if valid:
+        return
+    if enabled and allowed_tenant_count == 0:
+        raise RuntimeError(
+            "Tenant authz misconfiguration: GRANTFLOW_TENANT_AUTHZ_ENABLED=true but tenant allowlist is empty. "
+            "Set GRANTFLOW_ALLOWED_TENANTS or disable strict policy "
+            "(GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE=warn|off)."
+        )
+
+
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI) -> AsyncIterator[None]:
     _validate_store_backend_alignment()
+    _validate_tenant_authz_configuration()
     if _uses_queue_runner():
         JOB_RUNNER.start()
     try:
@@ -672,6 +691,26 @@ def _default_tenant_token() -> Optional[str]:
     if not token:
         return None
     return vector_store.normalize_namespace(token)
+
+
+def _configured_tenant_authz_configuration_policy_mode() -> str:
+    raw_mode = os.getenv(
+        "GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE",
+        os.getenv("AIDGRAPH_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "warn"),
+    )
+    return _normalize_grounding_policy_mode(raw_mode)
+
+
+def _tenant_authz_configuration_status() -> dict[str, Any]:
+    enabled = _tenant_authz_enabled()
+    allowed_tenants = _allowed_tenant_tokens()
+    valid = not (enabled and len(allowed_tenants) == 0)
+    return {
+        "enabled": enabled,
+        "allowed_tenant_count": len(allowed_tenants),
+        "valid": valid,
+        "policy_mode": _configured_tenant_authz_configuration_policy_mode(),
+    }
 
 
 def _normalize_tenant_candidate(value: Any) -> Optional[str]:
@@ -4209,6 +4248,7 @@ def _health_diagnostics() -> dict[str, Any]:
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
     runtime_compatibility_status = _python_runtime_compatibility_status()
+    tenant_authz_status = _tenant_authz_configuration_status()
     job_runner_diag = JOB_RUNNER.diagnostics()
     dispatcher_heartbeat_status = (
         job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
@@ -4229,8 +4269,12 @@ def _health_diagnostics() -> dict[str, Any]:
         "auth": {
             "api_key_configured": bool(api_key_configured()),
             "read_auth_required": bool(read_auth_required()),
-            "tenant_authz_enabled": _tenant_authz_enabled(),
-            "allowed_tenant_count": len(_allowed_tenant_tokens()),
+            "tenant_authz_enabled": bool(tenant_authz_status.get("enabled")),
+            "allowed_tenant_count": int(tenant_authz_status.get("allowed_tenant_count") or 0),
+        },
+        "tenant_authz_configuration_policy": {
+            "mode": _configured_tenant_authz_configuration_policy_mode(),
+            "status": tenant_authz_status,
         },
         "vector_store": {
             "backend": vector_backend,
@@ -4399,6 +4443,8 @@ def readiness_check():
     job_runner_diag = JOB_RUNNER.diagnostics()
     runtime_compatibility_policy_mode = _configured_runtime_compatibility_policy_mode()
     runtime_compatibility_status = _python_runtime_compatibility_status()
+    tenant_authz_status = _tenant_authz_configuration_status()
+    tenant_authz_policy_mode = _configured_tenant_authz_configuration_policy_mode()
     dispatcher_heartbeat_status = (
         job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
     )
@@ -4460,7 +4506,26 @@ def readiness_check():
                 "blocking": runtime_compatibility_blocking,
             }
         )
-    ready = bool(vector_ready.get("ready")) and job_runner_ready and not runtime_compatibility_blocking
+    tenant_authz_valid = bool(tenant_authz_status.get("valid"))
+    tenant_authz_blocking = tenant_authz_policy_mode == "strict" and not tenant_authz_valid
+    tenant_authz_alerts: list[dict[str, Any]] = []
+    if not tenant_authz_valid:
+        tenant_authz_alerts.append(
+            {
+                "code": "TENANT_AUTHZ_CONFIGURATION_RISK",
+                "severity": "high" if tenant_authz_blocking else "medium",
+                "message": (
+                    "Tenant authz is enabled but allowlist is empty; configure GRANTFLOW_ALLOWED_TENANTS."
+                ),
+                "blocking": tenant_authz_blocking,
+            }
+        )
+    ready = (
+        bool(vector_ready.get("ready"))
+        and job_runner_ready
+        and not runtime_compatibility_blocking
+        and not tenant_authz_blocking
+    )
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
@@ -4526,6 +4591,12 @@ def readiness_check():
                 "status": runtime_compatibility_status,
                 "blocking": runtime_compatibility_blocking,
                 "alerts": runtime_compatibility_alerts,
+            },
+            "tenant_authz_configuration_policy": {
+                "mode": tenant_authz_policy_mode,
+                "status": tenant_authz_status,
+                "blocking": tenant_authz_blocking,
+                "alerts": tenant_authz_alerts,
             },
             "configuration_warnings": _configuration_warnings(),
         },

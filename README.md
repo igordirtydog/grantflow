@@ -106,7 +106,7 @@ curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/ready
 ```
 
-`/ready` now includes `checks.preflight_grounding_policy`, `checks.runtime_grounded_quality_gate`, and `checks.runtime_compatibility_policy` with active modes and thresholds/status, plus `checks.configuration_warnings` for setup risks (for example Chroma/API port conflicts).
+`/ready` now includes `checks.preflight_grounding_policy`, `checks.runtime_grounded_quality_gate`, `checks.runtime_compatibility_policy`, and `checks.tenant_authz_configuration_policy` with active modes and thresholds/status, plus `checks.configuration_warnings` for setup risks (for example Chroma/API port conflicts).
 
 ### 4) (Optional) Configure preflight grounding thresholds
 
@@ -298,6 +298,7 @@ Enable tenant-aware access control:
 ```bash
 export GRANTFLOW_TENANT_AUTHZ_ENABLED=true
 export GRANTFLOW_ALLOWED_TENANTS=tenant_a,tenant_b
+export GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE=warn   # off | warn | strict
 ```
 
 Send tenant in request body (`tenant_id`) or header:
@@ -320,6 +321,7 @@ With tenant authz enabled:
 - access is denied (`403`) for cross-tenant reads
 - RAG namespace becomes tenant-aware: `{tenant}/{donor_namespace}` (example: `tenant_a/usaid_ads201`)
 - keep `GRANTFLOW_ALLOWED_TENANTS` non-empty when authz is enabled; `/health` and `/ready` emit warning `TENANT_AUTHZ_ENABLED_WITHOUT_ALLOWLIST` if allowlist is empty
+- set `GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE=strict` to fail startup and degrade `/ready` on empty allowlist
 
 ### 10) Export artifacts
 

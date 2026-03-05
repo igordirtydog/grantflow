@@ -107,6 +107,12 @@ def test_health_endpoint():
     assert isinstance(runtime_status.get("python_version"), str)
     assert runtime_status.get("supported_range") == "3.11-3.13"
     assert isinstance(runtime_status.get("supported"), bool)
+    tenant_policy = diagnostics["tenant_authz_configuration_policy"]
+    assert tenant_policy["mode"] in {"warn", "strict", "off"}
+    tenant_status = tenant_policy["status"]
+    assert isinstance(tenant_status.get("enabled"), bool)
+    assert isinstance(tenant_status.get("allowed_tenant_count"), int)
+    assert isinstance(tenant_status.get("valid"), bool)
     assert isinstance(diagnostics.get("configuration_warnings"), list)
     dispatcher_policy = diagnostics["job_runner"]["dispatcher_worker_heartbeat_policy"]
     assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
@@ -154,6 +160,38 @@ def test_store_backend_alignment_validation_runs_at_startup(monkeypatch):
             return None
 
     with pytest.raises(RuntimeError, match="GRANTFLOW_HITL_STORE"):
+        asyncio.run(_start_lifespan())
+
+
+def test_tenant_authz_configuration_validation_detects_strict_misconfig(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.delenv("GRANTFLOW_ALLOWED_TENANTS", raising=False)
+    monkeypatch.delenv("AIDGRAPH_ALLOWED_TENANTS", raising=False)
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "strict")
+
+    with pytest.raises(RuntimeError, match="GRANTFLOW_TENANT_AUTHZ_ENABLED=true"):
+        api_app_module._validate_tenant_authz_configuration()
+
+
+def test_tenant_authz_configuration_validation_allows_strict_with_allowlist(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.setenv("GRANTFLOW_ALLOWED_TENANTS", "tenant_alpha")
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "strict")
+
+    api_app_module._validate_tenant_authz_configuration()
+
+
+def test_tenant_authz_configuration_validation_runs_at_startup(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.delenv("GRANTFLOW_ALLOWED_TENANTS", raising=False)
+    monkeypatch.delenv("AIDGRAPH_ALLOWED_TENANTS", raising=False)
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "strict")
+
+    async def _start_lifespan():
+        async with api_app_module._app_lifespan(api_app_module.app):
+            return None
+
+    with pytest.raises(RuntimeError, match="Tenant authz misconfiguration"):
         asyncio.run(_start_lifespan())
 
 
@@ -618,6 +656,14 @@ def test_ready_endpoint():
     assert isinstance(runtime_status.get("supported"), bool)
     assert isinstance(runtime_compatibility_policy.get("blocking"), bool)
     assert isinstance(runtime_compatibility_policy.get("alerts"), list)
+    tenant_policy = checks["tenant_authz_configuration_policy"]
+    assert tenant_policy["mode"] in {"warn", "strict", "off"}
+    tenant_status = tenant_policy["status"]
+    assert isinstance(tenant_status.get("enabled"), bool)
+    assert isinstance(tenant_status.get("allowed_tenant_count"), int)
+    assert isinstance(tenant_status.get("valid"), bool)
+    assert isinstance(tenant_policy.get("blocking"), bool)
+    assert isinstance(tenant_policy.get("alerts"), list)
     assert isinstance(checks.get("configuration_warnings"), list)
     dispatcher_policy = checks["job_runner"]["dispatcher_worker_heartbeat_policy"]
     assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
@@ -657,6 +703,45 @@ def test_ready_endpoint_runtime_compatibility_strict_mode_blocks(monkeypatch):
     assert policy["blocking"] is True
     alerts = policy["alerts"]
     assert any(str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict))
+
+
+def test_ready_endpoint_tenant_authz_policy_warn_mode_does_not_block(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.delenv("GRANTFLOW_ALLOWED_TENANTS", raising=False)
+    monkeypatch.delenv("AIDGRAPH_ALLOWED_TENANTS", raising=False)
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "warn")
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    policy = body["checks"]["tenant_authz_configuration_policy"]
+    assert policy["mode"] == "warn"
+    assert policy["status"]["enabled"] is True
+    assert policy["status"]["valid"] is False
+    assert policy["blocking"] is False
+    alerts = policy["alerts"]
+    assert any(str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict))
+
+
+def test_ready_endpoint_tenant_authz_policy_strict_mode_blocks(monkeypatch):
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_ENABLED", "true")
+    monkeypatch.delenv("GRANTFLOW_ALLOWED_TENANTS", raising=False)
+    monkeypatch.delenv("AIDGRAPH_ALLOWED_TENANTS", raising=False)
+    monkeypatch.setenv("GRANTFLOW_TENANT_AUTHZ_CONFIGURATION_POLICY_MODE", "strict")
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "degraded"
+    policy = detail["checks"]["tenant_authz_configuration_policy"]
+    assert policy["mode"] == "strict"
+    assert policy["status"]["enabled"] is True
+    assert policy["status"]["valid"] is False
+    assert policy["blocking"] is True
+    alerts = policy["alerts"]
+    assert any(str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict))
 
 
 def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch):
