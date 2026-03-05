@@ -3005,6 +3005,7 @@ def _set_critic_fatal_flaw_status(
             next_status=next_status,
             now=now,
             actor_value=actor_value,
+            state=state,
         )
         if finding_changed:
             changed = True
@@ -3054,6 +3055,7 @@ def _apply_critic_finding_status_transition(
     next_status: str,
     now: str,
     actor_value: str,
+    state: Optional[Dict[str, Any]] = None,
 ) -> tuple[Dict[str, Any], bool]:
     current = dict(item)
     current_finding_id = finding_primary_id(current)
@@ -3064,6 +3066,9 @@ def _apply_critic_finding_status_transition(
 
     current_status = str(current.get("status") or "open")
     if current_status == next_status:
+        normalized = canonicalize_findings([current], state=state, previous_items=[current], default_source="rules", dedupe=False)
+        if normalized:
+            current = dict(normalized[0])
         return current, False
 
     current["status"] = next_status
@@ -3088,6 +3093,9 @@ def _apply_critic_finding_status_transition(
         current.pop("resolved_at", None)
         current.pop("resolved_by", None)
         current = _ensure_finding_due_at(current, now_iso=now, reset=True)
+    normalized = canonicalize_findings([current], state=state, previous_items=[current], default_source="rules", dedupe=False)
+    if normalized:
+        current = dict(normalized[0])
     return current, True
 
 
@@ -3231,6 +3239,7 @@ def _set_critic_fatal_flaws_status_bulk(
             next_status=next_status,
             now=now,
             actor_value=actor_value,
+            state=state,
         )
         matched_items.append(updated)
         next_flaws.append(updated)
