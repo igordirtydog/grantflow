@@ -45,6 +45,8 @@ GROUNDING_RISK_LEVEL_ORDER = ("high", "medium", "low", "unknown")
 GROUNDING_RISK_LEVELS = set(GROUNDING_RISK_LEVEL_ORDER)
 TOC_TEXT_RISK_LEVEL_ORDER = ("high", "medium", "low", "unknown")
 TOC_TEXT_RISK_LEVELS = set(TOC_TEXT_RISK_LEVEL_ORDER)
+MEL_RISK_LEVEL_ORDER = ("high", "medium", "low", "unknown")
+MEL_RISK_LEVELS = set(MEL_RISK_LEVEL_ORDER)
 FINDING_STATUS_FILTER_VALUES = {"open", "acknowledged", "resolved"}
 FINDING_SEVERITY_FILTER_VALUES = {"high", "medium", "low"}
 REVIEW_WORKFLOW_EVENT_TYPES = {
@@ -2258,23 +2260,65 @@ def _mel_indicator_coverage_summary(logframe_draft: Dict[str, Any]) -> Dict[str,
     }
     smart_fields_present_total = sum(int(coverage_counts.get(field, 0)) for field in MEL_SMART_COVERAGE_FIELDS)
     smart_fields_total = indicator_count * len(MEL_SMART_COVERAGE_FIELDS)
+    smart_field_coverage_rate = round(smart_fields_present_total / smart_fields_total, 4) if smart_fields_total else None
+    baseline_coverage_rate = _rate(int(coverage_counts.get("baseline", 0)))
+    target_coverage_rate = _rate(int(coverage_counts.get("target", 0)))
+    frequency_coverage_rate = _rate(int(coverage_counts.get("frequency", 0)))
+    formula_coverage_rate = _rate(int(coverage_counts.get("formula", 0)))
+    definition_coverage_rate = _rate(int(coverage_counts.get("definition", 0)))
+    data_source_coverage_rate = _rate(int(coverage_counts.get("data_source", 0)))
+    disaggregation_coverage_rate = _rate(int(coverage_counts.get("disaggregation", 0)))
+    result_level_coverage_rate = _rate(int(coverage_counts.get("result_level", 0)))
+
+    risk_level = _mel_risk_level(
+        indicator_count=indicator_count,
+        smart_field_coverage_rate=smart_field_coverage_rate,
+        baseline_coverage_rate=baseline_coverage_rate,
+        target_coverage_rate=target_coverage_rate,
+        baseline_placeholder_count=baseline_placeholder_count,
+        target_placeholder_count=target_placeholder_count,
+    )
 
     return {
         "indicator_count": indicator_count,
-        "baseline_coverage_rate": _rate(int(coverage_counts.get("baseline", 0))),
-        "target_coverage_rate": _rate(int(coverage_counts.get("target", 0))),
-        "frequency_coverage_rate": _rate(int(coverage_counts.get("frequency", 0))),
-        "formula_coverage_rate": _rate(int(coverage_counts.get("formula", 0))),
-        "definition_coverage_rate": _rate(int(coverage_counts.get("definition", 0))),
-        "data_source_coverage_rate": _rate(int(coverage_counts.get("data_source", 0))),
-        "disaggregation_coverage_rate": _rate(int(coverage_counts.get("disaggregation", 0))),
-        "result_level_coverage_rate": _rate(int(coverage_counts.get("result_level", 0))),
-        "smart_field_coverage_rate": (round(smart_fields_present_total / smart_fields_total, 4) if smart_fields_total else None),
+        "risk_level": risk_level,
+        "baseline_coverage_rate": baseline_coverage_rate,
+        "target_coverage_rate": target_coverage_rate,
+        "frequency_coverage_rate": frequency_coverage_rate,
+        "formula_coverage_rate": formula_coverage_rate,
+        "definition_coverage_rate": definition_coverage_rate,
+        "data_source_coverage_rate": data_source_coverage_rate,
+        "disaggregation_coverage_rate": disaggregation_coverage_rate,
+        "result_level_coverage_rate": result_level_coverage_rate,
+        "smart_field_coverage_rate": smart_field_coverage_rate,
         "baseline_placeholder_count": baseline_placeholder_count,
         "target_placeholder_count": target_placeholder_count,
         "missing_field_counts": missing_field_counts,
         "result_level_counts": result_level_counts,
     }
+
+
+def _mel_risk_level(
+    *,
+    indicator_count: int,
+    smart_field_coverage_rate: Optional[float],
+    baseline_coverage_rate: Optional[float],
+    target_coverage_rate: Optional[float],
+    baseline_placeholder_count: int,
+    target_placeholder_count: int,
+) -> str:
+    if indicator_count <= 0:
+        return "unknown"
+    smart = float(smart_field_coverage_rate) if isinstance(smart_field_coverage_rate, (int, float)) else 0.0
+    baseline = float(baseline_coverage_rate) if isinstance(baseline_coverage_rate, (int, float)) else 0.0
+    target = float(target_coverage_rate) if isinstance(target_coverage_rate, (int, float)) else 0.0
+    placeholder_total = int(baseline_placeholder_count) + int(target_placeholder_count)
+    placeholder_rate = placeholder_total / max(1, indicator_count * 2)
+    if smart < 0.6 or baseline < 0.5 or target < 0.5:
+        return "high"
+    if smart < 0.85 or baseline < 0.8 or target < 0.8 or placeholder_rate > 0.0:
+        return "medium"
+    return "low"
 
 
 def public_job_quality_payload(
@@ -3255,6 +3299,7 @@ def public_portfolio_quality_payload(
     mel_target_placeholder_count = 0
     mel_field_present_weighted_totals: Dict[str, float] = {field: 0.0 for field in MEL_COVERAGE_FIELDS}
     mel_result_level_counts_total: Dict[str, int] = {"impact": 0, "outcome": 0, "output": 0, "unknown": 0}
+    mel_risk_counts: Dict[str, int] = {level: 0 for level in MEL_RISK_LEVEL_ORDER}
 
     for row in quality_rows:
         row_critic: Dict[str, Any] = (
@@ -3267,6 +3312,10 @@ def public_portfolio_quality_payload(
             cast(Dict[str, Any], row.get("toc_text_quality")) if isinstance(row.get("toc_text_quality"), dict) else {}
         )
         row_mel: Dict[str, Any] = cast(Dict[str, Any], row.get("mel")) if isinstance(row.get("mel"), dict) else {}
+        row_mel_risk_level = str(row_mel.get("risk_level") or "unknown").strip().lower()
+        if row_mel_risk_level not in MEL_RISK_LEVELS:
+            row_mel_risk_level = "unknown"
+        mel_risk_counts[row_mel_risk_level] = int(mel_risk_counts.get(row_mel_risk_level, 0)) + 1
         if bool(row.get("needs_revision")):
             needs_revision_job_count += 1
         critic_open_findings_total += int(row_critic.get("open_finding_count") or 0)
@@ -3822,6 +3871,7 @@ def public_portfolio_quality_payload(
             high_priority_signal_count += int(count)
 
     donor_grounding_risk_counts: Dict[str, int] = {level: 0 for level in GROUNDING_RISK_LEVEL_ORDER}
+    donor_mel_risk_counts: Dict[str, int] = {level: 0 for level in MEL_RISK_LEVEL_ORDER}
     donor_grounding_risk_breakdown: Dict[str, Dict[str, Any]] = {}
 
     for donor_id, donor_row in donor_weighted_risk_breakdown.items():
@@ -4040,6 +4090,19 @@ def public_portfolio_quality_payload(
                 "output": _coerce_int(donor_mel_result_level_counts_raw.get("output"), default=0),
                 "unknown": _coerce_int(donor_mel_result_level_counts_raw.get("unknown"), default=0),
             }
+            donor_mel_smart_field_coverage_rate = (
+                round(donor_mel_smart_present_total / donor_mel_smart_total, 4) if donor_mel_smart_total else None
+            )
+            donor_mel_baseline_coverage_rate = donor_mel_coverage_rates.get("baseline")
+            donor_mel_target_coverage_rate = donor_mel_coverage_rates.get("target")
+            donor_mel_risk_level = _mel_risk_level(
+                indicator_count=donor_mel_indicator_count_total,
+                smart_field_coverage_rate=donor_mel_smart_field_coverage_rate,
+                baseline_coverage_rate=donor_mel_baseline_coverage_rate,
+                target_coverage_rate=donor_mel_target_coverage_rate,
+                baseline_placeholder_count=_coerce_int(donor_mel.get("baseline_placeholder_count"), default=0),
+                target_placeholder_count=_coerce_int(donor_mel.get("target_placeholder_count"), default=0),
+            )
             donor_row["mel"] = {
                 "indicator_job_count": donor_mel_indicator_job_count,
                 "indicator_count_total": donor_mel_indicator_count_total,
@@ -4048,17 +4111,16 @@ def public_portfolio_quality_payload(
                     if donor_mel_indicator_job_count
                     else None
                 ),
-                "baseline_coverage_rate": donor_mel_coverage_rates.get("baseline"),
-                "target_coverage_rate": donor_mel_coverage_rates.get("target"),
+                "risk_level": donor_mel_risk_level,
+                "baseline_coverage_rate": donor_mel_baseline_coverage_rate,
+                "target_coverage_rate": donor_mel_target_coverage_rate,
                 "frequency_coverage_rate": donor_mel_coverage_rates.get("frequency"),
                 "formula_coverage_rate": donor_mel_coverage_rates.get("formula"),
                 "definition_coverage_rate": donor_mel_coverage_rates.get("definition"),
                 "data_source_coverage_rate": donor_mel_coverage_rates.get("data_source"),
                 "disaggregation_coverage_rate": donor_mel_coverage_rates.get("disaggregation"),
                 "result_level_coverage_rate": donor_mel_coverage_rates.get("result_level"),
-                "smart_field_coverage_rate": (
-                    round(donor_mel_smart_present_total / donor_mel_smart_total, 4) if donor_mel_smart_total else None
-                ),
+                "smart_field_coverage_rate": donor_mel_smart_field_coverage_rate,
                 "baseline_placeholder_count": _coerce_int(donor_mel.get("baseline_placeholder_count"), default=0),
                 "target_placeholder_count": _coerce_int(donor_mel.get("target_placeholder_count"), default=0),
                 "missing_field_counts": donor_mel_missing_field_counts,
@@ -4069,6 +4131,7 @@ def public_portfolio_quality_payload(
                 "indicator_job_count": 0,
                 "indicator_count_total": 0,
                 "avg_indicator_count_per_job": None,
+                "risk_level": "unknown",
                 "baseline_coverage_rate": None,
                 "target_coverage_rate": None,
                 "frequency_coverage_rate": None,
@@ -4083,6 +4146,11 @@ def public_portfolio_quality_payload(
                 "missing_field_counts": {field: 0 for field in MEL_COVERAGE_FIELDS},
                 "result_level_counts": {"impact": 0, "outcome": 0, "output": 0, "unknown": 0},
             }
+        donor_mel_summary = cast(Dict[str, Any], donor_row.get("mel")) if isinstance(donor_row.get("mel"), dict) else {}
+        donor_mel_risk_level = str(donor_mel_summary.get("risk_level") or "unknown").strip().lower()
+        if donor_mel_risk_level not in MEL_RISK_LEVELS:
+            donor_mel_risk_level = "unknown"
+        donor_mel_risk_counts[donor_mel_risk_level] = int(donor_mel_risk_counts.get(donor_mel_risk_level, 0)) + 1
         donor_grounding_risk_counts[donor_grounding_level] = (
             int(donor_grounding_risk_counts.get(donor_grounding_level, 0)) + 1
         )
@@ -4160,6 +4228,17 @@ def public_portfolio_quality_payload(
     mel_smart_present_total = sum(float(mel_field_present_weighted_totals.get(field, 0.0)) for field in MEL_SMART_COVERAGE_FIELDS)
     mel_smart_total = mel_indicator_count_total * len(MEL_SMART_COVERAGE_FIELDS)
     mel_smart_field_coverage_rate = round(mel_smart_present_total / mel_smart_total, 4) if mel_smart_total else None
+    mel_risk_level = _mel_risk_level(
+        indicator_count=mel_indicator_count_total,
+        smart_field_coverage_rate=mel_smart_field_coverage_rate,
+        baseline_coverage_rate=mel_coverage_rates.get("baseline"),
+        target_coverage_rate=mel_coverage_rates.get("target"),
+        baseline_placeholder_count=mel_baseline_placeholder_count,
+        target_placeholder_count=mel_target_placeholder_count,
+    )
+    mel_risk_job_rates: Dict[str, Optional[float]] = {
+        level: (round(int(count) / job_count, 4) if job_count else None) for level, count in mel_risk_counts.items()
+    }
     quality_score_job_count = sum(1 for row in quality_rows if isinstance(row.get("quality_score"), (int, float)))
     critic_score_job_count = sum(1 for row in quality_rows if isinstance(row.get("critic_score"), (int, float)))
 
@@ -4336,6 +4415,17 @@ def public_portfolio_quality_payload(
         "medium_grounding_risk_donor_count": int(donor_grounding_risk_counts.get("medium") or 0),
         "low_grounding_risk_donor_count": int(donor_grounding_risk_counts.get("low") or 0),
         "unknown_grounding_risk_donor_count": int(donor_grounding_risk_counts.get("unknown") or 0),
+        "donor_mel_risk_counts": donor_mel_risk_counts,
+        "high_mel_risk_donor_count": int(donor_mel_risk_counts.get("high") or 0),
+        "medium_mel_risk_donor_count": int(donor_mel_risk_counts.get("medium") or 0),
+        "low_mel_risk_donor_count": int(donor_mel_risk_counts.get("low") or 0),
+        "unknown_mel_risk_donor_count": int(donor_mel_risk_counts.get("unknown") or 0),
+        "mel_risk_job_counts": mel_risk_counts,
+        "mel_risk_job_rates": mel_risk_job_rates,
+        "mel_high_risk_job_count": int(mel_risk_counts.get("high") or 0),
+        "mel_medium_risk_job_count": int(mel_risk_counts.get("medium") or 0),
+        "mel_low_risk_job_count": int(mel_risk_counts.get("low") or 0),
+        "mel_unknown_risk_job_count": int(mel_risk_counts.get("unknown") or 0),
         "toc_text_quality": {
             "issues_total": toc_text_quality_issues_total,
             "placeholder_finding_count": toc_text_quality_placeholder_finding_count,
@@ -4356,6 +4446,7 @@ def public_portfolio_quality_payload(
             "avg_indicator_count_per_job": (
                 round(mel_indicator_count_total / mel_indicator_job_count, 4) if mel_indicator_job_count else None
             ),
+            "risk_level": mel_risk_level,
             "baseline_coverage_rate": mel_coverage_rates.get("baseline"),
             "target_coverage_rate": mel_coverage_rates.get("target"),
             "frequency_coverage_rate": mel_coverage_rates.get("frequency"),

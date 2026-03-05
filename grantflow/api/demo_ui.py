@@ -3600,6 +3600,7 @@ def render_demo_ui_html() -> str:
             llm_used: mel.llm_used ?? "-",
             retrieval_used: mel.retrieval_used ?? "-",
             retrieval_hits_count: mel.retrieval_hits_count ?? "-",
+            risk_level: mel.risk_level || "unknown",
             avg_retrieval_confidence:
               typeof mel.avg_retrieval_confidence === "number"
                 ? Number(mel.avg_retrieval_confidence).toFixed(3)
@@ -4290,6 +4291,7 @@ def render_demo_ui_html() -> str:
           {
             indicator_job_count: Number(melSummary.indicator_job_count ?? 0),
             indicator_count_total: Number(melSummary.indicator_count_total ?? 0),
+            risk_level: melSummary.risk_level || "unknown",
             avg_indicator_count_per_job:
               typeof melSummary.avg_indicator_count_per_job === "number"
                 ? Number(melSummary.avg_indicator_count_per_job).toFixed(2)
@@ -4355,14 +4357,39 @@ def render_demo_ui_html() -> str:
           return;
         }
         const entries = Object.entries(mapping)
-          .map(([k, v]) => [String(k), Number(v || 0)])
-          .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+          .map(([k, v]) => {
+            const key = String(k);
+            const numericValue = Number(v);
+            const isFiniteNumber = Number.isFinite(numericValue);
+            return {
+              key,
+              displayValue:
+                v === null || v === undefined
+                  ? "-"
+                  : typeof v === "object"
+                    ? JSON.stringify(v)
+                    : String(v),
+              sortNumeric: isFiniteNumber ? numericValue : null,
+            };
+          })
+          .sort((a, b) => {
+            const aNum = a.sortNumeric;
+            const bNum = b.sortNumeric;
+            if (aNum !== null && bNum !== null) {
+              return bNum - aNum || a.key.localeCompare(b.key);
+            }
+            if (aNum !== null) return -1;
+            if (bNum !== null) return 1;
+            return a.key.localeCompare(b.key);
+          })
           .slice(0, topN);
         if (entries.length === 0) {
           container.innerHTML = `<div class="item"><div class="sub">${escapeHtml(emptyLabel)}</div></div>`;
           return;
         }
-        for (const [key, value] of entries) {
+        for (const row of entries) {
+          const key = row.key;
+          const value = row.displayValue;
           const div = document.createElement("div");
           div.className = "item";
           div.innerHTML = `

@@ -6492,6 +6492,7 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert mel_summary.get("disaggregation_coverage_rate") == 0.5
     assert mel_summary.get("result_level_coverage_rate") == 1.0
     assert mel_summary.get("smart_field_coverage_rate") == 0.7143
+    assert mel_summary.get("risk_level") == "medium"
     assert mel_summary.get("baseline_placeholder_count") == 1
     assert mel_summary.get("target_placeholder_count") == 1
     assert mel_summary.get("missing_field_counts") == {
@@ -7335,6 +7336,7 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert "mel" in body["donor_weighted_risk_breakdown"]["usaid"]
     assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["indicator_job_count"] >= 2
     assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["indicator_count_total"] >= 3
+    assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["risk_level"] in {"high", "medium", "low", "unknown"}
     assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["smart_field_coverage_rate"] is not None
     assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["baseline_coverage_rate"] == 0.6667
     assert body["donor_weighted_risk_breakdown"]["usaid"]["mel"]["target_coverage_rate"] == 0.6667
@@ -7452,6 +7454,7 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["mel"]["disaggregation_coverage_rate"] == 0.6667
     assert body["mel"]["result_level_coverage_rate"] == 1.0
     assert body["mel"]["smart_field_coverage_rate"] == 0.8095
+    assert body["mel"]["risk_level"] == "medium"
     assert body["mel"]["baseline_placeholder_count"] >= 1
     assert body["mel"]["target_placeholder_count"] >= 1
     assert body["mel"]["missing_field_counts"]["baseline"] >= 1
@@ -7460,6 +7463,9 @@ def test_portfolio_quality_endpoint_aggregates_quality_signals():
     assert body["mel"]["result_level_counts"]["impact"] >= 1
     assert body["mel"]["result_level_counts"]["outcome"] >= 1
     assert body["mel"]["result_level_counts"]["output"] >= 1
+    assert sum(int(v or 0) for v in body["mel_risk_job_counts"].values()) == body["job_count"]
+    assert body["mel_risk_job_counts"]["medium"] >= 1
+    assert body["donor_mel_risk_counts"]["medium"] >= 1
     assert "eu" not in body["donor_counts"]
 
     warning_filtered = client.get("/portfolio/quality", params={"warning_level": "high"})

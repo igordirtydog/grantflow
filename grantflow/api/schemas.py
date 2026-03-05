@@ -704,6 +704,7 @@ class JobQualityMelSummaryPublicResponse(BaseModel):
     avg_retrieval_confidence: Optional[float] = None
     citation_policy: Optional[Dict[str, Any]] = None
     indicator_count: Optional[int] = None
+    risk_level: Optional[str] = None
     baseline_coverage_rate: Optional[float] = None
     target_coverage_rate: Optional[float] = None
     frequency_coverage_rate: Optional[float] = None
@@ -1247,6 +1248,7 @@ class PortfolioQualityMelSummaryPublicResponse(BaseModel):
     indicator_job_count: int
     indicator_count_total: int
     avg_indicator_count_per_job: Optional[float] = None
+    risk_level: Optional[str] = None
     baseline_coverage_rate: Optional[float] = None
     target_coverage_rate: Optional[float] = None
     frequency_coverage_rate: Optional[float] = None
@@ -1363,6 +1365,17 @@ class PortfolioQualityPublicResponse(BaseModel):
     donor_grounded_gate_breakdown: Dict[str, PortfolioQualityDonorGroundedGatePublicResponse]
     toc_text_quality: PortfolioQualityToCTextQualitySummaryPublicResponse
     mel: PortfolioQualityMelSummaryPublicResponse
+    mel_risk_job_counts: Optional[Dict[str, int]] = None
+    mel_risk_job_rates: Optional[Dict[str, Optional[float]]] = None
+    donor_mel_risk_counts: Optional[Dict[str, int]] = None
+    high_mel_risk_donor_count: Optional[int] = None
+    medium_mel_risk_donor_count: Optional[int] = None
+    low_mel_risk_donor_count: Optional[int] = None
+    unknown_mel_risk_donor_count: Optional[int] = None
+    mel_high_risk_job_count: Optional[int] = None
+    mel_medium_risk_job_count: Optional[int] = None
+    mel_low_risk_job_count: Optional[int] = None
+    mel_unknown_risk_job_count: Optional[int] = None
     donor_needs_revision_counts: Dict[str, int]
     donor_open_findings_counts: Dict[str, int]
 

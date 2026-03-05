@@ -229,6 +229,7 @@
       "unknown": 0
     },
     "result_level_coverage_rate": null,
+    "risk_level": "unknown",
     "retrieval_hits_count": 2,
     "retrieval_namespace": "tenant_a/usaid_ads201",
     "retrieval_used": true,
