@@ -2,7 +2,7 @@ name: Nightly Grounded Tail Eval
 
 on:
   schedule:
-    - cron: "20 2 * * *"
+    - cron: "20 21 * * *"
   workflow_dispatch:
 
 jobs:
