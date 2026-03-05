@@ -7,6 +7,7 @@ Included files:
 - `grantflow-sample-toc-review-package.docx` - sample ToC export with citation traceability, critic findings, and review comments
 - `grantflow-sample-logframe-review-package.xlsx` - sample LogFrame export with `Citations`, `Critic Findings`, and `Review Comments` sheets
 - `grantflow-sample-export-payload.json` - sample review-ready export payload (sanitized)
+- `rbm-logic-model-ai-civil-service-kazakhstan.md` - donor-style RBM logic model sample (ToC, 5-level chain, SMART indicators, SDG mapping, and data collection plan)
 
 Notes:
 

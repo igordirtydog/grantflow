@@ -505,6 +505,14 @@ Current constraints:
 - grounded quality depends on uploaded corpus relevance
 - queue-backed worker scaling is not yet the default runtime mode
 
+## Sample Outputs
+
+- Sample artifacts index: `docs/samples/README.md`
+- Sample ToC export (`.docx`): `docs/samples/grantflow-sample-toc-review-package.docx`
+- Sample LogFrame export (`.xlsx`): `docs/samples/grantflow-sample-logframe-review-package.xlsx`
+- Sample export payload (`.json`): `docs/samples/grantflow-sample-export-payload.json`
+- Sample RBM logic model (`.md`): `docs/samples/rbm-logic-model-ai-civil-service-kazakhstan.md`
+
 ## Documentation
 
 - Full guide: `docs/full-guide.md`
