@@ -66,11 +66,16 @@ For local development tooling (`pytest`, `mypy`, `ruff`, `black`, pre-commit):
 pip install ".[dev]"
 ```
 
-Fast local quality gate (recommended before push):
+Local quality gates (run before push):
 
 ```bash
 make qa-fast
+make qa-hitl
 ```
+
+Notes:
+- `make qa-hitl` is the focused HITL integration smoke gate (pause/reject/resume/export/history).
+- `make qa-fast` includes `qa-hitl` plus core unit/contract checks and mypy baseline.
 
 Dependency policy:
 - canonical source of truth: `pyproject.toml`

@@ -23,6 +23,15 @@ Use `!` for breaking changes, for example:
 
 ## Local Checks Before Push
 
+Required:
+
+```bash
+make qa-hitl
+make qa-fast
+```
+
+Additional full local validation (optional, slower):
+
 ```bash
 python -m pytest -c grantflow/pytest.ini grantflow/tests/ -v --tb=short
 ruff check grantflow
@@ -49,4 +58,3 @@ pre-commit run --all-files
   - SemVer major version bump
   - changelog entry with migration note
   - explicit reviewer sign-off in PR
-
