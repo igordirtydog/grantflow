@@ -277,6 +277,80 @@ def _indicator_name_from_toc_statement(statement: str, *, idx: int) -> str:
     return f"{compact[:87].rstrip()}..."
 
 
+def _infer_result_level_from_toc_path(path: str) -> str:
+    lowered = str(path or "").strip().lower()
+    if any(token in lowered for token in (".project_goal", ".program_goal", ".programme_objective")):
+        return "impact"
+    if any(
+        token in lowered
+        for token in (
+            ".development_objectives[",
+            ".specific_objectives[",
+            ".objectives[",
+            ".project_development_objective",
+        )
+    ):
+        return "outcome"
+    if any(token in lowered for token in (".results_chain[", ".expected_outcomes[", ".outcomes[")):
+        return "outcome"
+    if ".outputs[" in lowered:
+        return "output"
+    return "outcome"
+
+
+def _normalize_result_level(value: Any) -> str:
+    token = str(value or "").strip().lower()
+    if token in {"impact", "outcome", "output"}:
+        return token
+    if token in {"results", "result", "intermediate_result", "objective"}:
+        return "outcome"
+    if token in {"deliverable", "activity"}:
+        return "output"
+    return ""
+
+
+def _default_frequency_for_donor(donor_id: str, *, result_level: str) -> str:
+    donor = str(donor_id or "").strip().lower()
+    level = str(result_level or "outcome").strip().lower() or "outcome"
+    base_by_level = {
+        "output": "monthly",
+        "outcome": "quarterly",
+        "impact": "annual",
+    }
+    base = base_by_level.get(level, "quarterly")
+    if donor == "usaid":
+        return "quarterly" if level in {"output", "outcome"} else "annual"
+    if donor == "eu":
+        return "quarterly" if level == "output" else "semiannual"
+    if donor == "worldbank":
+        return "quarterly" if level == "output" else "annual"
+    if donor in {"giz", "state_department", "us_state_department"}:
+        return "quarterly"
+    return base
+
+
+def _apply_indicator_defaults(
+    indicator: Dict[str, Any],
+    *,
+    donor_id: str,
+    toc_statement_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    out = dict(indicator)
+    current_result_level = _normalize_result_level(out.get("result_level"))
+    if not current_result_level and toc_statement_path:
+        current_result_level = _infer_result_level_from_toc_path(toc_statement_path)
+    if not current_result_level:
+        current_result_level = "outcome"
+    out["result_level"] = current_result_level
+
+    raw_frequency = str(out.get("frequency") or "").strip().lower()
+    if not raw_frequency:
+        out["frequency"] = _default_frequency_for_donor(donor_id, result_level=current_result_level)
+    else:
+        out["frequency"] = raw_frequency
+    return out
+
+
 def _copy_optional_indicator_fields_from_hit(indicator: Dict[str, Any], hit: Dict[str, Any]) -> Dict[str, Any]:
     updated = dict(indicator)
     for key in (
@@ -337,7 +411,8 @@ def _deterministic_indicators_from_toc(
             "Tracks delivery of the causal results chain."
         )
         indicators.append(
-            _copy_optional_indicator_fields_from_hit(
+            _apply_indicator_defaults(
+                _copy_optional_indicator_fields_from_hit(
                 {
                 "indicator_id": str(hit.get("indicator_id") or f"IND_{idx + 1:03d}"),
                 "name": name or f"Results indicator {idx + 1}",
@@ -349,7 +424,10 @@ def _deterministic_indicators_from_toc(
                 "toc_statement_path": statement_path,
                 },
                 hit,
-            )
+                ),
+                donor_id=donor_id,
+                toc_statement_path=statement_path,
+            ),
         )
     return indicators
 
@@ -832,7 +910,12 @@ def _indicator_from_hit(
         "target": target,
         "evidence_excerpt": str(hit.get("excerpt") or "")[:240],
     }
-    return _copy_optional_indicator_fields_from_hit(indicator, hit)
+    enriched = _copy_optional_indicator_fields_from_hit(indicator, hit)
+    return _apply_indicator_defaults(
+        enriched,
+        donor_id=donor_id,
+        toc_statement_path=str(hit.get("toc_statement_path") or "").strip() or None,
+    )
 
 
 def _normalize_indicator_item(
@@ -890,7 +973,11 @@ def _normalize_indicator_item(
             continue
         if isinstance(value, (int, float, bool, list, dict)):
             normalized[key] = value
-    return normalized
+    return _apply_indicator_defaults(
+        normalized,
+        donor_id=donor_id,
+        toc_statement_path=str(item.get("toc_statement_path") or "").strip() or None,
+    )
 
 
 def _fallback_indicator(
@@ -908,15 +995,20 @@ def _fallback_indicator(
         donor_id=donor_id,
         result_level="output",
     )
-    return {
+    return _apply_indicator_defaults(
+        {
         "indicator_id": "IND_001",
         "name": "Project Output Indicator",
         "justification": "Fallback indicator used because donor-specific RAG retrieval returned no grounded results.",
         "citation": namespace,
         "baseline": baseline,
         "target": target,
+        "result_level": "output",
         "evidence_excerpt": None,
-    }
+        },
+        donor_id=donor_id,
+        toc_statement_path="toc.outputs[0]",
+    )
 
 
 def _normalize_llm_indicators(

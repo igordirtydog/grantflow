@@ -143,6 +143,8 @@ def test_mel_deterministic_mode_builds_multiple_indicators_from_toc_results(monk
 
     assert len(indicators) >= 2
     assert all(str(item.get("toc_statement_path") or "").startswith("toc.") for item in indicators)
+    assert all(str(item.get("result_level") or "") in {"impact", "outcome", "output"} for item in indicators)
+    assert all(str(item.get("frequency") or "") for item in indicators)
     assert all(c.get("citation_type") == "strategy_reference" for c in citations)
     assert generation.get("engine") == "deterministic:toc_results_template"
     assert generation.get("deterministic_source") == "toc_results_template"
@@ -566,3 +568,41 @@ def test_mel_donor_aware_placeholder_target_profiles():
     assert eu_baseline == "0%"
     assert usaid_target == "30%"
     assert eu_target == "20%"
+
+
+def test_mel_donor_aware_default_frequency_profiles():
+    usaid_item = mel_module._normalize_indicator_item(
+        {
+            "indicator_id": "IND_001",
+            "name": "Training completion rate",
+            "justification": "Tracks completion performance.",
+            "citation": "usaid_ads201",
+            "baseline": "0%",
+            "target": "30%",
+            "result_level": "output",
+        },
+        idx=0,
+        namespace="usaid_ads201",
+        donor_id="usaid",
+        input_context={},
+    )
+    eu_item = mel_module._normalize_indicator_item(
+        {
+            "indicator_id": "IND_001",
+            "name": "Training completion rate",
+            "justification": "Tracks completion performance.",
+            "citation": "eu_intpa",
+            "baseline": "0%",
+            "target": "20%",
+            "result_level": "outcome",
+        },
+        idx=0,
+        namespace="eu_intpa",
+        donor_id="eu",
+        input_context={},
+    )
+
+    assert usaid_item is not None
+    assert eu_item is not None
+    assert usaid_item["frequency"] == "quarterly"
+    assert eu_item["frequency"] == "semiannual"
