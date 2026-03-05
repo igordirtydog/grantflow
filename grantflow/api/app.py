@@ -2155,6 +2155,55 @@ def _hitl_history_payload(
     }
 
 
+def _hitl_history_csv_text(payload: Dict[str, Any]) -> str:
+    raw_events = payload.get("events")
+    events: list[Any] = raw_events if isinstance(raw_events, list) else []
+    header = [
+        "event_id",
+        "ts",
+        "type",
+        "status",
+        "from_status",
+        "to_status",
+        "checkpoint_id",
+        "checkpoint_stage",
+        "checkpoint_status",
+        "resuming_from",
+        "approved",
+        "feedback",
+        "actor",
+        "request_id",
+        "reason",
+        "backend",
+    ]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    for row in events:
+        item = row if isinstance(row, dict) else {}
+        writer.writerow(
+            [
+                item.get("event_id"),
+                item.get("ts"),
+                item.get("type"),
+                item.get("status"),
+                item.get("from_status"),
+                item.get("to_status"),
+                item.get("checkpoint_id"),
+                item.get("checkpoint_stage"),
+                item.get("checkpoint_status"),
+                item.get("resuming_from"),
+                item.get("approved"),
+                item.get("feedback"),
+                item.get("actor"),
+                item.get("request_id"),
+                item.get("reason"),
+                item.get("backend"),
+            ]
+        )
+    return buffer.getvalue()
+
+
 def _tenant_from_namespace(namespace: Any) -> Optional[str]:
     raw = str(namespace or "").strip()
     if "/" not in raw:
@@ -6470,6 +6519,38 @@ def get_status_hitl_history(
         job,
         event_type=(event_type or None),
         checkpoint_id=(checkpoint_id or None),
+    )
+
+
+@app.get("/status/{job_id}/hitl/history/export")
+def export_status_hitl_history(
+    job_id: str,
+    request: Request,
+    event_type: Optional[str] = Query(default=None),
+    checkpoint_id: Optional[str] = Query(default=None),
+    format: Literal["csv", "json"] = Query(default="csv"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    payload = _hitl_history_payload(
+        job_id,
+        job,
+        event_type=(event_type or None),
+        checkpoint_id=(checkpoint_id or None),
+    )
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix=f"grantflow_hitl_history_{job_id}",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=_hitl_history_csv_text,
     )
 
 

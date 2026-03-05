@@ -352,7 +352,7 @@ If runtime grounded gate export pass policy is enabled (`GRANTFLOW_EXPORT_REQUIR
   - `generate/from-preset/batch` accepts up to 25 preset jobs in one call and returns per-item results (`accepted` / `error`)
   - lifecycle idempotency via `request_id` (query/body) or `X-Request-Id` is supported for `generate`, `cancel`, `resume`, and `hitl/approve`
 - `GET /status/{job_id}` plus:
-  - `/citations`, `/versions`, `/diff`, `/events`, `/hitl/history`, `/metrics`, `/quality`, `/grounding-gate`, `/critic`, `/comments`
+  - `/citations`, `/versions`, `/diff`, `/events`, `/hitl/history`, `/hitl/history/export`, `/metrics`, `/quality`, `/grounding-gate`, `/critic`, `/comments`
   - `/review/workflow`, `/review/workflow/export`, `/review/workflow/trends`, `/review/workflow/trends/export`
   - `/review/workflow/sla`, `/review/workflow/sla/export`, `/review/workflow/sla/trends`, `/review/workflow/sla/trends/export`
   - `/review/workflow/sla/hotspots`, `/review/workflow/sla/hotspots/export`, `/review/workflow/sla/hotspots/trends`, `/review/workflow/sla/hotspots/trends/export`
@@ -362,6 +362,7 @@ If runtime grounded gate export pass policy is enabled (`GRANTFLOW_EXPORT_REQUIR
     - applied profile is stored in `client_metadata.sla_profile`
   - `POST /status/{job_id}/critic/findings/{finding_id}/ack|open|resolve`
   - `POST /status/{job_id}/critic/findings/bulk-status`
+  - `GET /status/{job_id}/hitl/history/export` supports `event_type`, `checkpoint_id`, `format=csv|json`, `gzip=true|false`
   - `GET /status/{job_id}/review/workflow` filters: `event_type`, `finding_id`, `comment_status`, `workflow_state (pending|overdue)`, `overdue_after_hours`
   - `GET /status/{job_id}/review/workflow/sla/hotspots` and `/status/{job_id}/review/workflow/sla/hotspots/trends` filters: `finding_id`, `finding_code`, `finding_section`, `comment_status`, `workflow_state`, `overdue_after_hours`, `top_limit`, `hotspot_kind`, `hotspot_severity`, `min_overdue_hours`
 - `GET /portfolio/metrics` and `/portfolio/metrics/export` support filters:

@@ -9610,6 +9610,21 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     events_auth = client.get(f"/status/{job_id}/events", headers={"X-API-Key": "test-secret"})
     assert events_auth.status_code == 200
 
+    hitl_history_unauth = client.get(f"/status/{job_id}/hitl/history")
+    assert hitl_history_unauth.status_code == 401
+
+    hitl_history_auth = client.get(f"/status/{job_id}/hitl/history", headers={"X-API-Key": "test-secret"})
+    assert hitl_history_auth.status_code == 200
+
+    hitl_history_export_unauth = client.get(f"/status/{job_id}/hitl/history/export")
+    assert hitl_history_export_unauth.status_code == 401
+
+    hitl_history_export_auth = client.get(
+        f"/status/{job_id}/hitl/history/export",
+        headers={"X-API-Key": "test-secret"},
+    )
+    assert hitl_history_export_auth.status_code == 200
+
     metrics_unauth = client.get(f"/status/{job_id}/metrics")
     assert metrics_unauth.status_code == 401
 
@@ -10149,6 +10164,12 @@ def test_openapi_declares_api_key_security_scheme():
     status_events_security = (((spec.get("paths") or {}).get("/status/{job_id}/events") or {}).get("get") or {}).get(
         "security"
     )
+    status_hitl_history_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/hitl/history") or {}).get("get") or {}
+    ).get("security")
+    status_hitl_history_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/hitl/history/export") or {}).get("get") or {}
+    ).get("security")
     status_metrics_security = (((spec.get("paths") or {}).get("/status/{job_id}/metrics") or {}).get("get") or {}).get(
         "security"
     )
@@ -10787,6 +10808,8 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_versions_security == [{"ApiKeyAuth": []}]
     assert status_diff_security == [{"ApiKeyAuth": []}]
     assert status_events_security == [{"ApiKeyAuth": []}]
+    assert status_hitl_history_security == [{"ApiKeyAuth": []}]
+    assert status_hitl_history_export_security == [{"ApiKeyAuth": []}]
     assert status_metrics_security == [{"ApiKeyAuth": []}]
     assert status_quality_security == [{"ApiKeyAuth": []}]
     assert status_grounding_gate_security == [{"ApiKeyAuth": []}]
@@ -13079,6 +13102,31 @@ def test_status_hitl_history_endpoint_lists_and_filters_events():
     checkpoint_body = checkpoint_only.json()
     assert checkpoint_body["event_count"] == 3
     assert all((row.get("checkpoint_id") == "cp-h-1") for row in checkpoint_body["events"])
+
+    export_csv = client.get(f"/status/{job_id}/hitl/history/export", params={"format": "csv"})
+    assert export_csv.status_code == 200
+    assert "text/csv" in (export_csv.headers.get("content-type") or "")
+    assert f'grantflow_hitl_history_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert "event_id,ts,type,status,from_status,to_status,checkpoint_id" in export_csv.text
+    assert "hitl_checkpoint_decision" in export_csv.text
+
+    export_json = client.get(
+        f"/status/{job_id}/hitl/history/export",
+        params={"format": "json", "event_type": "hitl_checkpoint_decision"},
+    )
+    assert export_json.status_code == 200
+    assert "application/json" in (export_json.headers.get("content-type") or "")
+    export_json_body = json.loads(export_json.text)
+    assert export_json_body["event_count"] == 1
+    assert export_json_body["events"][0]["type"] == "hitl_checkpoint_decision"
+
+    export_csv_gzip = client.get(
+        f"/status/{job_id}/hitl/history/export",
+        params={"format": "csv", "gzip": "true"},
+    )
+    assert export_csv_gzip.status_code == 200
+    assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
 
 
 def test_hitl_approve_request_id_is_idempotent():

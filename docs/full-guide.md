@@ -224,6 +224,8 @@ Review/traceability:
 - `GET /status/{job_id}/versions`
 - `GET /status/{job_id}/diff`
 - `GET /status/{job_id}/events`
+- `GET /status/{job_id}/hitl/history`
+- `GET /status/{job_id}/hitl/history/export` (`format=csv|json`, `gzip=true|false`, optional `event_type`, `checkpoint_id`)
 - `GET /status/{job_id}/metrics`
 - `GET /status/{job_id}/quality`
 - `GET /status/{job_id}/critic`
