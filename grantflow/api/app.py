@@ -464,13 +464,9 @@ def _utcnow_iso() -> str:
 
 
 def _dispatch_pipeline_task(background_tasks: BackgroundTasks, fn: Callable[..., None], *args: Any) -> str:
-    if _uses_queue_runner():
-        accepted = JOB_RUNNER.submit(fn, *args)
-        if not accepted:
-            raise HTTPException(status_code=503, detail="Job queue is full. Retry shortly.")
-        return _job_runner_mode()
-    background_tasks.add_task(fn, *args)
-    return "background_tasks"
+    from grantflow.api.pipeline_jobs import _dispatch_pipeline_task as _impl
+
+    return _impl(background_tasks, fn, *args)
 
 
 def _parse_iso_utc(value: Any) -> Optional[datetime]:
@@ -2265,25 +2261,15 @@ def _hitl_history_payload(
 
 
 def _record_hitl_feedback_in_state(state: dict, checkpoint: Dict[str, Any]) -> None:
-    feedback = checkpoint.get("feedback")
-    if not feedback:
-        return
-    history = list(state.get("hitl_feedback_history") or [])
-    history.append(
-        {
-            "checkpoint_id": checkpoint.get("id"),
-            "stage": checkpoint.get("stage"),
-            "status": getattr(checkpoint.get("status"), "value", checkpoint.get("status")),
-            "feedback": feedback,
-        }
-    )
-    state["hitl_feedback_history"] = history
-    state["hitl_feedback"] = feedback
+    from grantflow.api.pipeline_jobs import _record_hitl_feedback_in_state as _impl
+
+    _impl(state, checkpoint)
 
 
 def _checkpoint_status_token(checkpoint: Dict[str, Any]) -> str:
-    raw = checkpoint.get("status")
-    return str(getattr(raw, "value", raw) or "").strip().lower()
+    from grantflow.api.pipeline_jobs import _checkpoint_status_token as _impl
+
+    return _impl(checkpoint)
 
 
 def _state_grounding_gate(state: Any) -> Dict[str, Any]:
@@ -2769,250 +2755,39 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
 
 
 def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
-    try:
-        if _job_is_canceled(job_id):
-            return
-        normalize_state_contract(initial_state)
-        _clear_hitl_runtime_state(initial_state, clear_pending=True)
-        initial_state["hitl_enabled"] = False
-        initial_state["_start_at"] = "start"
-        _set_job(job_id, {"status": "running", "state": initial_state, "hitl_enabled": False})
-        if _job_is_canceled(job_id):
-            return
-        final_state = grantflow_graph.invoke(initial_state)
-        for key in RUNTIME_PIPELINE_STATE_KEYS:
-            final_state.pop(key, None)
-        final_state["hitl_pending"] = False
-        normalize_state_contract(final_state)
-        _attach_export_contract_gate(final_state)
-        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
-        final_state["grounded_quality_gate"] = runtime_grounded_gate
-        if _job_is_canceled(job_id):
-            return
-        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
-        if runtime_grounded_block_reason:
-            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
-            _record_job_event(
-                job_id,
-                "runtime_grounded_quality_gate_blocked",
-                mode=str(runtime_grounded_gate.get("mode") or "strict"),
-                summary=str(runtime_grounded_gate.get("summary") or ""),
-                reasons=list(runtime_grounded_gate.get("reasons") or []),
-            )
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": runtime_grounded_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": False,
-                },
-            )
-            return
-        grounding_block_reason = _grounding_gate_block_reason(final_state)
-        if grounding_block_reason:
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": grounding_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": False,
-                },
-            )
-            return
-        mel_grounding_block_reason = _mel_grounding_policy_block_reason(final_state)
-        if mel_grounding_block_reason:
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": mel_grounding_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": False,
-                },
-            )
-            return
-        _set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": False})
-    except Exception as exc:
-        _set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": False})
+    from grantflow.api.pipeline_jobs import _run_pipeline_to_completion as _impl
+
+    _impl(job_id, initial_state)
 
 
 def _run_pipeline_to_completion_by_job_id(job_id: str) -> None:
-    job = _get_job(job_id)
-    if not isinstance(job, dict):
-        return
-    status = str(job.get("status") or "").strip().lower()
-    if status in TERMINAL_JOB_STATUSES:
-        return
-    if status == "pending_hitl":
-        return
-    if status not in {"accepted", "running"}:
-        return
-    state = job.get("state")
-    if not isinstance(state, dict):
-        _set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False})
-        return
-    _run_pipeline_to_completion(job_id, state)
+    from grantflow.api.pipeline_jobs import _run_pipeline_to_completion_by_job_id as _impl
+
+    _impl(job_id)
 
 
 def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
-    try:
-        if _job_is_canceled(job_id):
-            return
-        normalize_state_contract(state)
-        _clear_hitl_runtime_state(state, clear_pending=True)
-        state["hitl_enabled"] = True
-        state["_start_at"] = start_at
-        _set_job(
-            job_id,
-            {
-                "status": "running",
-                "state": state,
-                "hitl_enabled": True,
-                "resume_from": start_at,
-            },
-        )
-        if _job_is_canceled(job_id):
-            return
-        final_state = grantflow_graph.invoke(state)
-        if _job_is_canceled(job_id):
-            return
-        normalize_state_contract(final_state)
-        checkpoint_stage = str(final_state.get("hitl_checkpoint_stage") or "").strip().lower()
-        checkpoint_resume = str(final_state.get("hitl_resume_from") or "").strip().lower()
-        if bool(final_state.get("hitl_pending")) and checkpoint_stage in {"toc", "logframe"}:
-            stage_literal: Literal["toc", "logframe"] = "toc" if checkpoint_stage == "toc" else "logframe"
-            resume_literal: HITLStartAt
-            if checkpoint_resume == "start":
-                resume_literal = "start"
-            elif checkpoint_resume == "architect":
-                resume_literal = "architect"
-            elif checkpoint_resume == "mel":
-                resume_literal = "mel"
-            elif checkpoint_resume == "critic":
-                resume_literal = "critic"
-            else:
-                resume_literal = "mel" if stage_literal == "toc" else "critic"
-            _pause_for_hitl(job_id, final_state, stage=stage_literal, resume_from=resume_literal)
-            return
-        if bool(final_state.get("hitl_pending")):
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": "HITL pending state returned without a valid checkpoint stage",
-                    "state": final_state,
-                    "hitl_enabled": True,
-                },
-            )
-            return
-        for key in RUNTIME_PIPELINE_STATE_KEYS:
-            final_state.pop(key, None)
-        final_state["hitl_pending"] = False
-        _attach_export_contract_gate(final_state)
-        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
-        final_state["grounded_quality_gate"] = runtime_grounded_gate
-        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
-        if runtime_grounded_block_reason:
-            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
-            _record_job_event(
-                job_id,
-                "runtime_grounded_quality_gate_blocked",
-                mode=str(runtime_grounded_gate.get("mode") or "strict"),
-                summary=str(runtime_grounded_gate.get("summary") or ""),
-                reasons=list(runtime_grounded_gate.get("reasons") or []),
-            )
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": runtime_grounded_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": True,
-                },
-            )
-            return
-        grounding_block_reason = _grounding_gate_block_reason(final_state)
-        if grounding_block_reason:
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": grounding_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": True,
-                },
-            )
-            return
-        mel_grounding_block_reason = _mel_grounding_policy_block_reason(final_state)
-        if mel_grounding_block_reason:
-            _set_job(
-                job_id,
-                {
-                    "status": "error",
-                    "error": mel_grounding_block_reason,
-                    "state": final_state,
-                    "hitl_enabled": True,
-                },
-            )
-            return
-        _set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": True})
-        return
-    except Exception as exc:
-        _set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": True, "state": state})
+    from grantflow.api.pipeline_jobs import _run_hitl_pipeline as _impl
+
+    _impl(job_id, state, start_at)
 
 
 def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
-    job = _get_job(job_id)
-    if not isinstance(job, dict):
-        return
-    status = str(job.get("status") or "").strip().lower()
-    if status in TERMINAL_JOB_STATUSES:
-        return
-    if status == "pending_hitl":
-        return
-    if status not in {"accepted", "running"}:
-        return
-    state = job.get("state")
-    if not isinstance(state, dict):
-        _set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": True})
-        return
-    _run_hitl_pipeline(job_id, state, start_at)
+    from grantflow.api.pipeline_jobs import _run_hitl_pipeline_by_job_id as _impl
+
+    _impl(job_id, start_at)
 
 
 def _resume_target_from_checkpoint(checkpoint: Dict[str, Any], default_resume_from: str | None) -> HITLStartAt:
-    stage = str(checkpoint.get("stage") or "").strip().lower()
-    status = _checkpoint_status_token(checkpoint)
+    from grantflow.api.pipeline_jobs import _resume_target_from_checkpoint as _impl
 
-    if status == HITLStatus.APPROVED.value:
-        if stage == "toc":
-            return "mel"
-        if stage == "logframe":
-            return "critic"
-
-    if status == HITLStatus.REJECTED.value:
-        if stage == "toc":
-            return "architect"
-        if stage == "logframe":
-            return "mel"
-
-    if status in {HITLStatus.APPROVED.value, HITLStatus.REJECTED.value} and default_resume_from in {
-        "start",
-        "architect",
-        "mel",
-        "critic",
-    }:
-        return default_resume_from  # type: ignore[return-value]
-
-    raise ValueError("Checkpoint must be approved or rejected before resume")
+    return _impl(checkpoint, default_resume_from)
 
 
 def _clear_hitl_runtime_state(state: dict, *, clear_pending: bool) -> None:
-    for key in RUNTIME_PIPELINE_STATE_KEYS:
-        state.pop(key, None)
-    if clear_pending:
-        state["hitl_pending"] = False
+    from grantflow.api.pipeline_jobs import _clear_hitl_runtime_state as _impl
+
+    _impl(state, clear_pending=clear_pending)
 
 
 def _configuration_warnings() -> list[dict[str, Any]]:
