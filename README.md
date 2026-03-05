@@ -106,7 +106,7 @@ curl -s http://127.0.0.1:8000/health
 curl -s http://127.0.0.1:8000/ready
 ```
 
-`/ready` now includes `checks.preflight_grounding_policy` and `checks.runtime_grounded_quality_gate` with active modes and thresholds, plus `checks.configuration_warnings` for non-blocking setup risks (for example Chroma/API port conflicts).
+`/ready` now includes `checks.preflight_grounding_policy`, `checks.runtime_grounded_quality_gate`, and `checks.runtime_compatibility_policy` with active modes and thresholds/status, plus `checks.configuration_warnings` for setup risks (for example Chroma/API port conflicts).
 
 ### 4) (Optional) Configure preflight grounding thresholds
 
@@ -141,6 +141,16 @@ Notes:
 - Gate outcome is exposed in `GET /status/{job_id}/quality` as `grounded_gate`.
 - `GET /status/{job_id}/grounding-gate` returns runtime/preflight/mel grounding policies with structured `reason_details`, `failed_sections`, and sample evidence rows for triage.
 - If `GRANTFLOW_EXPORT_REQUIRE_GROUNDED_GATE_PASS=true`, `/export` returns `409` when runtime grounded gate did not pass (unless `allow_unsafe_export=true`).
+
+### 4.1.1) (Optional) Configure runtime compatibility policy
+
+```bash
+export GRANTFLOW_RUNTIME_COMPATIBILITY_POLICY_MODE=warn   # off | warn | strict
+```
+
+Notes:
+- `warn` keeps `/ready` non-blocking but reports compatibility risk when Python is outside validated runtime range.
+- `strict` degrades `/ready` when runtime Python is outside `3.11-3.13`.
 
 ### 4.2) (Optional) Configure pipeline runner mode
 

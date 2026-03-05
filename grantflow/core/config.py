@@ -33,6 +33,7 @@ class GraphConfig(BaseModel):
     grounding_gate_mode: str = "warn"
     preflight_grounding_policy_mode: str = "warn"
     runtime_grounded_quality_gate_mode: str = "strict"
+    runtime_compatibility_policy_mode: str = "warn"
     runtime_grounded_quality_gate_min_citations: int = 5
     runtime_grounded_quality_gate_max_non_retrieval_citation_rate: float = 0.35
     runtime_grounded_quality_gate_min_retrieval_grounded_citations: int = 2
@@ -136,6 +137,7 @@ class GrantFlowConfig(BaseModel):
                 grounding_gate_mode=grounding_gate_mode,
                 preflight_grounding_policy_mode=preflight_grounding_policy_mode,
                 runtime_grounded_quality_gate_mode=_env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MODE", "strict"),
+                runtime_compatibility_policy_mode=_env("GRANTFLOW_RUNTIME_COMPATIBILITY_POLICY_MODE", "warn"),
                 runtime_grounded_quality_gate_min_citations=int(
                     _env("GRANTFLOW_RUNTIME_GROUNDED_QUALITY_GATE_MIN_CITATIONS", "5")
                 ),

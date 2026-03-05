@@ -101,6 +101,12 @@ def test_health_endpoint():
     assert export_contract_policy["mode"] in {"warn", "strict", "off"}
     export_runtime_gate_policy = diagnostics["export_runtime_grounded_gate_policy"]
     assert isinstance(export_runtime_gate_policy["require_pass"], bool)
+    runtime_compatibility_policy = diagnostics["runtime_compatibility_policy"]
+    assert runtime_compatibility_policy["mode"] in {"warn", "strict", "off"}
+    runtime_status = runtime_compatibility_policy["status"]
+    assert isinstance(runtime_status.get("python_version"), str)
+    assert runtime_status.get("supported_range") == "3.11-3.13"
+    assert isinstance(runtime_status.get("supported"), bool)
     assert isinstance(diagnostics.get("configuration_warnings"), list)
     dispatcher_policy = diagnostics["job_runner"]["dispatcher_worker_heartbeat_policy"]
     assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
@@ -604,11 +610,53 @@ def test_ready_endpoint():
     assert export_contract_policy["mode"] in {"warn", "strict", "off"}
     export_runtime_gate_policy = checks["export_runtime_grounded_gate_policy"]
     assert isinstance(export_runtime_gate_policy["require_pass"], bool)
+    runtime_compatibility_policy = checks["runtime_compatibility_policy"]
+    assert runtime_compatibility_policy["mode"] in {"warn", "strict", "off"}
+    runtime_status = runtime_compatibility_policy["status"]
+    assert isinstance(runtime_status.get("python_version"), str)
+    assert runtime_status.get("supported_range") == "3.11-3.13"
+    assert isinstance(runtime_status.get("supported"), bool)
+    assert isinstance(runtime_compatibility_policy.get("blocking"), bool)
+    assert isinstance(runtime_compatibility_policy.get("alerts"), list)
     assert isinstance(checks.get("configuration_warnings"), list)
     dispatcher_policy = checks["job_runner"]["dispatcher_worker_heartbeat_policy"]
     assert dispatcher_policy["mode"] in {"off", "warn", "strict"}
     dispatcher_heartbeat = checks["job_runner"]["dispatcher_worker_heartbeat"]
     assert dispatcher_heartbeat is None or isinstance(dispatcher_heartbeat, dict)
+
+
+def test_ready_endpoint_runtime_compatibility_warn_mode_does_not_block(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_compatibility_policy_mode", "warn")
+    monkeypatch.setattr(api_app_module.sys, "version_info", (3, 14, 0, "final", 0))
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    checks = body["checks"]
+    policy = checks["runtime_compatibility_policy"]
+    assert policy["mode"] == "warn"
+    assert policy["status"]["supported"] is False
+    assert policy["blocking"] is False
+    alerts = policy["alerts"]
+    assert any(str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict))
+
+
+def test_ready_endpoint_runtime_compatibility_strict_mode_blocks(monkeypatch):
+    monkeypatch.setattr(api_app_module.config.graph, "runtime_compatibility_policy_mode", "strict")
+    monkeypatch.setattr(api_app_module.sys, "version_info", (3, 14, 0, "final", 0))
+    monkeypatch.setattr(api_app_module, "_vector_store_readiness", lambda: {"ready": True, "backend": "memory"})
+
+    response = client.get("/ready")
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["status"] == "degraded"
+    policy = detail["checks"]["runtime_compatibility_policy"]
+    assert policy["mode"] == "strict"
+    assert policy["status"]["supported"] is False
+    assert policy["blocking"] is True
+    alerts = policy["alerts"]
+    assert any(str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict))
 
 
 def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch):

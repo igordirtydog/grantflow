@@ -881,6 +881,24 @@ def _normalize_grounding_policy_mode(raw_mode: Any) -> str:
     return mode
 
 
+def _configured_runtime_compatibility_policy_mode() -> str:
+    policy_mode = getattr(config.graph, "runtime_compatibility_policy_mode", None)
+    if str(policy_mode or "").strip():
+        return _normalize_grounding_policy_mode(policy_mode)
+    return "warn"
+
+
+def _python_runtime_compatibility_status() -> Dict[str, Any]:
+    python_major = int(sys.version_info[0])
+    python_minor = int(sys.version_info[1])
+    supported = python_major == 3 and 11 <= python_minor <= 13
+    return {
+        "python_version": f"{python_major}.{python_minor}",
+        "supported": supported,
+        "supported_range": "3.11-3.13",
+    }
+
+
 def _configured_preflight_grounding_policy_mode() -> str:
     preflight_mode = getattr(config.graph, "preflight_grounding_policy_mode", None)
     if str(preflight_mode or "").strip():
@@ -4176,6 +4194,7 @@ def _health_diagnostics() -> dict[str, Any]:
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
     export_grounding_thresholds = _export_grounding_policy_thresholds()
+    runtime_compatibility_status = _python_runtime_compatibility_status()
     job_runner_diag = JOB_RUNNER.diagnostics()
     dispatcher_heartbeat_status = (
         job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
@@ -4224,6 +4243,10 @@ def _health_diagnostics() -> dict[str, Any]:
         },
         "export_runtime_grounded_gate_policy": {
             "require_pass": _configured_export_require_grounded_gate_pass(),
+        },
+        "runtime_compatibility_policy": {
+            "mode": _configured_runtime_compatibility_policy_mode(),
+            "status": runtime_compatibility_status,
         },
         "configuration_warnings": _configuration_warnings(),
     }
@@ -4360,6 +4383,8 @@ def readiness_check():
     vector_ready = _vector_store_readiness()
     job_runner_mode = _job_runner_mode()
     job_runner_diag = JOB_RUNNER.diagnostics()
+    runtime_compatibility_policy_mode = _configured_runtime_compatibility_policy_mode()
+    runtime_compatibility_status = _python_runtime_compatibility_status()
     dispatcher_heartbeat_status = (
         job_runner_diag.get("worker_heartbeat") if isinstance(job_runner_diag.get("worker_heartbeat"), dict) else None
     )
@@ -4405,7 +4430,23 @@ def readiness_check():
                     job_runner_ready = False
     if dead_letter_alert_triggered and _dead_letter_alert_blocking():
         job_runner_ready = False
-    ready = bool(vector_ready.get("ready")) and job_runner_ready
+    runtime_compatibility_supported = bool(runtime_compatibility_status.get("supported"))
+    runtime_compatibility_blocking = (
+        runtime_compatibility_policy_mode == "strict" and not runtime_compatibility_supported
+    )
+    runtime_compatibility_alerts: list[dict[str, Any]] = []
+    if not runtime_compatibility_supported:
+        runtime_compatibility_alerts.append(
+            {
+                "code": "PYTHON_RUNTIME_COMPATIBILITY_RISK",
+                "severity": "high" if runtime_compatibility_blocking else "medium",
+                "message": (
+                    "Runtime Python version is outside validated range 3.11-3.13 for current dependency set."
+                ),
+                "blocking": runtime_compatibility_blocking,
+            }
+        )
+    ready = bool(vector_ready.get("ready")) and job_runner_ready and not runtime_compatibility_blocking
     preflight_grounding_thresholds = _preflight_grounding_policy_thresholds()
     runtime_grounded_quality_gate_thresholds = _runtime_grounded_quality_gate_thresholds()
     mel_grounding_thresholds = _mel_grounding_policy_thresholds()
@@ -4465,6 +4506,12 @@ def readiness_check():
             },
             "export_runtime_grounded_gate_policy": {
                 "require_pass": _configured_export_require_grounded_gate_pass(),
+            },
+            "runtime_compatibility_policy": {
+                "mode": runtime_compatibility_policy_mode,
+                "status": runtime_compatibility_status,
+                "blocking": runtime_compatibility_blocking,
+                "alerts": runtime_compatibility_alerts,
             },
             "configuration_warnings": _configuration_warnings(),
         },
