@@ -738,6 +738,86 @@ def run_eval_case(case: dict[str, Any], *, skip_expectations: bool = False) -> d
     }
 
 
+def _build_donor_quality_breakdown(results: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    for case in results:
+        if not isinstance(case, dict):
+            continue
+        donor_id = str(case.get("donor_id") or "unknown").strip().lower()
+        metrics = _dict_from(case.get("metrics"))
+        row = grouped.setdefault(
+            donor_id,
+            {
+                "cases_total": 0,
+                "cases_passed": 0,
+                "needs_revision_total": 0,
+                "quality_sum": 0.0,
+                "quality_count": 0,
+                "critic_sum": 0.0,
+                "critic_count": 0,
+                "retrieval_grounded_rate_sum": 0.0,
+                "retrieval_grounded_rate_count": 0,
+                "non_retrieval_rate_sum": 0.0,
+                "non_retrieval_rate_count": 0,
+                "traceability_gap_rate_sum": 0.0,
+                "traceability_gap_rate_count": 0,
+                "high_severity_fatal_flaws_total": 0,
+                "fatal_flaws_total": 0,
+                "citations_total": 0,
+            },
+        )
+        row["cases_total"] = int(row["cases_total"]) + 1
+        if bool(case.get("passed")):
+            row["cases_passed"] = int(row["cases_passed"]) + 1
+        if bool(metrics.get("needs_revision")):
+            row["needs_revision_total"] = int(row["needs_revision_total"]) + 1
+
+        for metric_key, sum_key, count_key in (
+            ("quality_score", "quality_sum", "quality_count"),
+            ("critic_score", "critic_sum", "critic_count"),
+            ("retrieval_grounded_citation_rate", "retrieval_grounded_rate_sum", "retrieval_grounded_rate_count"),
+            ("non_retrieval_citation_rate", "non_retrieval_rate_sum", "non_retrieval_rate_count"),
+            ("traceability_gap_citation_rate", "traceability_gap_rate_sum", "traceability_gap_rate_count"),
+        ):
+            value = metrics.get(metric_key)
+            if isinstance(value, (int, float)):
+                row[sum_key] = float(row.get(sum_key) or 0.0) + float(value)
+                row[count_key] = int(row.get(count_key) or 0) + 1
+
+        row["high_severity_fatal_flaws_total"] = int(row["high_severity_fatal_flaws_total"]) + int(
+            metrics.get("high_severity_fatal_flaw_count") or 0
+        )
+        row["fatal_flaws_total"] = int(row["fatal_flaws_total"]) + int(metrics.get("fatal_flaw_count") or 0)
+        row["citations_total"] = int(row["citations_total"]) + int(metrics.get("citations_total") or 0)
+
+    breakdown: dict[str, dict[str, Any]] = {}
+    for donor_id in sorted(grouped):
+        row = grouped[donor_id]
+        cases_total = int(row.get("cases_total") or 0)
+
+        def _avg(sum_key: str, count_key: str) -> float | None:
+            count = int(row.get(count_key) or 0)
+            if count <= 0:
+                return None
+            return round(float(row.get(sum_key) or 0.0) / count, 4)
+
+        breakdown[donor_id] = {
+            "cases_total": cases_total,
+            "cases_passed": int(row.get("cases_passed") or 0),
+            "pass_rate": (round(int(row.get("cases_passed") or 0) / cases_total, 4) if cases_total else None),
+            "needs_revision_total": int(row.get("needs_revision_total") or 0),
+            "avg_quality_score": _avg("quality_sum", "quality_count"),
+            "avg_critic_score": _avg("critic_sum", "critic_count"),
+            "avg_retrieval_grounded_citation_rate": _avg("retrieval_grounded_rate_sum", "retrieval_grounded_rate_count"),
+            "avg_non_retrieval_citation_rate": _avg("non_retrieval_rate_sum", "non_retrieval_rate_count"),
+            "avg_traceability_gap_citation_rate": _avg("traceability_gap_rate_sum", "traceability_gap_rate_count"),
+            "high_severity_fatal_flaws_total": int(row.get("high_severity_fatal_flaws_total") or 0),
+            "fatal_flaws_total": int(row.get("fatal_flaws_total") or 0),
+            "citations_total": int(row.get("citations_total") or 0),
+        }
+    return breakdown
+
+
 def run_eval_suite(
     cases: list[dict[str, Any]],
     *,
@@ -746,6 +826,7 @@ def run_eval_suite(
 ) -> dict[str, Any]:
     results = [run_eval_case(case, skip_expectations=skip_expectations) for case in cases]
     passed_count = sum(1 for r in results if r.get("passed"))
+    donor_quality_breakdown = _build_donor_quality_breakdown(results)
     return {
         "suite_label": str(suite_label or "baseline"),
         "expectations_skipped": bool(skip_expectations),
@@ -753,6 +834,7 @@ def run_eval_suite(
         "passed_count": passed_count,
         "failed_count": len(results) - passed_count,
         "all_passed": passed_count == len(results),
+        "donor_quality_breakdown": donor_quality_breakdown,
         "cases": results,
     }
 

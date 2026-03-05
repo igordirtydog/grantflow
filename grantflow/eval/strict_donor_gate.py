@@ -150,6 +150,34 @@ def _avg(total: float, count: int) -> float | None:
 
 
 def summarize_report_by_donor(report_payload: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    from_report = report_payload.get("donor_quality_breakdown")
+    if isinstance(from_report, dict) and from_report:
+        summary: dict[str, dict[str, Any]] = {}
+        for donor_id, row in from_report.items():
+            if not isinstance(row, dict):
+                continue
+            token = str(donor_id or "unknown").strip().lower()
+            summary[token] = {
+                "case_count": _as_int(row.get("cases_total"), default=0),
+                "passed_count": _as_int(row.get("cases_passed"), default=0),
+                "avg_quality_score": _as_float(row.get("avg_quality_score")),
+                "avg_critic_score": _as_float(row.get("avg_critic_score")),
+                "avg_retrieval_grounded_citation_rate": _as_float(row.get("avg_retrieval_grounded_citation_rate")),
+                "avg_non_retrieval_citation_rate": _as_float(row.get("avg_non_retrieval_citation_rate")),
+                "avg_traceability_gap_citation_rate": _as_float(row.get("avg_traceability_gap_citation_rate")),
+                "avg_high_severity_fatal_flaws_per_case": (
+                    round(
+                        _as_int(row.get("high_severity_fatal_flaws_total"), default=0)
+                        / max(1, _as_int(row.get("cases_total"), default=0)),
+                        4,
+                    )
+                    if _as_int(row.get("cases_total"), default=0) > 0
+                    else None
+                ),
+            }
+        if summary:
+            return summary
+
     rows: dict[str, dict[str, Any]] = {}
     for case in report_payload.get("cases") or []:
         if not isinstance(case, dict):

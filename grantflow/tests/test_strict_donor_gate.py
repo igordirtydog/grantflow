@@ -63,6 +63,28 @@ def test_summarize_report_by_donor_aggregates_key_metrics() -> None:
     assert summary["usaid"]["avg_high_severity_fatal_flaws_per_case"] == 0.5
 
 
+def test_summarize_report_by_donor_prefers_report_breakdown_when_available() -> None:
+    payload = {
+        "donor_quality_breakdown": {
+            "usaid": {
+                "cases_total": 2,
+                "cases_passed": 2,
+                "avg_quality_score": 7.2,
+                "avg_critic_score": 7.1,
+                "avg_retrieval_grounded_citation_rate": 0.74,
+                "avg_non_retrieval_citation_rate": 0.26,
+                "avg_traceability_gap_citation_rate": 0.12,
+                "high_severity_fatal_flaws_total": 1,
+            }
+        }
+    }
+    summary = summarize_report_by_donor(payload)
+    assert summary["usaid"]["case_count"] == 2
+    assert summary["usaid"]["passed_count"] == 2
+    assert summary["usaid"]["avg_quality_score"] == 7.2
+    assert summary["usaid"]["avg_high_severity_fatal_flaws_per_case"] == 0.5
+
+
 def test_evaluate_strict_donor_gate_fails_per_donor_thresholds() -> None:
     payload = _report(
         [

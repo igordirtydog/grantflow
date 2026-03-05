@@ -106,12 +106,96 @@ def test_eval_harness_cli_writes_json_and_text_reports(tmp_path):
     assert payload["all_passed"] is True
     assert payload["case_count"] >= 1
     assert payload["suite_label"] == "baseline"
+    assert isinstance(payload.get("donor_quality_breakdown"), dict)
+    assert payload["donor_quality_breakdown"]
 
     text = text_out.read_text(encoding="utf-8")
     assert "GrantFlow evaluation suite" in text
     assert "Suite: baseline" in text
     assert "PASS" in text
     assert "Donor quality breakdown (suite-level)" in text
+
+
+def test_run_eval_suite_includes_donor_quality_breakdown(monkeypatch):
+    fake_results = {
+        "c1": {
+            "case_id": "c1",
+            "donor_id": "usaid",
+            "passed": True,
+            "metrics": {
+                "quality_score": 8.0,
+                "critic_score": 7.5,
+                "retrieval_grounded_citation_rate": 0.8,
+                "non_retrieval_citation_rate": 0.2,
+                "traceability_gap_citation_rate": 0.1,
+                "high_severity_fatal_flaw_count": 1,
+                "fatal_flaw_count": 2,
+                "citations_total": 10,
+                "needs_revision": False,
+            },
+            "failed_checks": [],
+        },
+        "c2": {
+            "case_id": "c2",
+            "donor_id": "usaid",
+            "passed": False,
+            "metrics": {
+                "quality_score": 6.0,
+                "critic_score": 6.0,
+                "retrieval_grounded_citation_rate": 0.6,
+                "non_retrieval_citation_rate": 0.4,
+                "traceability_gap_citation_rate": 0.2,
+                "high_severity_fatal_flaw_count": 0,
+                "fatal_flaw_count": 3,
+                "citations_total": 12,
+                "needs_revision": True,
+            },
+            "failed_checks": [{"name": "min_quality_score", "passed": False}],
+        },
+        "c3": {
+            "case_id": "c3",
+            "donor_id": "eu",
+            "passed": True,
+            "metrics": {
+                "quality_score": 7.0,
+                "critic_score": 7.0,
+                "retrieval_grounded_citation_rate": 0.7,
+                "non_retrieval_citation_rate": 0.3,
+                "traceability_gap_citation_rate": 0.15,
+                "high_severity_fatal_flaw_count": 0,
+                "fatal_flaw_count": 1,
+                "citations_total": 8,
+                "needs_revision": False,
+            },
+            "failed_checks": [],
+        },
+    }
+
+    def _fake_run_eval_case(case: dict, *, skip_expectations: bool = False) -> dict:
+        return dict(fake_results[str(case["case_id"])])
+
+    monkeypatch.setattr(harness, "run_eval_case", _fake_run_eval_case)
+    suite = run_eval_suite(
+        [
+            {"case_id": "c1", "donor_id": "usaid"},
+            {"case_id": "c2", "donor_id": "usaid"},
+            {"case_id": "c3", "donor_id": "eu"},
+        ]
+    )
+
+    breakdown = suite["donor_quality_breakdown"]
+    assert breakdown["usaid"]["cases_total"] == 2
+    assert breakdown["usaid"]["cases_passed"] == 1
+    assert breakdown["usaid"]["avg_quality_score"] == 7.0
+    assert breakdown["usaid"]["avg_critic_score"] == 6.75
+    assert breakdown["usaid"]["avg_retrieval_grounded_citation_rate"] == 0.7
+    assert breakdown["usaid"]["avg_non_retrieval_citation_rate"] == 0.3
+    assert breakdown["usaid"]["avg_traceability_gap_citation_rate"] == 0.15
+    assert breakdown["usaid"]["high_severity_fatal_flaws_total"] == 1
+    assert breakdown["usaid"]["fatal_flaws_total"] == 5
+    assert breakdown["usaid"]["citations_total"] == 22
+    assert breakdown["usaid"]["needs_revision_total"] == 1
+    assert breakdown["eu"]["cases_total"] == 1
 
 
 def test_format_eval_suite_report_highlights_fallback_dominance_signals():
