@@ -472,6 +472,23 @@ One-command variant:
 make eval-llm-sampled
 ```
 
+Run bundled RBM sample presets (from `docs/samples/*.json`) with explicit sample IDs:
+
+```bash
+python -m grantflow.eval.harness \
+  --suite-label rbm-sample-eval \
+  --sample-id rbm-usaid-ai-civil-service-kazakhstan,rbm-eu-youth-employment-jordan \
+  --skip-expectations \
+  --text-out eval-artifacts/rbm-sample-eval.txt \
+  --json-out eval-artifacts/rbm-sample-eval.json
+```
+
+One-command variant:
+
+```bash
+make eval-rbm-samples
+```
+
 Tune guard via environment variables if needed:
 
 ```bash

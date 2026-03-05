@@ -10,6 +10,7 @@ from typing import Any, Iterable
 
 from grantflow.core.config import config
 from grantflow.core.strategies.factory import DonorFactory
+from grantflow.eval.sample_presets import available_sample_ids, load_sample_eval_cases
 from grantflow.swarm.citations import (
     citation_has_doc_id,
     citation_has_retrieval_confidence,
@@ -1322,6 +1323,7 @@ def format_eval_comparison_report(comparison: dict[str, Any]) -> str:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run GrantFlow baseline evaluation fixtures.")
+    sample_ids_help = ", ".join(available_sample_ids())
     parser.add_argument(
         "--suite-label",
         type=str,
@@ -1366,6 +1368,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="append",
         default=[],
         help="Explicit JSON file(s) with eval cases (repeat flag or use comma-separated values).",
+    )
+    parser.add_argument(
+        "--sample-id",
+        action="append",
+        default=[],
+        help=(
+            "Use built-in sample preset case(s) from docs/samples JSON payloads "
+            f"(repeat flag or use comma-separated values). Available: {sample_ids_help}. "
+            "Use 'all' to include all sample presets."
+        ),
     )
     parser.add_argument(
         "--max-cases",
@@ -1432,8 +1444,24 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv or sys.argv[1:])
     case_file_tokens = _split_csv_args(args.cases_file)
+    sample_id_tokens = _split_csv_args(args.sample_id)
     case_files = [Path(token) for token in case_file_tokens]
-    cases = load_eval_cases(case_files=case_files or None)
+    if case_files:
+        cases = load_eval_cases(case_files=case_files)
+    elif sample_id_tokens:
+        cases = []
+    else:
+        cases = load_eval_cases()
+    if sample_id_tokens:
+        try:
+            sample_cases = load_sample_eval_cases(sample_id_tokens)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        if case_files:
+            cases.extend(sample_cases)
+        else:
+            cases = sample_cases
     donor_filters = _split_csv_args(args.donor_id)
     case_filters = _split_csv_args(args.case_id)
     cases = filter_eval_cases(cases, donor_ids=donor_filters, case_ids=case_filters)
@@ -1477,6 +1505,7 @@ def main(argv: list[str] | None = None) -> int:
     suite["runtime_overrides"]["donor_filters"] = donor_filters
     suite["runtime_overrides"]["case_filters"] = case_filters
     suite["runtime_overrides"]["cases_files"] = case_file_tokens
+    suite["runtime_overrides"]["sample_ids"] = sample_id_tokens
     suite["runtime_overrides"]["max_cases"] = max_cases if max_cases > 0 else None
     suite["runtime_overrides"]["sample_seed"] = (
         int(args.sample_seed) if args.sample_seed is not None and max_cases > 0 else None

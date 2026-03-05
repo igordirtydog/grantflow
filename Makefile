@@ -1,4 +1,4 @@
-.PHONY: eval-grounded-ab eval-grounded-tail eval-llm-sampled refresh-grounded-baseline
+.PHONY: eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-rbm-samples refresh-grounded-baseline
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -19,6 +19,7 @@ GROUNDED_MIN_SEEDED_TOTAL ?= 1
 ALLOW_BASELINE_REFRESH ?= 0
 LLM_EVAL_SAMPLE_MAX_CASES ?= 2
 LLM_EVAL_SAMPLE_SEED ?= 42
+RBM_SAMPLE_IDS ?= rbm-usaid-ai-civil-service-kazakhstan,rbm-eu-youth-employment-jordan
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
@@ -110,6 +111,15 @@ eval-llm-sampled:
 		--sample-seed $(LLM_EVAL_SAMPLE_SEED) \
 		--text-out $(EVAL_ARTIFACTS_DIR)/llm-eval-sampled.txt \
 		--json-out $(EVAL_ARTIFACTS_DIR)/llm-eval-sampled.json
+
+eval-rbm-samples:
+	mkdir -p $(EVAL_ARTIFACTS_DIR)
+	$(PYTHON) -m grantflow.eval.harness \
+		--suite-label rbm-sample-eval \
+		--sample-id $(RBM_SAMPLE_IDS) \
+		--skip-expectations \
+		--text-out $(EVAL_ARTIFACTS_DIR)/rbm-sample-eval.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/rbm-sample-eval.json
 
 refresh-grounded-baseline:
 	ALLOW_BASELINE_REFRESH=$(ALLOW_BASELINE_REFRESH) PYTHONPATH=. $(PYTHON) scripts/refresh_grounded_baseline.py \

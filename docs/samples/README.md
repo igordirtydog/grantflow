@@ -12,6 +12,10 @@ Included files:
 - `rbm-sample-usaid-ai-civil-service-kazakhstan.json` - machine-readable RBM payload sample for demo/eval inputs
 - `rbm-sample-eu-youth-employment-jordan.json` - machine-readable RBM payload sample for demo/eval inputs
 
+Eval harness preset IDs:
+- `rbm-usaid-ai-civil-service-kazakhstan`
+- `rbm-eu-youth-employment-jordan`
+
 Notes:
 
 - These are **illustrative** examples (not real donor submissions)

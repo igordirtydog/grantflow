@@ -6,6 +6,7 @@ from pathlib import Path
 from grantflow.eval import harness
 from grantflow.eval.harness import (
     apply_runtime_overrides_to_cases,
+    available_sample_ids,
     build_regression_baseline_snapshot,
     compare_suite_to_baseline,
     compute_state_metrics,
@@ -15,6 +16,7 @@ from grantflow.eval.harness import (
     format_eval_suite_report,
     limit_eval_cases,
     load_eval_cases,
+    load_sample_eval_cases,
     run_eval_suite,
 )
 
@@ -422,6 +424,25 @@ def test_load_eval_cases_supports_explicit_case_files(tmp_path):
     assert rows[0]["_fixture_file"] == "cases.json"
 
 
+def test_load_sample_eval_cases_supports_named_presets():
+    cases = load_sample_eval_cases(["rbm-usaid-ai-civil-service-kazakhstan"])
+    assert len(cases) == 1
+    case = cases[0]
+    assert case["donor_id"] == "usaid"
+    assert "input_context" in case and isinstance(case["input_context"], dict)
+    assert str(case["input_context"].get("project") or "").strip() != ""
+    assert case["_sample_id"] == "rbm-usaid-ai-civil-service-kazakhstan"
+    assert case["_fixture_file"] == "rbm-sample-usaid-ai-civil-service-kazakhstan.json"
+
+
+def test_load_sample_eval_cases_supports_all_alias():
+    sample_ids = available_sample_ids()
+    assert sample_ids
+    cases = load_sample_eval_cases(["all"])
+    case_ids = {str(item.get("_sample_id") or "") for item in cases}
+    assert case_ids == set(sample_ids)
+
+
 def test_grounded_cases_expectations_are_strict_quality_gate():
     rows = load_eval_cases(case_files=[Path("grantflow/eval/cases/grounded_cases.json")])
     assert rows, "Expected grounded eval fixtures"
@@ -691,6 +712,59 @@ def test_eval_harness_cli_supports_cases_file_argument(tmp_path):
     assert payload["case_count"] == 1
     assert payload["runtime_overrides"]["cases_files"] == [str(cases_file)]
     assert payload["cases"][0]["case_id"] == "explicit_only"
+
+
+def test_eval_harness_cli_supports_sample_id_argument(tmp_path, monkeypatch):
+    json_out = tmp_path / "sample-report.json"
+    text_out = tmp_path / "sample-report.txt"
+
+    monkeypatch.setattr(
+        harness,
+        "load_sample_eval_cases",
+        lambda sample_ids: [
+            {
+                "case_id": "sample_case",
+                "donor_id": "eu",
+                "input_context": {"project": "P", "country": "C"},
+                "_sample_id": sample_ids[0],
+            }
+        ],
+    )
+
+    captured: dict[str, object] = {}
+
+    def fake_run_eval_suite(cases, *, suite_label=None, skip_expectations=False):
+        captured["cases"] = cases
+        return {
+            "suite_label": suite_label or "baseline",
+            "expectations_skipped": bool(skip_expectations),
+            "case_count": len(cases),
+            "passed_count": len(cases),
+            "failed_count": 0,
+            "all_passed": True,
+            "cases": [],
+        }
+
+    monkeypatch.setattr(harness, "run_eval_suite", fake_run_eval_suite)
+
+    exit_code = harness.main(
+        [
+            "--suite-label",
+            "sample-suite",
+            "--sample-id",
+            "rbm-eu-youth-employment-jordan",
+            "--json-out",
+            str(json_out),
+            "--text-out",
+            str(text_out),
+        ]
+    )
+    assert exit_code == 0
+    payload = json.loads(json_out.read_text(encoding="utf-8"))
+    assert payload["runtime_overrides"]["sample_ids"] == ["rbm-eu-youth-employment-jordan"]
+    captured_cases = captured["cases"]
+    assert isinstance(captured_cases, list) and len(captured_cases) == 1
+    assert captured_cases[0]["case_id"] == "sample_case"
 
 
 def test_eval_harness_cli_returns_nonzero_when_filters_match_no_cases(tmp_path):
