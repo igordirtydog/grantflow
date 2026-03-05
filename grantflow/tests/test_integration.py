@@ -12029,6 +12029,76 @@ def test_hitl_reject_then_resume_flow_supports_export_payload_and_export():
     assert export.content[:2] == b"PK"
 
 
+def test_hitl_logframe_reject_then_resume_flow_supports_export_payload_and_export():
+    response = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Education", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": True,
+            "hitl_checkpoints": ["logframe"],
+        },
+    )
+    assert response.status_code == 200
+    job_id = response.json()["job_id"]
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "logframe"
+    first_checkpoint_id = str(status["checkpoint_id"] or "")
+    assert first_checkpoint_id
+
+    reject = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": first_checkpoint_id, "approved": False, "feedback": "Need MEL adjustments"},
+    )
+    assert reject.status_code == 200
+    reject_body = reject.json()
+    assert reject_body["status"] == "rejected"
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "mel"
+
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "pending_hitl"
+    assert status["checkpoint_stage"] == "logframe"
+    second_checkpoint_id = str(status["checkpoint_id"] or "")
+    assert second_checkpoint_id
+    assert second_checkpoint_id != first_checkpoint_id
+
+    approve = client.post(
+        "/hitl/approve",
+        json={"checkpoint_id": second_checkpoint_id, "approved": True, "feedback": "MEL accepted"},
+    )
+    assert approve.status_code == 200
+
+    resume = client.post(f"/resume/{job_id}", json={})
+    assert resume.status_code == 200
+    assert resume.json()["resuming_from"] == "critic"
+
+    status = _wait_for_terminal_status(job_id)
+    if status["status"] != "done":
+        status = _drain_hitl_to_done(job_id, initial_status=status, max_cycles=12)
+    assert status["status"] == "done"
+
+    export_payload_response = client.get(f"/status/{job_id}/export-payload")
+    assert export_payload_response.status_code == 200
+    payload = export_payload_response.json().get("payload")
+    assert isinstance(payload, dict)
+    payload_state = payload.get("state")
+    assert isinstance(payload_state, dict)
+    assert payload_state.get("hitl_pending") is False
+    assert "strategy" not in payload_state
+    assert "donor_strategy" not in payload_state
+
+    export = client.post("/export", json={"payload": payload, "format": "both"})
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith("application/zip")
+    assert export.content[:2] == b"PK"
+
+
 def test_hitl_checkpoint_selection_logframe_only_flow():
     response = client.post(
         "/generate",
