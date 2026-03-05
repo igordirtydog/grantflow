@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-rbm-samples refresh-grounded-baseline
+.PHONY: deps-guard qa-fast qa-hitl eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-rbm-samples refresh-grounded-baseline
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -27,8 +27,11 @@ deps-guard:
 qa-fast:
 	$(PYTHON) -m ruff check grantflow/swarm/nodes/mel_specialist.py grantflow/swarm/nodes/architect_generation.py grantflow/core/strategies grantflow/tests/test_mel.py grantflow/tests/test_strategies.py grantflow/tests/test_contracts.py
 	$(PYTHON) -m pytest grantflow/tests/test_mel.py grantflow/tests/test_strategies.py grantflow/tests/test_contracts.py -q
-	$(PYTHON) -m pytest grantflow/tests/test_integration.py -k "test_quality_summary_endpoint_aggregates_quality_signals or test_hitl_pause_resume_flow_supports_export_payload_and_export or test_hitl_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_logframe_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_mixed_checkpoints_reject_approve_flow_records_history_events" -q
+	$(MAKE) qa-hitl
 	$(PYTHON) -m mypy grantflow/api grantflow/core/stores.py grantflow/swarm/versioning.py
+
+qa-hitl:
+	$(PYTHON) -m pytest grantflow/tests/test_integration.py -k "test_quality_summary_endpoint_aggregates_quality_signals or test_hitl_pause_resume_flow_supports_export_payload_and_export or test_hitl_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_logframe_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_mixed_checkpoints_reject_approve_flow_records_history_events" -q
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
