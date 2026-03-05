@@ -7,6 +7,12 @@ from fastapi import HTTPException
 
 from grantflow.api import app as api_app_module
 from grantflow.api.constants import CRITIC_FINDING_STATUSES
+from grantflow.api.idempotency import (
+    _idempotency_fingerprint,
+    _idempotency_replay_response,
+    _normalize_request_id,
+    _store_idempotency_response,
+)
 from grantflow.api.public_views import REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS, public_job_review_workflow_sla_payload
 from grantflow.swarm.findings import canonicalize_findings, finding_primary_id, state_critic_findings, write_state_critic_findings
 
@@ -162,12 +168,12 @@ def _set_critic_fatal_flaw_status(
     expected_status = str(if_match_status or "").strip().lower() or None
     if expected_status and expected_status not in CRITIC_FINDING_STATUSES:
         raise HTTPException(status_code=400, detail="Unsupported if_match_status")
-    request_id_token = api_app_module._normalize_request_id(request_id)
+    request_id_token = _normalize_request_id(request_id)
 
     job = api_app_module._normalize_critic_fatal_flaws_for_job(job_id) or api_app_module._get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    idempotency_fingerprint = api_app_module._idempotency_fingerprint(
+    idempotency_fingerprint = _idempotency_fingerprint(
         {
             "op": "critic_finding_status",
             "job_id": str(job_id),
@@ -177,7 +183,7 @@ def _set_critic_fatal_flaw_status(
             "if_match_status": expected_status,
         }
     )
-    replay = api_app_module._idempotency_replay_response(
+    replay = _idempotency_replay_response(
         job,
         scope="critic_finding_status",
         request_id=request_id_token,
@@ -257,7 +263,7 @@ def _set_critic_fatal_flaw_status(
         response["if_match_status"] = expected_status
     if request_id_token:
         response["request_id"] = request_id_token
-    api_app_module._store_idempotency_response(
+    _store_idempotency_response(
         job_id,
         scope="critic_finding_status",
         request_id=request_id_token,
@@ -369,12 +375,12 @@ def _set_critic_fatal_flaws_status_bulk(
     has_selector = bool(requested_finding_ids or finding_status_filter or severity_filter or section_filter)
     if not has_selector and not apply_to_all:
         raise HTTPException(status_code=400, detail="Provide at least one selector or set apply_to_all=true")
-    request_id_token = api_app_module._normalize_request_id(request_id)
+    request_id_token = _normalize_request_id(request_id)
 
     job = api_app_module._normalize_critic_fatal_flaws_for_job(job_id) or api_app_module._get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    idempotency_fingerprint = api_app_module._idempotency_fingerprint(
+    idempotency_fingerprint = _idempotency_fingerprint(
         {
             "op": "critic_findings_bulk_status",
             "job_id": str(job_id),
@@ -390,7 +396,7 @@ def _set_critic_fatal_flaws_status_bulk(
             },
         }
     )
-    replay = api_app_module._idempotency_replay_response(
+    replay = _idempotency_replay_response(
         job,
         scope="critic_findings_bulk_status",
         request_id=request_id_token,
@@ -524,7 +530,7 @@ def _set_critic_fatal_flaws_status_bulk(
     }
     if request_id_token:
         response["request_id"] = request_id_token
-    api_app_module._store_idempotency_response(
+    _store_idempotency_response(
         job_id,
         scope="critic_findings_bulk_status",
         request_id=request_id_token,
@@ -549,8 +555,8 @@ def _append_review_comment(
     job = api_app_module._get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    request_id_token = api_app_module._normalize_request_id(request_id)
-    idempotency_fingerprint = api_app_module._idempotency_fingerprint(
+    request_id_token = _normalize_request_id(request_id)
+    idempotency_fingerprint = _idempotency_fingerprint(
         {
             "op": "review_comment_add",
             "job_id": str(job_id),
@@ -561,7 +567,7 @@ def _append_review_comment(
             "linked_finding_id": linked_finding_id,
         }
     )
-    replay = api_app_module._idempotency_replay_response(
+    replay = _idempotency_replay_response(
         job,
         scope="review_comment_add",
         request_id=request_id_token,
@@ -601,7 +607,7 @@ def _append_review_comment(
         linked_finding_id=linked_finding_id,
         request_id=request_id_token,
     )
-    api_app_module._store_idempotency_response(
+    _store_idempotency_response(
         job_id,
         scope="review_comment_add",
         request_id=request_id_token,
@@ -623,8 +629,8 @@ def _set_review_comment_status(
     job = api_app_module._get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    request_id_token = api_app_module._normalize_request_id(request_id)
-    idempotency_fingerprint = api_app_module._idempotency_fingerprint(
+    request_id_token = _normalize_request_id(request_id)
+    idempotency_fingerprint = _idempotency_fingerprint(
         {
             "op": "review_comment_status",
             "job_id": str(job_id),
@@ -632,7 +638,7 @@ def _set_review_comment_status(
             "next_status": str(next_status),
         }
     )
-    replay = api_app_module._idempotency_replay_response(
+    replay = _idempotency_replay_response(
         job,
         scope="review_comment_status",
         request_id=request_id_token,
@@ -697,7 +703,7 @@ def _set_review_comment_status(
         response["request_id"] = request_id_token
     response["persisted"] = True
     response["changed"] = bool(status_transitioned)
-    api_app_module._store_idempotency_response(
+    _store_idempotency_response(
         job_id,
         scope="review_comment_status",
         request_id=request_id_token,

@@ -7,10 +7,8 @@ import gzip
 import io
 import json
 import os
-import re
 import sys
 import tempfile
-import threading
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
@@ -237,9 +235,6 @@ JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
-REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
-MAX_IDEMPOTENCY_RECORDS = 300
-MAX_GLOBAL_IDEMPOTENCY_RECORDS = 1000
 JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue", "redis_queue"}
 STATUS_WEBHOOK_EVENTS = {
     "running": "job.started",
@@ -275,8 +270,6 @@ HITL_HISTORY_EVENT_TYPES = {
     "hitl_checkpoint_decision",
     "hitl_checkpoint_canceled",
 }
-GLOBAL_IDEMPOTENCY_RECORDS: Dict[str, Dict[str, Any]] = {}
-GLOBAL_IDEMPOTENCY_LOCK = threading.Lock()
 PRODUCTION_ENV_TOKENS = {"prod", "production"}
 
 
@@ -514,39 +507,33 @@ def _finding_actor_from_request(request: Request) -> str:
 
 
 def _normalize_request_id(value: Any) -> Optional[str]:
-    token = str(value or "").strip()
-    if not token:
-        return None
-    if not REQUEST_ID_RE.fullmatch(token):
-        raise HTTPException(
-            status_code=400,
-            detail="Invalid request_id (allowed: letters, numbers, ., _, :, -, length 1..120)",
-        )
-    return token
+    from grantflow.api.idempotency import _normalize_request_id as _impl
+
+    return _impl(value)
 
 
 def _resolve_request_id(request: Request, explicit_request_id: Optional[str] = None) -> Optional[str]:
-    return _normalize_request_id(explicit_request_id) or _normalize_request_id(request.headers.get("x-request-id"))
+    from grantflow.api.idempotency import _resolve_request_id as _impl
+
+    return _impl(request, explicit_request_id)
 
 
 def _idempotency_fingerprint(payload: Dict[str, Any]) -> str:
-    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    from grantflow.api.idempotency import _idempotency_fingerprint as _impl
+
+    return _impl(payload)
 
 
 def _idempotency_record_key(scope: str, request_id: str) -> str:
-    return f"{scope}:{request_id}"
+    from grantflow.api.idempotency import _idempotency_record_key as _impl
+
+    return _impl(scope, request_id)
 
 
 def _idempotency_records(job: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    raw = job.get("idempotency_records")
-    if not isinstance(raw, dict):
-        return {}
-    out: Dict[str, Dict[str, Any]] = {}
-    for key, value in raw.items():
-        if not isinstance(key, str) or not isinstance(value, dict):
-            continue
-        out[key] = dict(value)
-    return out
+    from grantflow.api.idempotency import _idempotency_records as _impl
+
+    return _impl(job)
 
 
 def _idempotency_replay_response(
@@ -556,33 +543,9 @@ def _idempotency_replay_response(
     request_id: Optional[str],
     fingerprint: str,
 ) -> Optional[Dict[str, Any]]:
-    token = _normalize_request_id(request_id)
-    if not token:
-        return None
-    key = _idempotency_record_key(scope, token)
-    record = _idempotency_records(job).get(key)
-    if not isinstance(record, dict):
-        return None
-    record_fingerprint = str(record.get("fingerprint") or "")
-    if record_fingerprint and record_fingerprint != fingerprint:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "request_id_reused_with_different_payload",
-                "message": "request_id is already used for a different action payload.",
-                "request_id": token,
-                "scope": scope,
-            },
-        )
-    response_payload = record.get("response")
-    if isinstance(response_payload, dict):
-        replay = dict(response_payload)
-    else:
-        replay = {}
-    replay["request_id"] = token
-    replay["idempotent_replay"] = True
-    replay["persisted"] = bool(record.get("persisted", True))
-    return replay
+    from grantflow.api.idempotency import _idempotency_replay_response as _impl
+
+    return _impl(job, scope=scope, request_id=request_id, fingerprint=fingerprint)
 
 
 def _store_idempotency_response(
@@ -594,33 +557,22 @@ def _store_idempotency_response(
     response: Dict[str, Any],
     persisted: bool,
 ) -> None:
-    token = _normalize_request_id(request_id)
-    if not token:
-        return
-    job = _get_job(job_id)
-    if not job:
-        return
-    records = _idempotency_records(job)
-    key = _idempotency_record_key(scope, token)
-    stored_response = dict(response)
-    stored_response.pop("idempotent_replay", None)
-    stored_response["request_id"] = token
-    records[key] = {
-        "scope": scope,
-        "request_id": token,
-        "fingerprint": fingerprint,
-        "persisted": bool(persisted),
-        "ts": _utcnow_iso(),
-        "response": stored_response,
-    }
-    while len(records) > MAX_IDEMPOTENCY_RECORDS:
-        oldest_key = next(iter(records))
-        records.pop(oldest_key, None)
-    _update_job(job_id, idempotency_records=records)
+    from grantflow.api.idempotency import _store_idempotency_response as _impl
+
+    _impl(
+        job_id,
+        scope=scope,
+        request_id=request_id,
+        fingerprint=fingerprint,
+        response=response,
+        persisted=persisted,
+    )
 
 
 def _global_idempotency_record_key(scope: str, request_id: str) -> str:
-    return f"{scope}:{request_id}"
+    from grantflow.api.idempotency import _global_idempotency_record_key as _impl
+
+    return _impl(scope, request_id)
 
 
 def _global_idempotency_replay_response(
@@ -629,34 +581,9 @@ def _global_idempotency_replay_response(
     request_id: Optional[str],
     fingerprint: str,
 ) -> Optional[Dict[str, Any]]:
-    token = _normalize_request_id(request_id)
-    if not token:
-        return None
-    key = _global_idempotency_record_key(scope, token)
-    with GLOBAL_IDEMPOTENCY_LOCK:
-        record = dict(GLOBAL_IDEMPOTENCY_RECORDS.get(key) or {})
-    if not record:
-        return None
-    record_fingerprint = str(record.get("fingerprint") or "")
-    if record_fingerprint and record_fingerprint != fingerprint:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "request_id_reused_with_different_payload",
-                "message": "request_id is already used for a different action payload.",
-                "request_id": token,
-                "scope": scope,
-            },
-        )
-    response_payload = record.get("response")
-    if isinstance(response_payload, dict):
-        replay = dict(response_payload)
-    else:
-        replay = {}
-    replay["request_id"] = token
-    replay["idempotent_replay"] = True
-    replay["persisted"] = bool(record.get("persisted", True))
-    return replay
+    from grantflow.api.idempotency import _global_idempotency_replay_response as _impl
+
+    return _impl(scope=scope, request_id=request_id, fingerprint=fingerprint)
 
 
 def _store_global_idempotency_response(
@@ -667,25 +594,15 @@ def _store_global_idempotency_response(
     response: Dict[str, Any],
     persisted: bool,
 ) -> None:
-    token = _normalize_request_id(request_id)
-    if not token:
-        return
-    key = _global_idempotency_record_key(scope, token)
-    stored_response = dict(response)
-    stored_response.pop("idempotent_replay", None)
-    stored_response["request_id"] = token
-    with GLOBAL_IDEMPOTENCY_LOCK:
-        GLOBAL_IDEMPOTENCY_RECORDS[key] = {
-            "scope": scope,
-            "request_id": token,
-            "fingerprint": fingerprint,
-            "persisted": bool(persisted),
-            "ts": _utcnow_iso(),
-            "response": stored_response,
-        }
-        while len(GLOBAL_IDEMPOTENCY_RECORDS) > MAX_GLOBAL_IDEMPOTENCY_RECORDS:
-            oldest_key = next(iter(GLOBAL_IDEMPOTENCY_RECORDS))
-            GLOBAL_IDEMPOTENCY_RECORDS.pop(oldest_key, None)
+    from grantflow.api.idempotency import _store_global_idempotency_response as _impl
+
+    _impl(
+        scope=scope,
+        request_id=request_id,
+        fingerprint=fingerprint,
+        response=response,
+        persisted=persisted,
+    )
 
 
 def _append_job_event_records(
