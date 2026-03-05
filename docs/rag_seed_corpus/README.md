@@ -12,6 +12,7 @@ Important
 - `worldbank_public_sector_uzbekistan`
 - `giz_sme_resilience_jordan`
 - `state_department_media_georgia`
+- `un_agencies_inclusive_education_nepal`
 
 ## Ingest
 Use `docs/rag_seed_corpus/ingest_manifest.jsonl` to upload files via `POST /ingest`.
@@ -28,6 +29,9 @@ curl -s -X POST http://127.0.0.1:8000/ingest \
 ## Suggested first grounded eval
 Load seed files for all specialized donors, then run `LLM Eval (Grounded)` with donor filters:
 `usaid,eu,worldbank,giz,state_department`.
+
+For generic tail coverage (non-specialized donor strategy), run additional filter:
+`eu,giz,un_agencies`.
 
 ## Local grounded benchmark (API)
 Run a quick local benchmark across all specialized donor presets after ingest:

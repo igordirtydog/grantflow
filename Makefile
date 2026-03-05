@@ -1,10 +1,12 @@
-.PHONY: eval-grounded-ab eval-llm-sampled refresh-grounded-baseline
+.PHONY: eval-grounded-ab eval-grounded-tail eval-llm-sampled refresh-grounded-baseline
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
 GROUNDED_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
+GROUNDED_TAIL_CASES_FILE ?= grantflow/eval/cases/grounded_tail_cases.json
 GROUNDED_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
 GROUNDED_BASELINE ?= grantflow/eval/fixtures/grounded_regression_snapshot.json
+GROUNDED_TAIL_BASELINE ?= grantflow/eval/fixtures/grounded_tail_regression_snapshot.json
 GROUNDED_GUARD_DONORS ?= usaid,eu,worldbank,state_department
 GROUNDED_MAX_NON_RETRIEVAL ?= 0.25
 GROUNDED_MIN_RETRIEVAL_GROUNDED ?= 0.75
@@ -12,6 +14,7 @@ GROUNDED_MAX_TRACEABILITY_GAP ?= 0.10
 GROUNDED_MIN_NON_RETRIEVAL_IMPROVEMENT ?= 0.25
 GROUNDED_MIN_RETRIEVAL_GROUNDED_IMPROVEMENT ?= 0.25
 GROUNDED_EXPECTED_DONORS ?= usaid,eu,worldbank,state_department
+GROUNDED_TAIL_EXPECTED_DONORS ?= eu,giz,un_agencies
 GROUNDED_MIN_SEEDED_TOTAL ?= 1
 ALLOW_BASELINE_REFRESH ?= 0
 LLM_EVAL_SAMPLE_MAX_CASES ?= 2
@@ -78,6 +81,23 @@ eval-grounded-ab:
 		--expected-donors $(GROUNDED_EXPECTED_DONORS) \
 		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL) \
 		--out $(EVAL_ARTIFACTS_DIR)/grounded-gate-summary.md
+
+eval-grounded-tail:
+	mkdir -p $(EVAL_ARTIFACTS_DIR)
+	$(PYTHON) -m grantflow.eval.harness \
+		--cases-file $(GROUNDED_TAIL_CASES_FILE) \
+		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
+		--suite-label grounded-tail-eval \
+		--text-out $(EVAL_ARTIFACTS_DIR)/grounded-tail-eval-report.txt \
+		--json-out $(EVAL_ARTIFACTS_DIR)/grounded-tail-eval-report.json \
+		--compare-to-baseline $(GROUNDED_TAIL_BASELINE) \
+		--comparison-text-out $(EVAL_ARTIFACTS_DIR)/grounded-tail-regression-comparison.txt \
+		--comparison-json-out $(EVAL_ARTIFACTS_DIR)/grounded-tail-regression-comparison.json
+	$(PYTHON) scripts/check_seeded_corpus.py \
+		--json $(EVAL_ARTIFACTS_DIR)/grounded-tail-eval-report.json \
+		--label grounded-tail-eval-seed \
+		--expected-donors $(GROUNDED_TAIL_EXPECTED_DONORS) \
+		--min-seeded-total $(GROUNDED_MIN_SEEDED_TOTAL)
 
 eval-llm-sampled:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)

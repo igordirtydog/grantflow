@@ -379,6 +379,17 @@ python -m grantflow.eval.harness \
   --comparison-text-out eval-artifacts/grounded-regression-comparison.txt \
   --comparison-json-out eval-artifacts/grounded-regression-comparison.json
 
+# Grounded tail suite (EU/GIZ/UN agencies)
+python -m grantflow.eval.harness \
+  --cases-file grantflow/eval/cases/grounded_tail_cases.json \
+  --seed-rag-manifest docs/rag_seed_corpus/ingest_manifest.jsonl \
+  --suite-label grounded-tail-eval \
+  --text-out eval-artifacts/grounded-tail-eval-report.txt \
+  --json-out eval-artifacts/grounded-tail-eval-report.json \
+  --compare-to-baseline grantflow/eval/fixtures/grounded_tail_regression_snapshot.json \
+  --comparison-text-out eval-artifacts/grounded-tail-regression-comparison.txt \
+  --comparison-json-out eval-artifacts/grounded-tail-regression-comparison.json
+
 # grounded_cases.json is a strict gate:
 # high quality/critic minima + zero fallback namespace citations + low non-retrieval and traceability-gap limits.
 # the run also performs trend-regression check versus `grounded_regression_snapshot.json`.
@@ -428,6 +439,7 @@ One-command variant:
 
 ```bash
 make eval-grounded-ab
+make eval-grounded-tail
 ```
 
 `--seed-rag-manifest` resolves each manifest `donor_id` via `DonorFactory` and ingests into the donor strategy RAG namespace (for example, `usaid -> usaid_ads201`, `state_department -> us_state_department_guidance`).
