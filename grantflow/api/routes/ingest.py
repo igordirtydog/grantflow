@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from fastapi import File, Form, HTTPException, Query, Request, UploadFile
 
+from grantflow.api import app as api_app_module
 from grantflow.api.app import (
     _build_generate_preflight,
     _ingest_inventory,
@@ -27,7 +28,6 @@ from grantflow.api.security import require_api_key_if_configured
 from grantflow.api.tenant import _resolve_tenant_id, _tenant_rag_namespace
 from grantflow.api.routers import ingest_router
 from grantflow.core.strategies.factory import DonorFactory
-from grantflow.memory_bank.ingest import ingest_pdf_to_namespace
 from grantflow.memory_bank.vector_store import vector_store
 
 
@@ -168,7 +168,7 @@ async def ingest_pdf(
         with tempfile.NamedTemporaryFile(prefix="grantflow_ingest_", suffix=".pdf", delete=False) as tmp:
             tmp.write(content)
             tmp_path = tmp.name
-        result = ingest_pdf_to_namespace(tmp_path, namespace=namespace, metadata=upload_metadata)
+        result = api_app_module.ingest_pdf_to_namespace(tmp_path, namespace=namespace, metadata=upload_metadata)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Ingest failed: {exc}") from exc
     finally:

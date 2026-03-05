@@ -7,28 +7,31 @@ from typing import Optional
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
+from grantflow.api import app as api_app_module
 from grantflow.api.app import (
     _configured_export_require_grounded_gate_pass,
-    _dead_letter_queue_csv_text,
     _evaluate_export_contract_gate,
     _evaluate_export_grounding_policy,
-    _extract_export_grounding_gate,
-    _extract_export_runtime_grounded_quality_gate,
     _get_job,
-    _hitl_history_csv_text,
     _hitl_history_payload,
     _ingest_inventory,
-    _job_comments_csv_text,
-    _job_events_csv_text,
     _list_jobs,
     _normalize_critic_fatal_flaws_for_job,
     _normalize_review_comments_for_job,
-    _portfolio_export_response,
     _redis_queue_admin_runner,
-    _resolve_export_inputs,
-    _validated_filter_token,
     _xlsx_contract_validation_context,
 )
+from grantflow.api.export_helpers import (
+    _dead_letter_queue_csv_text,
+    _extract_export_grounding_gate,
+    _extract_export_runtime_grounded_quality_gate,
+    _hitl_history_csv_text,
+    _job_comments_csv_text,
+    _job_events_csv_text,
+    _portfolio_export_response,
+    _resolve_export_inputs,
+)
+from grantflow.api.filters import _validated_filter_token
 from grantflow.api.public_views import (
     REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
     REVIEW_WORKFLOW_STATE_FILTER_VALUES,
@@ -76,8 +79,6 @@ from grantflow.api.tenant import (
     _resolve_tenant_id,
 )
 from grantflow.api.routers import exports_router
-from grantflow.exporters.excel_builder import build_xlsx_from_logframe
-from grantflow.exporters.word_builder import build_docx_from_toc
 
 
 @exports_router.get("/queue/dead-letter/export")
@@ -1189,7 +1190,7 @@ def export_artifacts(req: ExportRequest, request: Request):
         xlsx_bytes: Optional[bytes] = None
 
         if fmt in {"docx", "both"}:
-            docx_bytes = build_docx_from_toc(
+            docx_bytes = api_app_module.build_docx_from_toc(
                 toc_draft,
                 donor_id,
                 logframe_draft=logframe_draft,
@@ -1199,7 +1200,7 @@ def export_artifacts(req: ExportRequest, request: Request):
             )
 
         if fmt in {"xlsx", "both"}:
-            xlsx_bytes = build_xlsx_from_logframe(
+            xlsx_bytes = api_app_module.build_xlsx_from_logframe(
                 logframe_draft,
                 donor_id,
                 toc_draft=toc_draft,

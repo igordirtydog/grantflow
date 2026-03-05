@@ -22,7 +22,12 @@ from fastapi.responses import HTMLResponse, StreamingResponse
 from openpyxl import load_workbook
 from pydantic import ValidationError
 
-from grantflow.api.constants import CRITIC_FINDING_STATUSES, REVIEW_COMMENT_SECTIONS
+from grantflow.api.constants import (
+    CRITIC_FINDING_SLA_HOURS,
+    CRITIC_FINDING_STATUSES,
+    REVIEW_COMMENT_DEFAULT_SLA_HOURS,
+    REVIEW_COMMENT_SECTIONS,
+)
 from grantflow.api.demo_ui import render_demo_ui_html
 from grantflow.api.demo_presets import (
     list_generate_legacy_preset_details,
@@ -78,6 +83,23 @@ from grantflow.api.public_views import (
     public_portfolio_review_workflow_sla_trends_payload,
     public_portfolio_review_workflow_trends_csv_text,
     public_portfolio_review_workflow_trends_payload,
+)
+from grantflow.api.export_helpers import (
+    _dead_letter_queue_csv_text,
+    _extract_export_grounding_gate,
+    _extract_export_runtime_grounded_quality_gate,
+    _hitl_history_csv_text,
+    _job_comments_csv_text,
+    _job_events_csv_text,
+    _portfolio_export_response,
+    _resolve_export_inputs,
+)
+from grantflow.api.filters import _validated_filter_token
+from grantflow.api.review_helpers import (
+    _critic_findings_list_payload,
+    _normalize_comment_sla_hours,
+    _normalize_finding_sla_profile,
+    _review_workflow_sla_profile_payload,
 )
 from grantflow.api.routers import include_api_routers
 from grantflow.api.schemas import (
@@ -215,8 +237,6 @@ JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
-CRITIC_FINDING_SLA_HOURS = {"high": 24, "medium": 72, "low": 120}
-REVIEW_COMMENT_DEFAULT_SLA_HOURS = 72
 REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 MAX_IDEMPOTENCY_RECORDS = 300
 MAX_GLOBAL_IDEMPOTENCY_RECORDS = 1000
@@ -2244,222 +2264,6 @@ def _hitl_history_payload(
     }
 
 
-def _hitl_history_csv_text(payload: Dict[str, Any]) -> str:
-    raw_events = payload.get("events")
-    events: list[Any] = raw_events if isinstance(raw_events, list) else []
-    header = [
-        "event_id",
-        "ts",
-        "type",
-        "status",
-        "from_status",
-        "to_status",
-        "checkpoint_id",
-        "checkpoint_stage",
-        "checkpoint_status",
-        "resuming_from",
-        "approved",
-        "feedback",
-        "actor",
-        "request_id",
-        "reason",
-        "backend",
-    ]
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(header)
-    for row in events:
-        item = row if isinstance(row, dict) else {}
-        writer.writerow(
-            [
-                item.get("event_id"),
-                item.get("ts"),
-                item.get("type"),
-                item.get("status"),
-                item.get("from_status"),
-                item.get("to_status"),
-                item.get("checkpoint_id"),
-                item.get("checkpoint_stage"),
-                item.get("checkpoint_status"),
-                item.get("resuming_from"),
-                item.get("approved"),
-                item.get("feedback"),
-                item.get("actor"),
-                item.get("request_id"),
-                item.get("reason"),
-                item.get("backend"),
-            ]
-        )
-    return buffer.getvalue()
-
-
-def _job_events_csv_text(payload: Dict[str, Any]) -> str:
-    raw_events = payload.get("events")
-    events: list[Any] = raw_events if isinstance(raw_events, list) else []
-    base_columns = [
-        "event_id",
-        "ts",
-        "type",
-        "status",
-        "from_status",
-        "to_status",
-        "checkpoint_id",
-        "checkpoint_stage",
-        "checkpoint_status",
-        "resuming_from",
-        "actor",
-        "request_id",
-    ]
-    header = [*base_columns, "payload_json"]
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(header)
-    for row in events:
-        item = row if isinstance(row, dict) else {}
-        extras = {k: v for k, v in item.items() if k not in base_columns and v is not None}
-        writer.writerow(
-            [
-                item.get("event_id"),
-                item.get("ts"),
-                item.get("type"),
-                item.get("status"),
-                item.get("from_status"),
-                item.get("to_status"),
-                item.get("checkpoint_id"),
-                item.get("checkpoint_stage"),
-                item.get("checkpoint_status"),
-                item.get("resuming_from"),
-                item.get("actor"),
-                item.get("request_id"),
-                (json.dumps(extras, sort_keys=True, ensure_ascii=False) if extras else ""),
-            ]
-        )
-    return buffer.getvalue()
-
-
-def _job_comments_csv_text(payload: Dict[str, Any]) -> str:
-    raw_comments = payload.get("comments")
-    comments: list[Any] = raw_comments if isinstance(raw_comments, list) else []
-    base_columns = [
-        "comment_id",
-        "ts",
-        "section",
-        "status",
-        "message",
-        "author",
-        "version_id",
-        "linked_finding_id",
-        "linked_finding_severity",
-        "resolved_at",
-        "reopened_at",
-        "actor",
-        "request_id",
-        "due_at",
-        "sla_hours",
-    ]
-    header = [*base_columns, "payload_json"]
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(header)
-    for row in comments:
-        item = row if isinstance(row, dict) else {}
-        extras = {k: v for k, v in item.items() if k not in base_columns and v is not None}
-        writer.writerow(
-            [
-                item.get("comment_id"),
-                item.get("ts"),
-                item.get("section"),
-                item.get("status"),
-                item.get("message"),
-                item.get("author"),
-                item.get("version_id"),
-                item.get("linked_finding_id"),
-                item.get("linked_finding_severity"),
-                item.get("resolved_at"),
-                item.get("reopened_at"),
-                item.get("actor"),
-                item.get("request_id"),
-                item.get("due_at"),
-                item.get("sla_hours"),
-                (json.dumps(extras, sort_keys=True, ensure_ascii=False) if extras else ""),
-            ]
-        )
-    return buffer.getvalue()
-
-
-def _resolve_export_inputs(
-    req: ExportRequest,
-) -> tuple[dict, dict, str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
-    payload = req.payload or {}
-    payload_root = payload if isinstance(payload, dict) else {}
-    state_payload = payload_root.get("state") if isinstance(payload_root.get("state"), dict) else payload_root
-    payload = state_payload if isinstance(state_payload, dict) else {}
-
-    payload_state = dict(normalized_state_copy(payload))
-    req_donor = str(req.donor_id or "").strip().lower()
-    donor_id = req_donor or state_donor_id(payload_state, default="grantflow")
-    toc = req.toc_draft or payload.get("toc_draft") or payload.get("toc") or {}
-    logframe = req.logframe_draft or payload.get("logframe_draft") or payload.get("mel") or {}
-    citations = payload.get("citations") or []
-    state_critic_findings_payload = state_critic_findings(payload_state, default_source="rules")
-    critic_findings = req.critic_findings or state_critic_findings_payload or payload_root.get("critic_findings") or []
-    review_comments = req.review_comments or payload_root.get("review_comments") or payload.get("review_comments") or []
-
-    if not isinstance(toc, dict):
-        toc = {}
-    if not isinstance(logframe, dict):
-        logframe = {}
-    if not isinstance(citations, list):
-        citations = []
-    if not isinstance(critic_findings, list):
-        critic_findings = []
-    if not isinstance(review_comments, list):
-        review_comments = []
-    citations = [c for c in citations if isinstance(c, dict)]
-    critic_findings = canonicalize_findings(critic_findings, state=payload_state, default_source="rules")
-    review_comments = [c for c in review_comments if isinstance(c, dict)]
-    return toc, logframe, str(donor_id), citations, critic_findings, review_comments
-
-
-def _extract_export_grounding_gate(req: ExportRequest) -> Dict[str, Any]:
-    payload = req.payload if isinstance(req.payload, dict) else {}
-    if not payload:
-        return {}
-
-    state_payload = payload.get("state") if isinstance(payload.get("state"), dict) else payload
-    if not isinstance(state_payload, dict):
-        return {}
-    gate = state_payload.get("grounding_gate")
-    return gate if isinstance(gate, dict) else {}
-
-
-def _extract_export_runtime_grounded_quality_gate(req: ExportRequest) -> Dict[str, Any]:
-    payload = req.payload if isinstance(req.payload, dict) else {}
-    if not payload:
-        return {}
-    payload_root = payload if isinstance(payload, dict) else {}
-    state_payload = payload_root.get("state") if isinstance(payload_root.get("state"), dict) else payload_root
-    if not isinstance(state_payload, dict):
-        return {}
-
-    runtime_gate = state_payload.get("grounded_quality_gate")
-    if isinstance(runtime_gate, dict):
-        return runtime_gate
-
-    public_runtime_gate = state_payload.get("grounded_gate")
-    if isinstance(public_runtime_gate, dict):
-        return public_runtime_gate
-
-    root_runtime_gate = payload_root.get("grounded_quality_gate")
-    if isinstance(root_runtime_gate, dict):
-        return root_runtime_gate
-
-    root_public_runtime_gate = payload_root.get("grounded_gate")
-    if isinstance(root_public_runtime_gate, dict):
-        return root_public_runtime_gate
-    return {}
-
-
 def _record_hitl_feedback_in_state(state: dict, checkpoint: Dict[str, Any]) -> None:
     feedback = checkpoint.get("feedback")
     if not feedback:
@@ -2600,40 +2404,6 @@ def _job_draft_version_exists_for_section(job: Dict[str, Any], *, section: str, 
     return False
 
 
-def _normalize_finding_sla_profile(
-    finding_sla_hours: Optional[Dict[str, Any]],
-    *,
-    default: Optional[Dict[str, int]] = None,
-) -> Dict[str, int]:
-    profile: Dict[str, int] = dict(default or CRITIC_FINDING_SLA_HOURS)
-    if not isinstance(finding_sla_hours, dict):
-        return profile
-    for raw_key, raw_value in finding_sla_hours.items():
-        key = str(raw_key or "").strip().lower()
-        if key not in CRITIC_FINDING_SLA_HOURS:
-            raise HTTPException(status_code=400, detail=f"Unsupported SLA severity key: {raw_key}")
-        try:
-            value = int(raw_value)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"Invalid SLA hours for {key}") from None
-        if value <= 0 or value > 24 * 365:
-            raise HTTPException(status_code=400, detail=f"SLA hours for {key} must be within 1..8760")
-        profile[key] = value
-    return profile
-
-
-def _normalize_comment_sla_hours(default_comment_sla_hours: Optional[Any]) -> int:
-    if default_comment_sla_hours is None:
-        return int(REVIEW_COMMENT_DEFAULT_SLA_HOURS)
-    try:
-        value = int(default_comment_sla_hours)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="Invalid default_comment_sla_hours") from None
-    if value <= 0 or value > 24 * 365:
-        raise HTTPException(status_code=400, detail="default_comment_sla_hours must be within 1..8760")
-    return value
-
-
 def _resolve_sla_profile_for_recompute(
     *,
     job: Dict[str, Any],
@@ -2660,52 +2430,6 @@ def _resolve_sla_profile_for_recompute(
     else:
         resolved_comment = _normalize_comment_sla_hours(default_comment_sla_hours)
     return resolved_finding, resolved_comment
-
-
-def _review_workflow_sla_profile_payload(job_id: str, job: Dict[str, Any]) -> Dict[str, Any]:
-    client_metadata = job.get("client_metadata")
-    metadata = client_metadata if isinstance(client_metadata, dict) else {}
-    saved_profile = metadata.get("sla_profile")
-    saved_profile_dict = saved_profile if isinstance(saved_profile, dict) else {}
-    has_saved_profile = bool(saved_profile_dict)
-
-    finding_sla_hours_default = dict(CRITIC_FINDING_SLA_HOURS)
-    comment_sla_default = int(REVIEW_COMMENT_DEFAULT_SLA_HOURS)
-    source = "default"
-    saved_profile_valid = True
-    saved_profile_error: Optional[str] = None
-    finding_sla_hours = finding_sla_hours_default
-    default_comment_sla_hours = comment_sla_default
-
-    if has_saved_profile:
-        try:
-            finding_sla_hours = _normalize_finding_sla_profile(
-                saved_profile_dict.get("finding_sla_hours"),
-                default=finding_sla_hours_default,
-            )
-            default_comment_sla_hours = _normalize_comment_sla_hours(
-                saved_profile_dict.get("default_comment_sla_hours")
-            )
-            source = "saved"
-        except HTTPException as exc:
-            saved_profile_valid = False
-            saved_profile_error = str(exc.detail)
-            finding_sla_hours = finding_sla_hours_default
-            default_comment_sla_hours = comment_sla_default
-            source = "default"
-
-    return {
-        "job_id": str(job_id),
-        "status": str(job.get("status") or ""),
-        "source": source,
-        "finding_sla_hours": finding_sla_hours,
-        "default_comment_sla_hours": default_comment_sla_hours,
-        "saved_profile_available": has_saved_profile,
-        "saved_profile_valid": saved_profile_valid,
-        "saved_profile_error": saved_profile_error,
-        "saved_profile_updated_at": str(saved_profile_dict.get("updated_at") or "").strip() or None,
-        "saved_profile_updated_by": str(saved_profile_dict.get("updated_by") or "").strip() or None,
-    }
 
 
 def _ensure_finding_due_at(
@@ -3313,106 +3037,6 @@ def _set_critic_fatal_flaws_status_bulk(
         persisted=not bool(dry_run),
     )
     return response
-
-
-def _validated_filter_token(
-    value: Optional[str],
-    *,
-    allowed: set[str],
-    detail: str,
-) -> Optional[str]:
-    token = str(value or "").strip().lower()
-    if not token:
-        return None
-    if token not in allowed:
-        raise HTTPException(status_code=400, detail=detail)
-    return token
-
-
-def _critic_findings_list_payload(
-    job_id: str,
-    job: Dict[str, Any],
-    *,
-    finding_status: Optional[str] = None,
-    severity: Optional[str] = None,
-    section: Optional[str] = None,
-    version_id: Optional[str] = None,
-    workflow_state: Optional[str] = None,
-    include_resolved: bool = True,
-    overdue_after_hours: int = REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
-) -> Dict[str, Any]:
-    workflow_payload = public_job_review_workflow_payload(
-        job_id,
-        job,
-        workflow_state=workflow_state,
-        overdue_after_hours=overdue_after_hours,
-    )
-    findings_raw = workflow_payload.get("findings")
-    findings = [dict(item) for item in findings_raw if isinstance(item, dict)] if isinstance(findings_raw, list) else []
-
-    filtered: list[Dict[str, Any]] = []
-    for row in findings:
-        row_status = str(row.get("status") or "open").strip().lower()
-        row_severity = str(row.get("severity") or "").strip().lower()
-        row_section = str(row.get("section") or "").strip().lower()
-        row_version_id = str(row.get("version_id") or "").strip() or None
-        row_workflow_state = str(row.get("workflow_state") or "").strip().lower()
-
-        if not include_resolved and row_status == "resolved":
-            continue
-        if finding_status is not None and row_status != finding_status:
-            continue
-        if severity is not None and row_severity != severity:
-            continue
-        if section is not None and row_section != section:
-            continue
-        if version_id is not None and row_version_id != version_id:
-            continue
-        if workflow_state is not None and row_workflow_state != workflow_state:
-            continue
-        filtered.append(row)
-
-    finding_status_counts = {"open": 0, "acknowledged": 0, "resolved": 0}
-    finding_severity_counts = {"high": 0, "medium": 0, "low": 0}
-    pending_finding_count = 0
-    overdue_finding_count = 0
-    for row in filtered:
-        row_status = str(row.get("status") or "open").strip().lower()
-        row_severity = str(row.get("severity") or "").strip().lower()
-        row_workflow_state = str(row.get("workflow_state") or "").strip().lower()
-        if row_status in finding_status_counts:
-            finding_status_counts[row_status] += 1
-        if row_severity in finding_severity_counts:
-            finding_severity_counts[row_severity] += 1
-        if row_workflow_state == "pending":
-            pending_finding_count += 1
-        elif row_workflow_state == "overdue":
-            overdue_finding_count += 1
-
-    return {
-        "job_id": str(job_id),
-        "status": str(job.get("status") or ""),
-        "filters": {
-            "status": finding_status,
-            "severity": severity,
-            "section": section,
-            "version_id": version_id,
-            "workflow_state": workflow_state,
-            "include_resolved": bool(include_resolved),
-            "overdue_after_hours": int(overdue_after_hours),
-        },
-        "summary": {
-            "finding_count": len(filtered),
-            "open_finding_count": int(finding_status_counts.get("open", 0)),
-            "acknowledged_finding_count": int(finding_status_counts.get("acknowledged", 0)),
-            "resolved_finding_count": int(finding_status_counts.get("resolved", 0)),
-            "pending_finding_count": pending_finding_count,
-            "overdue_finding_count": overdue_finding_count,
-            "finding_status_counts": finding_status_counts,
-            "finding_severity_counts": finding_severity_counts,
-        },
-        "findings": filtered,
-    }
 
 
 def _linked_finding_severity(job: Dict[str, Any], linked_finding_id: Optional[str]) -> Optional[str]:
@@ -4135,99 +3759,6 @@ def _health_diagnostics() -> dict[str, Any]:
     if client_init_error:
         diagnostics["vector_store"]["client_init_error"] = str(client_init_error)
     return diagnostics
-
-
-def _portfolio_export_response(
-    *,
-    payload: Dict[str, Any],
-    filename_prefix: str,
-    donor_id: Optional[str],
-    status: Optional[str],
-    hitl_enabled: Optional[bool],
-    export_format: Literal["csv", "json"],
-    gzip_enabled: bool,
-    csv_renderer,
-) -> StreamingResponse:
-    filename_parts = [filename_prefix]
-    if donor_id:
-        filename_parts.append(donor_id)
-    if status:
-        filename_parts.append(status)
-    if hitl_enabled is not None:
-        filename_parts.append(f"hitl_{str(hitl_enabled).lower()}")
-
-    if export_format == "csv":
-        body_text = csv_renderer(payload)
-        media_type = "text/csv; charset=utf-8"
-        extension = "csv"
-    elif export_format == "json":
-        body_text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
-        media_type = "application/json"
-        extension = "json"
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported export format")
-
-    body_bytes = body_text.encode("utf-8")
-    if gzip_enabled:
-        body_bytes = gzip.compress(body_bytes)
-        extension = f"{extension}.gz"
-        media_type = "application/gzip"
-
-    filename = "_".join(filename_parts) + f".{extension}"
-    return StreamingResponse(
-        io.BytesIO(body_bytes),
-        media_type=media_type,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _dead_letter_queue_csv_text(payload: Dict[str, Any]) -> str:
-    raw_items = payload.get("items")
-    rows: list[Any] = raw_items if isinstance(raw_items, list) else []
-    header = [
-        "index",
-        "dispatch_id",
-        "task_name",
-        "job_id",
-        "reason",
-        "attempt",
-        "max_attempts",
-        "queued_at",
-        "first_failed_at",
-        "failed_at",
-        "error",
-        "metadata_json",
-        "payload_json",
-        "raw_payload",
-    ]
-    buffer = io.StringIO()
-    writer = csv.writer(buffer)
-    writer.writerow(header)
-    for row in rows:
-        item = row if isinstance(row, dict) else {}
-        metadata_value = item.get("metadata")
-        metadata_json = json.dumps(metadata_value, ensure_ascii=False) if isinstance(metadata_value, dict) else ""
-        payload_value = item.get("payload")
-        payload_json = json.dumps(payload_value, ensure_ascii=False) if isinstance(payload_value, dict) else ""
-        writer.writerow(
-            [
-                item.get("index"),
-                item.get("dispatch_id"),
-                item.get("task_name"),
-                item.get("job_id"),
-                item.get("reason"),
-                item.get("attempt"),
-                item.get("max_attempts"),
-                item.get("queued_at"),
-                item.get("first_failed_at"),
-                item.get("failed_at"),
-                item.get("error"),
-                metadata_json,
-                payload_json,
-                item.get("raw_payload"),
-            ]
-        )
-    return buffer.getvalue()
 
 
 def _vector_store_readiness() -> dict[str, Any]:

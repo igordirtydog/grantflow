@@ -7,7 +7,6 @@ from fastapi import HTTPException, Query, Request
 from grantflow.api.app import (
     _append_review_comment,
     _checkpoint_status_token,
-    _critic_findings_list_payload,
     _find_critic_fatal_flaw,
     _find_job_by_checkpoint_id,
     _finding_actor_from_request,
@@ -21,14 +20,13 @@ from grantflow.api.app import (
     _recompute_review_workflow_sla,
     _record_job_event,
     _resolve_request_id,
-    _review_workflow_sla_profile_payload,
     _set_critic_fatal_flaw_status,
     _set_critic_fatal_flaws_status_bulk,
     _set_review_comment_status,
     _store_global_idempotency_response,
-    _validated_filter_token,
 )
 from grantflow.api.constants import CRITIC_FINDING_STATUSES, REVIEW_COMMENT_SECTIONS
+from grantflow.api.filters import _validated_filter_token
 from grantflow.api.public_views import (
     REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS,
     REVIEW_WORKFLOW_STATE_FILTER_VALUES,
@@ -42,6 +40,7 @@ from grantflow.api.public_views import (
     public_job_review_workflow_sla_trends_payload,
     public_job_review_workflow_trends_payload,
 )
+from grantflow.api.review_helpers import _critic_findings_list_payload, _review_workflow_sla_profile_payload
 from grantflow.api.schemas import (
     CriticFatalFlawPublicResponse,
     CriticFatalFlawStatusUpdatePublicResponse,
