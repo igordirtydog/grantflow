@@ -198,8 +198,6 @@ def test_demo_console_page_loads():
     assert "doc_family=" in body
     assert "/demo/presets" in body
     assert "/generate/presets" in body
-    assert "/generate/presets/legacy" in body
-    assert "/generate/presets/rbm" in body
     assert "/generate/from-preset" in body
     assert "/ingest/presets" in body
     assert "/ingest" in body

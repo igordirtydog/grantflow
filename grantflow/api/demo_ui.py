@@ -2149,72 +2149,7 @@ def render_demo_ui_html() -> str:
             labels[presetKey] = String(row.label || "").trim() || normalized.label;
           }
         } catch (err) {
-          // Fallback to legacy/rbm split endpoints for older servers.
-        }
-
-        if (Object.keys(merged).length) {
-          GENERATE_PRESETS = merged;
-          for (const key of Object.keys(SERVER_GENERATE_PRESET_LABELS)) {
-            delete SERVER_GENERATE_PRESET_LABELS[key];
-          }
-          for (const [key, value] of Object.entries(labels)) {
-            SERVER_GENERATE_PRESET_LABELS[key] = value;
-          }
-          const storedPreset = localStorage.getItem("grantflow_demo_generate_preset") || "";
-          const preferredValue =
-            String(els.generatePresetSelect.value || "").trim() || String(storedPreset || "").trim();
-          renderGeneratePresetOptions({ preferredValue });
-          renderGeneratePresetReadiness();
-          renderZeroReadinessWarningPreference();
           return;
-        }
-
-        try {
-          const legacyListBody = await apiFetch("/generate/presets/legacy");
-          const legacyRows = Array.isArray(legacyListBody?.presets) ? legacyListBody.presets : [];
-          for (const row of legacyRows) {
-            if (!row || typeof row !== "object") continue;
-            const presetKey = String(row.preset_key || "").trim();
-            if (!presetKey) continue;
-            try {
-              const detail = await apiFetch(`/generate/presets/legacy/${encodeURIComponent(presetKey)}`);
-              const normalized = normalizeGeneratePresetRecord({ presetKey, row, detail, sourceKind: "legacy" });
-              merged[presetKey] = normalized.preset;
-              labels[presetKey] = normalized.label;
-            } catch (err) {
-              // Skip broken preset entries and continue loading others.
-            }
-          }
-        } catch (err) {
-          // Ignore endpoint failure and continue with RBM presets.
-        }
-
-        try {
-          const rbmListBody = await apiFetch("/generate/presets/rbm");
-          const rbmRows = Array.isArray(rbmListBody?.presets) ? rbmListBody.presets : [];
-          for (const row of rbmRows) {
-            if (!row || typeof row !== "object") continue;
-            const sampleId = String(row.sample_id || "").trim();
-            if (!sampleId) continue;
-            try {
-              const detail = await apiFetch(
-                `/generate/presets/rbm/${encodeURIComponent(sampleId)}?llm_mode=true&hitl_enabled=true`
-              );
-              const normalized = normalizeGeneratePresetRecord({
-                presetKey: sampleId,
-                row,
-                detail,
-                prefix: "RBM",
-                sourceKind: "rbm",
-              });
-              merged[sampleId] = normalized.preset;
-              labels[sampleId] = normalized.label;
-            } catch (err) {
-              // Skip broken preset entries and continue loading others.
-            }
-          }
-        } catch (err) {
-          // Ignore endpoint failure if RBM presets are unavailable.
         }
 
         if (!Object.keys(merged).length) return;
