@@ -194,6 +194,8 @@
   "job_id": "job-quality-1",
   "mel": {
     "avg_retrieval_confidence": 0.64,
+    "baseline_coverage_rate": null,
+    "baseline_placeholder_count": 0,
     "citation_policy": {
       "claim_support_types": [
         "rag_result",
@@ -202,11 +204,37 @@
       ],
       "high_confidence_threshold": 0.35
     },
+    "data_source_coverage_rate": null,
+    "definition_coverage_rate": null,
+    "disaggregation_coverage_rate": null,
     "engine": "deterministic:retrieval_template",
+    "formula_coverage_rate": null,
+    "frequency_coverage_rate": null,
+    "indicator_count": 0,
     "llm_used": false,
+    "missing_field_counts": {
+      "baseline": 0,
+      "data_source": 0,
+      "definition": 0,
+      "disaggregation": 0,
+      "formula": 0,
+      "frequency": 0,
+      "result_level": 0,
+      "target": 0
+    },
+    "result_level_counts": {
+      "impact": 0,
+      "outcome": 0,
+      "output": 0,
+      "unknown": 0
+    },
+    "result_level_coverage_rate": null,
     "retrieval_hits_count": 2,
     "retrieval_namespace": "tenant_a/usaid_ads201",
-    "retrieval_used": true
+    "retrieval_used": true,
+    "smart_field_coverage_rate": null,
+    "target_coverage_rate": null,
+    "target_placeholder_count": 0
   },
   "mel_grounding_policy": {
     "blocking": false,

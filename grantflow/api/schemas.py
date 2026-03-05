@@ -703,6 +703,20 @@ class JobQualityMelSummaryPublicResponse(BaseModel):
     retrieval_hits_count: Optional[int] = None
     avg_retrieval_confidence: Optional[float] = None
     citation_policy: Optional[Dict[str, Any]] = None
+    indicator_count: Optional[int] = None
+    baseline_coverage_rate: Optional[float] = None
+    target_coverage_rate: Optional[float] = None
+    frequency_coverage_rate: Optional[float] = None
+    formula_coverage_rate: Optional[float] = None
+    definition_coverage_rate: Optional[float] = None
+    data_source_coverage_rate: Optional[float] = None
+    disaggregation_coverage_rate: Optional[float] = None
+    result_level_coverage_rate: Optional[float] = None
+    smart_field_coverage_rate: Optional[float] = None
+    baseline_placeholder_count: Optional[int] = None
+    target_placeholder_count: Optional[int] = None
+    missing_field_counts: Optional[Dict[str, int]] = None
+    result_level_counts: Optional[Dict[str, int]] = None
 
     model_config = ConfigDict(extra="allow")
 

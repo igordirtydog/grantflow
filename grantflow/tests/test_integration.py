@@ -6249,6 +6249,31 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
             "state": {
                 "donor_id": "usaid",
                 "toc_draft": {"toc": {"brief": "Sample ToC"}},
+                "logframe_draft": {
+                    "indicators": [
+                        {
+                            "indicator_id": "IND_001",
+                            "name": "Public servants trained on responsible AI",
+                            "baseline": "0 people",
+                            "target": "240 people",
+                            "frequency": "quarterly",
+                            "formula": "Count of trainees completing curriculum",
+                            "definition": "Number of civil servants completing certified AI modules.",
+                            "data_source": "Training attendance and certification registry",
+                            "disaggregation": ["sex", "age", "region"],
+                            "result_level": "outcome",
+                        },
+                        {
+                            "indicator_id": "IND_002",
+                            "name": "Government agencies adopting AI governance SOPs",
+                            "baseline": "TBD",
+                            "target": "",
+                            "frequency": "semiannual",
+                            "data_source": "Ministerial SOP approval records",
+                            "result_level": "output",
+                        },
+                    ]
+                },
                 "quality_score": 9.1,
                 "critic_score": 8.9,
                 "needs_revision": False,
@@ -6456,6 +6481,29 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert mel_summary.get("engine") in {"deterministic:retrieval_template", "llm:stub-mel-model", None}
     assert mel_summary.get("retrieval_namespace") in {None, "usaid_ads201"}
     assert mel_summary.get("retrieval_hits_count") in {None, 3}
+    assert mel_summary.get("indicator_count") == 2
+    assert mel_summary.get("baseline_coverage_rate") == 0.5
+    assert mel_summary.get("target_coverage_rate") == 0.5
+    assert mel_summary.get("frequency_coverage_rate") == 1.0
+    assert mel_summary.get("formula_coverage_rate") == 0.5
+    assert mel_summary.get("definition_coverage_rate") == 0.5
+    assert mel_summary.get("data_source_coverage_rate") == 1.0
+    assert mel_summary.get("disaggregation_coverage_rate") == 0.5
+    assert mel_summary.get("result_level_coverage_rate") == 1.0
+    assert mel_summary.get("smart_field_coverage_rate") == 0.7143
+    assert mel_summary.get("baseline_placeholder_count") == 1
+    assert mel_summary.get("target_placeholder_count") == 1
+    assert mel_summary.get("missing_field_counts") == {
+        "baseline": 1,
+        "target": 1,
+        "frequency": 0,
+        "formula": 1,
+        "definition": 1,
+        "data_source": 0,
+        "disaggregation": 1,
+        "result_level": 0,
+    }
+    assert mel_summary.get("result_level_counts") == {"impact": 0, "outcome": 1, "output": 1, "unknown": 0}
     assert "mel_grounding_policy" in body
     export_contract = body.get("export_contract") or {}
     assert export_contract["template_key"] == "usaid"

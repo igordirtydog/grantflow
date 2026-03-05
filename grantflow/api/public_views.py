@@ -60,6 +60,38 @@ GROUNDING_FALLBACK_MEDIUM_THRESHOLD = 0.5
 GROUNDING_NON_RETRIEVAL_HIGH_THRESHOLD = 0.8
 GROUNDING_NON_RETRIEVAL_MEDIUM_THRESHOLD = 0.5
 GROUNDED_GATE_SECTION_ORDER = ("toc", "logframe", "general")
+MEL_PLACEHOLDER_VALUES = {
+    "",
+    "tbd",
+    "to be determined",
+    "placeholder",
+    "n/a",
+    "na",
+    "unknown",
+    "-",
+    "--",
+    "none",
+    "null",
+}
+MEL_COVERAGE_FIELDS = (
+    "baseline",
+    "target",
+    "frequency",
+    "formula",
+    "definition",
+    "data_source",
+    "disaggregation",
+    "result_level",
+)
+MEL_SMART_COVERAGE_FIELDS = (
+    "baseline",
+    "target",
+    "frequency",
+    "formula",
+    "definition",
+    "data_source",
+    "result_level",
+)
 
 
 def _job_state_dict(job: Dict[str, Any]) -> Dict[str, Any]:
@@ -2162,6 +2194,89 @@ def _toc_text_quality_summary(rule_checks: list[Dict[str, Any]], critic_flaws: l
     }
 
 
+def _is_mel_placeholder_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return str(value).strip().lower() in MEL_PLACEHOLDER_VALUES
+    if isinstance(value, list):
+        if not value:
+            return True
+        return all(_is_mel_placeholder_value(item) for item in value)
+    return False
+
+
+def _mel_field_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        token = str(value).strip().lower()
+        return bool(token) and token not in MEL_PLACEHOLDER_VALUES
+    if isinstance(value, list):
+        if not value:
+            return False
+        return any(_mel_field_present(item) for item in value)
+    if isinstance(value, dict):
+        return bool(value)
+    if isinstance(value, (int, float, bool)):
+        return True
+    return bool(str(value).strip())
+
+
+def _mel_result_level(value: Any) -> str:
+    token = str(value or "").strip().lower()
+    if token in {"impact", "outcome", "output"}:
+        return token
+    return "unknown"
+
+
+def _mel_indicator_coverage_summary(logframe_draft: Dict[str, Any]) -> Dict[str, Any]:
+    raw_indicators = logframe_draft.get("indicators")
+    indicators = [row for row in raw_indicators if isinstance(row, dict)] if isinstance(raw_indicators, list) else []
+    indicator_count = len(indicators)
+    coverage_counts: Dict[str, int] = {field: 0 for field in MEL_COVERAGE_FIELDS}
+    result_level_counts: Dict[str, int] = {"impact": 0, "outcome": 0, "output": 0, "unknown": 0}
+    baseline_placeholder_count = 0
+    target_placeholder_count = 0
+
+    for indicator in indicators:
+        for field in MEL_COVERAGE_FIELDS:
+            if _mel_field_present(indicator.get(field)):
+                coverage_counts[field] = int(coverage_counts.get(field, 0)) + 1
+        if _is_mel_placeholder_value(indicator.get("baseline")):
+            baseline_placeholder_count += 1
+        if _is_mel_placeholder_value(indicator.get("target")):
+            target_placeholder_count += 1
+        level = _mel_result_level(indicator.get("result_level"))
+        result_level_counts[level] = int(result_level_counts.get(level, 0)) + 1
+
+    def _rate(count: int) -> Optional[float]:
+        return round(count / indicator_count, 4) if indicator_count else None
+
+    missing_field_counts = {
+        field: max(0, indicator_count - int(coverage_counts.get(field, 0))) for field in MEL_COVERAGE_FIELDS
+    }
+    smart_fields_present_total = sum(int(coverage_counts.get(field, 0)) for field in MEL_SMART_COVERAGE_FIELDS)
+    smart_fields_total = indicator_count * len(MEL_SMART_COVERAGE_FIELDS)
+
+    return {
+        "indicator_count": indicator_count,
+        "baseline_coverage_rate": _rate(int(coverage_counts.get("baseline", 0))),
+        "target_coverage_rate": _rate(int(coverage_counts.get("target", 0))),
+        "frequency_coverage_rate": _rate(int(coverage_counts.get("frequency", 0))),
+        "formula_coverage_rate": _rate(int(coverage_counts.get("formula", 0))),
+        "definition_coverage_rate": _rate(int(coverage_counts.get("definition", 0))),
+        "data_source_coverage_rate": _rate(int(coverage_counts.get("data_source", 0))),
+        "disaggregation_coverage_rate": _rate(int(coverage_counts.get("disaggregation", 0))),
+        "result_level_coverage_rate": _rate(int(coverage_counts.get("result_level", 0))),
+        "smart_field_coverage_rate": (round(smart_fields_present_total / smart_fields_total, 4) if smart_fields_total else None),
+        "baseline_placeholder_count": baseline_placeholder_count,
+        "target_placeholder_count": target_placeholder_count,
+        "missing_field_counts": missing_field_counts,
+        "result_level_counts": result_level_counts,
+    }
+
+
 def public_job_quality_payload(
     job_id: str,
     job: Dict[str, Any],
@@ -2328,6 +2443,7 @@ def public_job_quality_payload(
     grounded_gate: Dict[str, Any] = (
         cast(Dict[str, Any], raw_grounded_gate) if isinstance(raw_grounded_gate, dict) else {}
     )
+    mel_indicator_coverage = _mel_indicator_coverage_summary(logframe_draft)
     readiness_payload = _public_job_quality_readiness_payload(job, ingest_inventory_rows)
     preflight_payload = _public_job_preflight_payload(job)
     export_contract_gate = _state_export_contract_gate(state_dict)
@@ -2783,6 +2899,7 @@ def public_job_quality_payload(
                     "high_confidence_threshold": 0.35,
                 }
             ),
+            **mel_indicator_coverage,
         },
         "mel_grounding_policy": sanitize_for_public_response(mel_grounding_policy),
         "export_contract": sanitize_for_public_response(export_contract_gate),

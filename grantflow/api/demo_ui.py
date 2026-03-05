@@ -3596,9 +3596,24 @@ def render_demo_ui_html() -> str:
               typeof mel.avg_retrieval_confidence === "number"
                 ? Number(mel.avg_retrieval_confidence).toFixed(3)
                 : "-",
+            indicator_count: Number.isFinite(Number(mel.indicator_count))
+              ? Number(mel.indicator_count)
+              : "-",
+            smart_field_coverage_rate:
+              typeof mel.smart_field_coverage_rate === "number"
+                ? `${(Number(mel.smart_field_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            baseline_coverage_rate:
+              typeof mel.baseline_coverage_rate === "number"
+                ? `${(Number(mel.baseline_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
+            target_coverage_rate:
+              typeof mel.target_coverage_rate === "number"
+                ? `${(Number(mel.target_coverage_rate) * 100).toFixed(1)}%`
+                : "-",
           },
           "No MEL generation summary for this job.",
-          8
+          10
         );
         renderKeyValueList(
           els.qualityCitationTypeCountsList,
