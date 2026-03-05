@@ -2248,6 +2248,56 @@ def _job_events_csv_text(payload: Dict[str, Any]) -> str:
     return buffer.getvalue()
 
 
+def _job_comments_csv_text(payload: Dict[str, Any]) -> str:
+    raw_comments = payload.get("comments")
+    comments: list[Any] = raw_comments if isinstance(raw_comments, list) else []
+    base_columns = [
+        "comment_id",
+        "ts",
+        "section",
+        "status",
+        "message",
+        "author",
+        "version_id",
+        "linked_finding_id",
+        "linked_finding_severity",
+        "resolved_at",
+        "reopened_at",
+        "actor",
+        "request_id",
+        "due_at",
+        "sla_hours",
+    ]
+    header = [*base_columns, "payload_json"]
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(header)
+    for row in comments:
+        item = row if isinstance(row, dict) else {}
+        extras = {k: v for k, v in item.items() if k not in base_columns and v is not None}
+        writer.writerow(
+            [
+                item.get("comment_id"),
+                item.get("ts"),
+                item.get("section"),
+                item.get("status"),
+                item.get("message"),
+                item.get("author"),
+                item.get("version_id"),
+                item.get("linked_finding_id"),
+                item.get("linked_finding_severity"),
+                item.get("resolved_at"),
+                item.get("reopened_at"),
+                item.get("actor"),
+                item.get("request_id"),
+                item.get("due_at"),
+                item.get("sla_hours"),
+                (json.dumps(extras, sort_keys=True, ensure_ascii=False) if extras else ""),
+            ]
+        )
+    return buffer.getvalue()
+
+
 def _tenant_from_namespace(namespace: Any) -> Optional[str]:
     raw = str(namespace or "").strip()
     if "/" not in raw:
@@ -6917,6 +6967,42 @@ def get_status_comments(
         section=section,
         comment_status=comment_status,
         version_id=version_id,
+    )
+
+
+@app.get("/status/{job_id}/comments/export")
+def export_status_comments(
+    job_id: str,
+    request: Request,
+    section: Optional[str] = None,
+    comment_status: Optional[str] = Query(default=None, alias="status"),
+    version_id: Optional[str] = None,
+    format: Literal["csv", "json"] = Query(default="csv"),
+    gzip_enabled: bool = Query(default=False, alias="gzip"),
+):
+    require_api_key_if_configured(request, for_read=True)
+    job = _get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    _ensure_job_tenant_read_access(request, job)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or job
+    job = _normalize_review_comments_for_job(job_id) or job
+    payload = public_job_comments_payload(
+        job_id,
+        job,
+        section=section,
+        comment_status=comment_status,
+        version_id=version_id,
+    )
+    return _portfolio_export_response(
+        payload=payload,
+        filename_prefix=f"grantflow_comments_{job_id}",
+        donor_id=None,
+        status=None,
+        hitl_enabled=None,
+        export_format=format,
+        gzip_enabled=gzip_enabled,
+        csv_renderer=_job_comments_csv_text,
     )
 
 

@@ -233,6 +233,7 @@ Review/traceability:
 - `POST /status/{job_id}/critic/findings/{finding_id}/ack`
 - `POST /status/{job_id}/critic/findings/{finding_id}/resolve`
 - `GET /status/{job_id}/comments`
+- `GET /status/{job_id}/comments/export` (`format=csv|json`, `gzip=true|false`, optional `section`, `status`, `version_id`)
 - `POST /status/{job_id}/comments`
 - `POST /status/{job_id}/comments/{comment_id}/resolve`
 - `POST /status/{job_id}/comments/{comment_id}/reopen`

@@ -4217,6 +4217,71 @@ def test_status_comments_endpoints_create_list_and_filter():
     assert "review_comments" not in status_resp.json()
 
 
+def test_status_comments_export_endpoint_supports_filters_csv_json_and_gzip():
+    job_id = "comments-export-job-1"
+    api_app_module.JOB_STORE.set(
+        job_id,
+        {
+            "status": "done",
+            "state": {"donor_id": "usaid"},
+            "review_comments": [
+                {
+                    "comment_id": "c-1",
+                    "ts": "2026-03-02T10:00:00+00:00",
+                    "section": "toc",
+                    "status": "open",
+                    "message": "Clarify assumptions in outcome chain.",
+                    "author": "reviewer-a",
+                    "version_id": "toc_v2",
+                    "linked_finding_id": "finding-1",
+                    "due_at": "2026-03-05T10:00:00+00:00",
+                    "sla_hours": 72,
+                },
+                {
+                    "comment_id": "c-2",
+                    "ts": "2026-03-02T11:00:00+00:00",
+                    "section": "general",
+                    "status": "resolved",
+                    "message": "Looks good now.",
+                    "author": "reviewer-b",
+                    "version_id": "toc_v2",
+                    "resolved_at": "2026-03-02T12:00:00+00:00",
+                },
+            ],
+        },
+    )
+
+    export_csv = client.get(
+        f"/status/{job_id}/comments/export",
+        params={"format": "csv", "section": "toc", "status": "open", "version_id": "toc_v2"},
+    )
+    assert export_csv.status_code == 200
+    assert "text/csv" in (export_csv.headers.get("content-type") or "")
+    assert f'grantflow_comments_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert "comment_id,ts,section,status,message,author,version_id" in export_csv.text
+    assert "c-1" in export_csv.text
+    assert "c-2" not in export_csv.text
+
+    export_json = client.get(
+        f"/status/{job_id}/comments/export",
+        params={"format": "json", "status": "resolved"},
+    )
+    assert export_json.status_code == 200
+    assert "application/json" in (export_json.headers.get("content-type") or "")
+    export_json_body = json.loads(export_json.text)
+    assert export_json_body["job_id"] == job_id
+    assert export_json_body["comment_count"] == 1
+    assert export_json_body["comments"][0]["comment_id"] == "c-2"
+
+    export_csv_gzip = client.get(
+        f"/status/{job_id}/comments/export",
+        params={"format": "csv", "gzip": "true"},
+    )
+    assert export_csv_gzip.status_code == 200
+    assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
+
+
 def test_status_comments_create_request_id_is_idempotent():
     response = client.post(
         "/generate",
@@ -9766,6 +9831,12 @@ def test_read_endpoints_require_api_key_when_configured(monkeypatch):
     comments_auth = client.get(f"/status/{job_id}/comments", headers={"X-API-Key": "test-secret"})
     assert comments_auth.status_code == 200
 
+    comments_export_unauth = client.get(f"/status/{job_id}/comments/export")
+    assert comments_export_unauth.status_code == 401
+
+    comments_export_auth = client.get(f"/status/{job_id}/comments/export", headers={"X-API-Key": "test-secret"})
+    assert comments_export_auth.status_code == 200
+
     review_workflow_unauth = client.get(f"/status/{job_id}/review/workflow")
     assert review_workflow_unauth.status_code == 401
 
@@ -10275,6 +10346,9 @@ def test_openapi_declares_api_key_security_scheme():
     ).get("security")
     status_comments_get_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/comments") or {}).get("get") or {}
+    ).get("security")
+    status_comments_export_security = (
+        ((spec.get("paths") or {}).get("/status/{job_id}/comments/export") or {}).get("get") or {}
     ).get("security")
     status_review_workflow_security = (
         ((spec.get("paths") or {}).get("/status/{job_id}/review/workflow") or {}).get("get") or {}
@@ -10892,6 +10966,7 @@ def test_openapi_declares_api_key_security_scheme():
     assert status_critic_finding_resolve_security == [{"ApiKeyAuth": []}]
     assert status_critic_finding_bulk_status_security == [{"ApiKeyAuth": []}]
     assert status_comments_get_security == [{"ApiKeyAuth": []}]
+    assert status_comments_export_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_trends_security == [{"ApiKeyAuth": []}]
     assert status_review_workflow_sla_security == [{"ApiKeyAuth": []}]
