@@ -562,6 +562,8 @@ make eval-llm-grounded-strict
 
 GitHub workflow `.github/workflows/llm-eval-grounded-strict.yml` enforces strict mode:
 it does not expose `skip_expectations` input; strict lane runs with expectations enabled only.
+For filtered manual runs (subset `donor_ids` or explicit `case_ids`), workflow auto-enables
+`--baseline-ignore-missing-current-cases` to suppress expected baseline "missing case" warnings.
 Local `make eval-llm-grounded-strict` enforces the same policy via donor gate check.
 
 `llm_grounded_strict_cases.json` includes explicit `expected_doc_families` per donor.

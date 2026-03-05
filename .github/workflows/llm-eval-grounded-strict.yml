@@ -76,6 +76,8 @@ jobs:
           CASE_IDS="${INPUT_CASE_IDS:-}"
           SEED_MANIFEST="${INPUT_SEED_MANIFEST:-docs/rag_seed_corpus/ingest_manifest.jsonl}"
           MIN_SEED_PER_FAMILY="${INPUT_MIN_SEED_READINESS_PER_FAMILY:-1}"
+          FULL_DONOR_IDS="usaid,eu,worldbank,giz,state_department"
+          PARTIAL_BASELINE=false
 
           EXTRA_ARGS=()
           if [ -n "${DONOR_IDS}" ]; then
@@ -83,6 +85,13 @@ jobs:
           fi
           if [ -n "${CASE_IDS}" ]; then
             EXTRA_ARGS+=(--case-id "$CASE_IDS")
+            PARTIAL_BASELINE=true
+          fi
+          if [ "${DONOR_IDS}" != "${FULL_DONOR_IDS}" ]; then
+            PARTIAL_BASELINE=true
+          fi
+          if [ "${PARTIAL_BASELINE}" = "true" ]; then
+            EXTRA_ARGS+=(--baseline-ignore-missing-current-cases)
           fi
 
           python -m grantflow.eval.harness \

@@ -1197,7 +1197,11 @@ def build_regression_baseline_snapshot(suite: dict[str, Any]) -> dict[str, Any]:
 
 
 def compare_suite_to_baseline(
-    suite: dict[str, Any], baseline: dict[str, Any], *, tolerance: float = REGRESSION_TOLERANCE
+    suite: dict[str, Any],
+    baseline: dict[str, Any],
+    *,
+    tolerance: float = REGRESSION_TOLERANCE,
+    ignore_missing_current_cases: bool = False,
 ) -> dict[str, Any]:
     baseline_cases = _dict_from(baseline.get("cases")) if isinstance(baseline, dict) else {}
     current_cases = {
@@ -1303,16 +1307,17 @@ def compare_suite_to_baseline(
                     }
                 )
 
-    for case_id in baseline_cases:
-        if case_id not in current_cases:
-            warnings.append(
-                {
-                    "type": "baseline_case_missing_in_current_suite",
-                    "case_id": case_id,
-                    "donor_id": _case_donor_id(baseline_cases.get(case_id)),
-                    "message": "Baseline snapshot contains a case not present in current suite.",
-                }
-            )
+    if not bool(ignore_missing_current_cases):
+        for case_id in baseline_cases:
+            if case_id not in current_cases:
+                warnings.append(
+                    {
+                        "type": "baseline_case_missing_in_current_suite",
+                        "case_id": case_id,
+                        "donor_id": _case_donor_id(baseline_cases.get(case_id)),
+                        "message": "Baseline snapshot contains a case not present in current suite.",
+                    }
+                )
 
     donor_breakdown: dict[str, dict[str, Any]] = {}
     for item in regressions:
@@ -1617,6 +1622,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         default=None,
         help="Write formatted baseline comparison summary to this path.",
     )
+    parser.add_argument(
+        "--baseline-ignore-missing-current-cases",
+        action="store_true",
+        help=(
+            "Ignore warnings for baseline cases missing in current suite "
+            "(useful for filtered/subset runs)."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -1744,7 +1757,11 @@ def main(argv: list[str] | None = None) -> int:
     comparison: dict[str, Any] | None = None
     if args.compare_to_baseline is not None:
         baseline = json.loads(args.compare_to_baseline.read_text(encoding="utf-8"))
-        comparison = compare_suite_to_baseline(suite, baseline)
+        comparison = compare_suite_to_baseline(
+            suite,
+            baseline,
+            ignore_missing_current_cases=bool(args.baseline_ignore_missing_current_cases),
+        )
         comparison["baseline_path"] = str(args.compare_to_baseline)
         comparison_text = format_eval_comparison_report(comparison)
         print()

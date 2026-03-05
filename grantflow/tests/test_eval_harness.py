@@ -1225,6 +1225,54 @@ def test_eval_harness_regression_comparison_flags_only_degradations():
     assert "Top donor weighted risk" in text
 
 
+def test_eval_harness_regression_comparison_can_ignore_missing_baseline_cases():
+    suite = {
+        "cases": [
+            {
+                "case_id": "case_a",
+                "donor_id": "usaid",
+                "metrics": {
+                    "quality_score": 9.0,
+                    "critic_score": 8.5,
+                    "citations_total": 4,
+                    "architect_citation_count": 3,
+                    "mel_citation_count": 1,
+                    "high_confidence_citation_count": 1,
+                    "architect_threshold_hit_rate": 0.5,
+                    "citation_confidence_avg": 0.4,
+                    "low_confidence_citation_count": 1,
+                    "rag_low_confidence_citation_count": 0,
+                    "fallback_namespace_citation_count": 0,
+                    "draft_version_count": 2,
+                    "fatal_flaw_count": 0,
+                    "high_severity_fatal_flaw_count": 0,
+                    "error_count": 0,
+                    "toc_schema_valid": True,
+                    "has_toc_draft": True,
+                    "has_logframe_draft": True,
+                    "needs_revision": False,
+                },
+            }
+        ]
+    }
+    baseline = {
+        "cases": {
+            "case_a": {"donor_id": "usaid", "metrics": {"quality_score": 8.0}},
+            "missing_now": {"donor_id": "eu", "metrics": {"quality_score": 8.0}},
+        }
+    }
+
+    with_missing_warning = compare_suite_to_baseline(suite, baseline)
+    without_missing_warning = compare_suite_to_baseline(
+        suite,
+        baseline,
+        ignore_missing_current_cases=True,
+    )
+    assert with_missing_warning["warning_count"] >= 1
+    assert without_missing_warning["warning_count"] == 0
+    assert without_missing_warning["has_regressions"] is False
+
+
 def test_eval_harness_cli_can_write_baseline_and_comparison_reports(tmp_path):
     suite_cases = load_eval_cases()
     suite = run_eval_suite(suite_cases)
