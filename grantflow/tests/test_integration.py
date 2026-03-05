@@ -12409,6 +12409,42 @@ def test_export_both_zip():
     assert b"PK" == export.content[:2]
 
 
+def test_export_docx_includes_mel_indicator_summary_section():
+    from docx import Document
+
+    gen = client.post(
+        "/generate",
+        json={
+            "donor_id": "usaid",
+            "input_context": {"project": "Digital Service Improvement", "country": "Kenya"},
+            "llm_mode": False,
+            "hitl_enabled": False,
+        },
+    )
+    assert gen.status_code == 200
+    job_id = gen.json()["job_id"]
+    status = _wait_for_terminal_status(job_id)
+    assert status["status"] == "done"
+    state = status["state"]
+    indicators = ((state.get("logframe_draft") or {}).get("indicators") or [])
+    assert isinstance(indicators, list) and indicators
+
+    export = client.post("/export", json={"payload": state, "format": "docx"})
+    assert export.status_code == 200
+    assert export.headers["content-type"].startswith(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+    doc = Document(io.BytesIO(export.content))
+    text = "\n".join(p.text for p in doc.paragraphs)
+    assert "MEL Indicator Summary" in text
+    first_indicator_id = str(indicators[0].get("indicator_id") or "").strip()
+    if first_indicator_id:
+        assert first_indicator_id in text
+    assert "Frequency:" in text
+    assert "Data source:" in text
+
+
 def test_hitl_checkpoint_endpoints():
     from grantflow.swarm.hitl import hitl_manager
 
