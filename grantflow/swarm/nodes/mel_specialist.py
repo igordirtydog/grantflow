@@ -562,6 +562,8 @@ def _rows(value: Any) -> list[list[Any]]:
 
 def _query_variants(state: Dict[str, Any], base_query: str, *, max_variants: int) -> list[str]:
     input_context = state_input_context(state)
+    donor_id = state_donor_id(state, default="donor")
+    donor_key = str(donor_id or "").strip().lower()
     project = str(input_context.get("project") or "").strip()
     country = str(input_context.get("country") or "").strip()
     problem = str(input_context.get("problem") or "").strip()
@@ -569,11 +571,23 @@ def _query_variants(state: Dict[str, Any], base_query: str, *, max_variants: int
     toc = state.get("toc_draft", {}) or {}
     toc_payload = (toc.get("toc") or {}) if isinstance(toc, dict) else {}
     toc_summary = json.dumps(toc_payload, ensure_ascii=True)[:220] if isinstance(toc_payload, dict) else ""
+    results_focus = ""
+    if donor_key == "eu":
+        results_focus = (
+            f"{project} {country} eu logframe indicators means of verification baseline target "
+            "specific objectives expected outcomes"
+        ).strip()
+    elif donor_key == "worldbank":
+        results_focus = (
+            f"{project} {country} world bank results framework pdo indicators "
+            "intermediate results indicators implementation status results report"
+        ).strip()
 
     candidates = [
         base_query.strip(),
         f"{project} {country} MEL indicators baseline target verification frequency".strip(),
         f"{project} {country} monitoring evaluation learning results framework assumptions".strip(),
+        results_focus,
         f"{project} {country} problem {problem[:160]} expected change {expected_change[:160]}".strip(),
         f"{project} {country} toc summary {toc_summary}".strip(),
     ]

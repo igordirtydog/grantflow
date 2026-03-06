@@ -233,6 +233,45 @@ def test_mel_llm_mode_uses_structured_output_when_available(monkeypatch):
     )
 
 
+def test_mel_query_variants_include_eu_and_worldbank_specific_terms():
+    eu_state = {
+        "donor_id": "eu",
+        "input_context": {"project": "Digital Governance", "country": "Moldova"},
+        "toc_draft": {
+            "toc": {
+                "overall_objective": {"title": "Improve digital governance performance"},
+                "specific_objectives": [{"title": "Strengthen institutional capacity"}],
+                "expected_outcomes": [{"expected_change": "Institutions demonstrate measurable improvements"}],
+            }
+        },
+    }
+    wb_state = {
+        "donor_id": "worldbank",
+        "input_context": {"project": "Public Sector Performance", "country": "Uzbekistan"},
+        "toc_draft": {
+            "toc": {
+                "project_development_objective": "Improve service delivery performance",
+                "objectives": [{"title": "Strengthen institutional performance"}],
+                "results_chain": [{"description": "Agencies implement workflow improvements"}],
+            }
+        },
+    }
+
+    eu_query = mel_module._build_query_text(eu_state)
+    wb_query = mel_module._build_query_text(wb_state)
+    eu_variants = mel_module._query_variants(eu_state, eu_query, max_variants=6)
+    wb_variants = mel_module._query_variants(wb_state, wb_query, max_variants=6)
+
+    eu_combined = " || ".join(eu_variants).lower()
+    wb_combined = " || ".join(wb_variants).lower()
+    assert "means of verification" in eu_combined
+    assert "specific objectives" in eu_combined
+    assert "expected outcomes" in eu_combined
+    assert "pdo indicators" in wb_combined
+    assert "intermediate results indicators" in wb_combined
+    assert "implementation status results report" in wb_combined
+
+
 def test_mel_llm_prompt_receives_full_input_context_and_schema_contract(monkeypatch):
     monkeypatch.setattr(mel_module, "openai_compatible_llm_available", lambda: True)
 
