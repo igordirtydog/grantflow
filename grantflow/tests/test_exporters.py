@@ -553,6 +553,7 @@ def test_excel_export_logframe_sheet_includes_smart_indicator_columns():
                 "indicator_id": "IND_001",
                 "name": "Service coverage rate",
                 "result_level": "outcome",
+                "toc_statement_path": "toc.outcomes[0]",
                 "justification": "Tracks outcome-level service adoption.",
                 "citation": "USAID ADS 201 p.12",
                 "baseline": "0%",
@@ -564,6 +565,7 @@ def test_excel_export_logframe_sheet_includes_smart_indicator_columns():
                 "disaggregation": ["sex", "age", "location"],
                 "means_of_verification": "Verified PMP records and spot-check files",
                 "owner": "MEL lead and implementing partner M&E team",
+                "evidence_excerpt": "Service uptake evidence extracted from validated implementation records.",
             }
         ]
     }
@@ -575,8 +577,10 @@ def test_excel_export_logframe_sheet_includes_smart_indicator_columns():
         "Indicator ID",
         "Name",
         "Result Level",
+        "ToC Statement Path",
         "Justification",
         "Citation",
+        "Readiness Hint",
         "Baseline",
         "Target",
         "Frequency",
@@ -586,15 +590,19 @@ def test_excel_export_logframe_sheet_includes_smart_indicator_columns():
         "Disaggregation",
         "Means of Verification",
         "Owner",
+        "Evidence Excerpt",
     )
     assert rows[1][0] == "IND_001"
     assert rows[1][2] == "outcome"
-    assert rows[1][7] == "quarterly"
-    assert rows[1][8] == "(Numerator / Denominator) * 100"
-    assert rows[1][10] == "PMP indicator tracking dataset"
-    assert rows[1][11] == "sex, age, location"
-    assert rows[1][12] == "Verified PMP records and spot-check files"
-    assert rows[1][13] == "MEL lead and implementing partner M&E team"
+    assert rows[1][3] == "toc.outcomes[0]"
+    assert rows[1][6] == "review-ready"
+    assert rows[1][9] == "quarterly"
+    assert rows[1][10] == "(Numerator / Denominator) * 100"
+    assert rows[1][12] == "PMP indicator tracking dataset"
+    assert rows[1][13] == "sex, age, location"
+    assert rows[1][14] == "Verified PMP records and spot-check files"
+    assert rows[1][15] == "MEL lead and implementing partner M&E team"
+    assert "validated implementation records" in str(rows[1][16])
 
 
 def test_excel_export_includes_template_meta_sheet():

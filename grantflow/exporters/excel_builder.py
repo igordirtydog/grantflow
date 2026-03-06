@@ -109,6 +109,25 @@ def _review_readiness_rows(
     return [(label, value) for label, value in rows if value is not None and value != ""]
 
 
+def _indicator_readiness_hint(indicator: Dict[str, Any]) -> str:
+    baseline = str(indicator.get("baseline") or "").strip()
+    target = str(indicator.get("target") or "").strip()
+    mov = str(indicator.get("means_of_verification") or "").strip()
+    owner = str(indicator.get("owner") or "").strip()
+    gaps: list[str] = []
+    if not baseline or baseline.lower() == "tbd":
+        gaps.append("baseline")
+    if not target or target.lower() == "tbd":
+        gaps.append("target")
+    if not mov:
+        gaps.append("mov")
+    if not owner:
+        gaps.append("owner")
+    if gaps:
+        return "needs-" + "-".join(gaps)
+    return "review-ready"
+
+
 def _autosize_columns(ws) -> None:
     for col in ws.columns:
         max_length = 0
@@ -1053,8 +1072,10 @@ def build_xlsx_from_logframe(
         "Indicator ID",
         "Name",
         "Result Level",
+        "ToC Statement Path",
         "Justification",
         "Citation",
+        "Readiness Hint",
         "Baseline",
         "Target",
         "Frequency",
@@ -1064,6 +1085,7 @@ def build_xlsx_from_logframe(
         "Disaggregation",
         "Means of Verification",
         "Owner",
+        "Evidence Excerpt",
     ]
     thin_border = _apply_table_header(ws, headers)
 
@@ -1080,17 +1102,20 @@ def build_xlsx_from_logframe(
         ws.cell(row=row, column=1, value=_cell_text(ind.get("indicator_id", ""))).border = thin_border
         ws.cell(row=row, column=2, value=_cell_text(ind.get("name", ""))).border = thin_border
         ws.cell(row=row, column=3, value=_cell_text(ind.get("result_level", ""))).border = thin_border
-        ws.cell(row=row, column=4, value=_cell_text(ind.get("justification", ""))).border = thin_border
-        ws.cell(row=row, column=5, value=_cell_text(ind.get("citation", ""))).border = thin_border
-        ws.cell(row=row, column=6, value=_cell_text(ind.get("baseline", "TBD"))).border = thin_border
-        ws.cell(row=row, column=7, value=_cell_text(ind.get("target", "TBD"))).border = thin_border
-        ws.cell(row=row, column=8, value=_cell_text(ind.get("frequency", ""))).border = thin_border
-        ws.cell(row=row, column=9, value=_cell_text(ind.get("formula", ""))).border = thin_border
-        ws.cell(row=row, column=10, value=_cell_text(ind.get("definition", ""))).border = thin_border
-        ws.cell(row=row, column=11, value=_cell_text(ind.get("data_source", ""))).border = thin_border
-        ws.cell(row=row, column=12, value=_cell_text(ind.get("disaggregation", ""))).border = thin_border
-        ws.cell(row=row, column=13, value=_cell_text(ind.get("means_of_verification", ""))).border = thin_border
-        ws.cell(row=row, column=14, value=_cell_text(ind.get("owner", ""))).border = thin_border
+        ws.cell(row=row, column=4, value=_cell_text(ind.get("toc_statement_path", ""))).border = thin_border
+        ws.cell(row=row, column=5, value=_cell_text(ind.get("justification", ""))).border = thin_border
+        ws.cell(row=row, column=6, value=_cell_text(ind.get("citation", ""))).border = thin_border
+        ws.cell(row=row, column=7, value=_indicator_readiness_hint(ind)).border = thin_border
+        ws.cell(row=row, column=8, value=_cell_text(ind.get("baseline", "TBD"))).border = thin_border
+        ws.cell(row=row, column=9, value=_cell_text(ind.get("target", "TBD"))).border = thin_border
+        ws.cell(row=row, column=10, value=_cell_text(ind.get("frequency", ""))).border = thin_border
+        ws.cell(row=row, column=11, value=_cell_text(ind.get("formula", ""))).border = thin_border
+        ws.cell(row=row, column=12, value=_cell_text(ind.get("definition", ""))).border = thin_border
+        ws.cell(row=row, column=13, value=_cell_text(ind.get("data_source", ""))).border = thin_border
+        ws.cell(row=row, column=14, value=_cell_text(ind.get("disaggregation", ""))).border = thin_border
+        ws.cell(row=row, column=15, value=_cell_text(ind.get("means_of_verification", ""))).border = thin_border
+        ws.cell(row=row, column=16, value=_cell_text(ind.get("owner", ""))).border = thin_border
+        ws.cell(row=row, column=17, value=_cell_text(ind.get("evidence_excerpt", ""))).border = thin_border
 
     toc_payload_raw = toc_draft if isinstance(toc_draft, dict) else {}
     if not toc_payload_raw:
