@@ -1159,7 +1159,9 @@ def export_artifacts(req: ExportRequest, request: Request):
                 "grounding_gate": grounding_gate,
             },
         )
-    toc_draft, logframe_draft, donor_id, citations, critic_findings, review_comments = _resolve_export_inputs(req)
+    toc_draft, logframe_draft, donor_id, citations, critic_findings, review_comments, quality_summary = (
+        _resolve_export_inputs(req)
+    )
     fmt = (req.format or "").lower()
     export_contract_gate = _evaluate_export_contract_gate(donor_id=donor_id, toc_draft=toc_draft)
     if (
@@ -1206,6 +1208,7 @@ def export_artifacts(req: ExportRequest, request: Request):
                 citations=citations,
                 critic_findings=critic_findings,
                 review_comments=review_comments,
+                quality_summary=quality_summary,
             )
 
         if fmt in {"xlsx", "both"}:
@@ -1216,6 +1219,7 @@ def export_artifacts(req: ExportRequest, request: Request):
                 citations=citations,
                 critic_findings=critic_findings,
                 review_comments=review_comments,
+                quality_summary=quality_summary,
             )
 
         if xlsx_bytes is not None:

@@ -127,6 +127,32 @@ def _add_review_comments_sheet(wb: Workbook, review_comments: list[Dict[str, Any
     _autosize_columns(ws)
 
 
+def _add_quality_summary_sheet(wb: Workbook, quality_summary: dict[str, Any]) -> None:
+    if not quality_summary:
+        return
+    rows = [
+        ("Quality score", quality_summary.get("quality_score")),
+        ("Critic score", quality_summary.get("critic_score")),
+        ("Needs revision", quality_summary.get("needs_revision")),
+        ("Critic engine", quality_summary.get("engine")),
+        ("Rule score", quality_summary.get("rule_score")),
+        ("LLM score", quality_summary.get("llm_score")),
+        ("Fatal flaw count", quality_summary.get("fatal_flaw_count")),
+        ("Citation count", quality_summary.get("citation_count")),
+    ]
+    present_rows = [(field_name, value) for field_name, value in rows if value is not None and value != ""]
+    if not present_rows:
+        return
+
+    ws = wb.create_sheet("Quality Summary")
+    border = _apply_table_header(ws, ["Field", "Value"])
+    for row_idx, (field_name, value) in enumerate(present_rows, start=2):
+        ws.append([field_name, value])
+        ws.cell(row=row_idx, column=1).border = border
+        ws.cell(row=row_idx, column=2).border = border
+    _autosize_columns(ws)
+
+
 def _add_template_meta_sheet(wb: Workbook, profile: Dict[str, Any]) -> None:
     ws = wb.create_sheet("Template Meta")
     headers = ["Field", "Value"]
@@ -572,6 +598,7 @@ def build_xlsx_from_logframe(
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
+    quality_summary: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """Конвертирует LogFrame draft в форматированный .xlsx."""
     wb = Workbook()
@@ -645,6 +672,7 @@ def build_xlsx_from_logframe(
         workbook_primary_sheet_headers=primary_sheet_headers,
     )
     _add_export_contract_sheet(wb, contract)
+    _add_quality_summary_sheet(wb, quality_summary or {})
     _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
     _add_critic_findings_sheet(wb, critic_findings or [])
     _add_review_comments_sheet(wb, review_comments or [])
@@ -663,6 +691,7 @@ def save_xlsx_to_file(
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
+    quality_summary: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Сохраняет .xlsx на диск."""
     content = build_xlsx_from_logframe(
@@ -672,6 +701,7 @@ def save_xlsx_to_file(
         citations=citations,
         critic_findings=critic_findings,
         review_comments=review_comments,
+        quality_summary=quality_summary,
     )
     with open(output_path, "wb") as f:
         f.write(content)

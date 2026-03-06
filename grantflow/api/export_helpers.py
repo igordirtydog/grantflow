@@ -159,7 +159,7 @@ def _job_comments_csv_text(payload: Dict[str, Any]) -> str:
 
 def _resolve_export_inputs(
     req: ExportRequest,
-) -> tuple[dict, dict, str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict, dict, str, list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     payload = req.payload or {}
     payload_root = payload if isinstance(payload, dict) else {}
     state_payload = payload_root.get("state") if isinstance(payload_root.get("state"), dict) else payload_root
@@ -174,6 +174,7 @@ def _resolve_export_inputs(
     state_critic_findings_payload = state_critic_findings(payload_state, default_source="rules")
     critic_findings = req.critic_findings or state_critic_findings_payload or payload_root.get("critic_findings") or []
     review_comments = req.review_comments or payload_root.get("review_comments") or payload.get("review_comments") or []
+    quality_summary = payload_root.get("quality_summary") or {}
 
     if not isinstance(toc, dict):
         toc = {}
@@ -185,10 +186,12 @@ def _resolve_export_inputs(
         critic_findings = []
     if not isinstance(review_comments, list):
         review_comments = []
+    if not isinstance(quality_summary, dict):
+        quality_summary = {}
     citations = [c for c in citations if isinstance(c, dict)]
     critic_findings = canonicalize_findings(critic_findings, state=payload_state, default_source="rules")
     review_comments = [c for c in review_comments if isinstance(c, dict)]
-    return toc, logframe, str(donor_id), citations, critic_findings, review_comments
+    return toc, logframe, str(donor_id), citations, critic_findings, review_comments, dict(quality_summary)
 
 
 def _extract_export_grounding_gate(req: ExportRequest) -> Dict[str, Any]:

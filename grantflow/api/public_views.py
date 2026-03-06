@@ -1702,6 +1702,18 @@ def public_job_export_payload(
         "status": str(job.get("status") or ""),
         "payload": {
             "state": state_payload if isinstance(state_payload, dict) else {},
+            "quality_summary": {
+                "quality_score": sanitize_for_public_response(critic.get("quality_score")),
+                "critic_score": sanitize_for_public_response(critic.get("critic_score")),
+                "needs_revision": sanitize_for_public_response(critic.get("needs_revision")),
+                "engine": sanitize_for_public_response(critic.get("engine")),
+                "rule_score": sanitize_for_public_response(critic.get("rule_score")),
+                "llm_score": sanitize_for_public_response(critic.get("llm_score")),
+                "fatal_flaw_count": int(critic.get("fatal_flaw_count") or 0),
+                "citation_count": len(
+                    (state_payload.get("citations") if isinstance(state_payload.get("citations"), list) else [])
+                ),
+            },
             "critic_findings": [item for item in critic_findings if isinstance(item, dict)],
             "review_comments": [item for item in review_comments if isinstance(item, dict)],
             "readiness": readiness_payload,

@@ -4288,6 +4288,8 @@ def test_status_export_payload_endpoint_returns_review_ready_payload():
                 "toc_draft": {"toc": {"brief": "Sample ToC"}},
                 "logframe_draft": {"indicators": [{"indicator_id": "IND_001"}]},
                 "citations": [{"stage": "mel", "label": "USAID ADS 201 p.12"}],
+                "quality_score": 8.2,
+                "critic_score": 7.9,
                 "critic_notes": {
                     "fatal_flaws": [
                         {
@@ -4329,6 +4331,10 @@ def test_status_export_payload_endpoint_returns_review_ready_payload():
     assert "strategy" not in payload["state"]
     assert "donor_strategy" not in payload["state"]
     assert payload["state"]["toc_draft"]["toc"]["brief"] == "Sample ToC"
+    assert payload["quality_summary"]["quality_score"] == 8.2
+    assert payload["quality_summary"]["critic_score"] == 7.9
+    assert payload["quality_summary"]["fatal_flaw_count"] == 1
+    assert payload["quality_summary"]["citation_count"] == 1
     assert isinstance(payload["critic_findings"], list)
     assert payload["critic_findings"][0]["id"] == "finding-1"
     assert payload["critic_findings"][0]["finding_id"] == "finding-1"

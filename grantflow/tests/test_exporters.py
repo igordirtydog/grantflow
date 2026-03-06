@@ -67,6 +67,19 @@ def _sample_review_comments():
     ]
 
 
+def _sample_quality_summary():
+    return {
+        "quality_score": 8.5,
+        "critic_score": 8.0,
+        "needs_revision": False,
+        "engine": "rules+llm",
+        "rule_score": 8.0,
+        "llm_score": 8.5,
+        "fatal_flaw_count": 1,
+        "citation_count": 4,
+    }
+
+
 def test_word_export_includes_citation_traceability_section():
     toc_draft = {
         "toc": {
@@ -80,6 +93,7 @@ def test_word_export_includes_citation_traceability_section():
         citations=_sample_citations(),
         critic_findings=_sample_critic_findings(),
         review_comments=_sample_review_comments(),
+        quality_summary=_sample_quality_summary(),
     )
     doc = Document(BytesIO(content))
     text = "\n".join(p.text for p in doc.paragraphs)
@@ -91,6 +105,9 @@ def test_word_export_includes_citation_traceability_section():
     assert "TOC_SCHEMA_INVALID" in text
     assert "Review Comments" in text
     assert "Adjusted objective wording and assumptions." in text
+    assert "Quality Summary" in text
+    assert "Quality score: 8.5" in text
+    assert "Fatal flaw count: 1" in text
 
 
 def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
@@ -308,9 +325,11 @@ def test_excel_export_includes_citations_sheet():
         citations=_sample_citations(),
         critic_findings=_sample_critic_findings(),
         review_comments=_sample_review_comments(),
+        quality_summary=_sample_quality_summary(),
     )
     wb = load_workbook(BytesIO(content))
     assert "LogFrame" in wb.sheetnames
+    assert "Quality Summary" in wb.sheetnames
     assert "Citations" in wb.sheetnames
     assert "Critic Findings" in wb.sheetnames
     assert "Review Comments" in wb.sheetnames
@@ -328,6 +347,12 @@ def test_excel_export_includes_citations_sheet():
     comments_rows = list(wb["Review Comments"].iter_rows(values_only=True))
     assert comments_rows[0][:4] == ("Status", "Section", "Author", "Message")
     assert any(row[6] == "2026-02-25T10:00:00Z" for row in comments_rows[1:])
+
+    quality_rows = list(wb["Quality Summary"].iter_rows(values_only=True))
+    quality_map = {str(row[0]): row[1] for row in quality_rows[1:] if row and row[0]}
+    assert quality_map["Quality score"] == 8.5
+    assert quality_map["Critic engine"] == "rules+llm"
+    assert quality_map["Fatal flaw count"] == 1
 
 
 def test_excel_export_logframe_sheet_includes_smart_indicator_columns():

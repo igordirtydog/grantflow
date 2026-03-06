@@ -117,6 +117,30 @@ def _add_review_comments_section(doc: Document, review_comments: list[Dict[str, 
             doc.add_paragraph(" · ".join(meta_bits))
 
 
+def _add_quality_summary_section(doc: Document, quality_summary: dict[str, Any]) -> None:
+    if not quality_summary:
+        return
+
+    rows = [
+        ("Quality score", quality_summary.get("quality_score")),
+        ("Critic score", quality_summary.get("critic_score")),
+        ("Needs revision", quality_summary.get("needs_revision")),
+        ("Critic engine", quality_summary.get("engine")),
+        ("Rule score", quality_summary.get("rule_score")),
+        ("LLM score", quality_summary.get("llm_score")),
+        ("Fatal flaw count", quality_summary.get("fatal_flaw_count")),
+        ("Citation count", quality_summary.get("citation_count")),
+    ]
+    present_rows = [(label, value) for label, value in rows if value is not None and value != ""]
+    if not present_rows:
+        return
+
+    doc.add_heading("Quality Summary", level=1)
+    doc.add_paragraph("Snapshot of current draft quality, critic status, and citation volume at export time.")
+    for label, value in present_rows:
+        doc.add_paragraph(f"{label}: {value}", style="List Bullet")
+
+
 def _toc_root(toc_draft: Dict[str, Any], donor_id: str | None = None) -> Dict[str, Any]:
     if not donor_id:
         return unwrap_toc_payload(toc_draft)
@@ -536,6 +560,7 @@ def build_docx_from_toc(
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
+    quality_summary: Optional[Dict[str, Any]] = None,
 ) -> bytes:
     """Конвертирует ToC draft в форматированный .docx."""
     doc = Document()
@@ -551,6 +576,7 @@ def build_docx_from_toc(
     contract = evaluate_export_contract(donor_id=donor_id, toc_payload=toc_content)
     _add_template_profile_section(doc, profile)
     _add_export_contract_section(doc, contract)
+    _add_quality_summary_section(doc, quality_summary or {})
 
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
@@ -585,6 +611,7 @@ def save_docx_to_file(
     citations: Optional[List[Dict[str, Any]]] = None,
     critic_findings: Optional[List[Dict[str, Any]]] = None,
     review_comments: Optional[List[Dict[str, Any]]] = None,
+    quality_summary: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Сохраняет .docx на диск."""
     content = build_docx_from_toc(
@@ -594,6 +621,7 @@ def save_docx_to_file(
         citations=citations,
         critic_findings=critic_findings,
         review_comments=review_comments,
+        quality_summary=quality_summary,
     )
     with open(output_path, "wb") as f:
         f.write(content)
