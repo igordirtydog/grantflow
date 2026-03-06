@@ -4,38 +4,30 @@ from typing import Any, Dict, Literal, Optional
 
 from fastapi import HTTPException
 
-from grantflow.api.constants import CRITIC_FINDING_SLA_HOURS, REVIEW_COMMENT_DEFAULT_SLA_HOURS
+from grantflow.api.constants import (
+    CRITIC_FINDING_SLA_HOURS,
+    HITL_HISTORY_EVENT_TYPES,
+    REVIEW_COMMENT_DEFAULT_SLA_HOURS,
+    RUNTIME_PIPELINE_STATE_KEYS,
+    STATUS_WEBHOOK_EVENTS,
+)
+from grantflow.api.idempotency_store_facade import _get_job, _list_jobs, _record_job_event, _set_job, _update_job
 from grantflow.api.public_views import public_job_payload
 from grantflow.api.review_helpers import _normalize_comment_sla_hours, _normalize_finding_sla_profile
+from grantflow.api.review_runtime_helpers import _comment_sla_hours, _finding_sla_hours, _iso_plus_hours, _utcnow_iso
 from grantflow.api.webhooks import send_job_webhook_event
 from grantflow.swarm.findings import finding_primary_id, state_critic_findings, write_state_critic_findings
 from grantflow.swarm.hitl import HITLStatus, hitl_manager
 from grantflow.swarm.state_contract import normalize_state_contract, state_donor_id
 
-HITL_HISTORY_EVENT_TYPES = {
-    "status_changed",
-    "resume_requested",
-    "hitl_checkpoint_published",
-    "hitl_checkpoint_decision",
-    "hitl_checkpoint_canceled",
-}
-STATUS_WEBHOOK_EVENTS = {
-    "running": "job.started",
-    "pending_hitl": "job.pending_hitl",
-    "done": "job.completed",
-    "error": "job.failed",
-    "canceled": "job.canceled",
-}
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 
 
 def _find_job_by_checkpoint_id(checkpoint_id: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
-    from grantflow.api import app as api_app_module
-
     token = str(checkpoint_id or "").strip()
     if not token:
         return None, None
-    for job_id, job in api_app_module._list_jobs().items():
+    for job_id, job in _list_jobs().items():
         if not isinstance(job, dict):
             continue
         if str(job.get("checkpoint_id") or "").strip() == token:
@@ -168,31 +160,25 @@ def _ensure_finding_due_at(
     reset: bool = False,
     finding_sla_hours_override: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Any]:
-    from grantflow.api import app as api_app_module
-
     current = dict(item)
     status = str(current.get("status") or "open").strip().lower()
     if status == "resolved":
         return current
     if not reset and str(current.get("due_at") or "").strip():
         return current
-    sla_hours = api_app_module._finding_sla_hours(
-        current.get("severity"), finding_sla_hours_override=finding_sla_hours_override
-    )
+    sla_hours = _finding_sla_hours(current.get("severity"), finding_sla_hours_override=finding_sla_hours_override)
     base_ts = None
     if status == "acknowledged":
         base_ts = str(current.get("acknowledged_at") or current.get("updated_at") or now_iso)
     else:
         base_ts = str(current.get("updated_at") or now_iso)
-    current["due_at"] = api_app_module._iso_plus_hours(base_ts, sla_hours)
+    current["due_at"] = _iso_plus_hours(base_ts, sla_hours)
     current["sla_hours"] = sla_hours
     return current
 
 
 def _normalize_critic_fatal_flaws_for_job(job_id: str) -> Optional[Dict[str, Any]]:
-    from grantflow.api import app as api_app_module
-
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         return None
     state = job.get("state")
@@ -202,7 +188,7 @@ def _normalize_critic_fatal_flaws_for_job(job_id: str) -> Optional[Dict[str, Any
     if not raw_flaws:
         return job
 
-    now_iso = api_app_module._utcnow_iso()
+    now_iso = _utcnow_iso()
     normalized_with_due = [_ensure_finding_due_at(item, now_iso=now_iso) for item in raw_flaws]
     existing_notes_raw = state.get("critic_notes")
     existing_notes: Dict[str, Any] = existing_notes_raw if isinstance(existing_notes_raw, dict) else {}
@@ -219,7 +205,7 @@ def _normalize_critic_fatal_flaws_for_job(job_id: str) -> Optional[Dict[str, Any
     write_state_critic_findings(
         next_state, normalized_with_due, previous_items=normalized_with_due, default_source="rules"
     )
-    return api_app_module._update_job(job_id, state=next_state)
+    return _update_job(job_id, state=next_state)
 
 
 def _find_critic_fatal_flaw(job: Dict[str, Any], finding_id: str) -> Optional[Dict[str, Any]]:
@@ -255,15 +241,13 @@ def _ensure_comment_due_at(
     finding_sla_hours_override: Optional[Dict[str, int]] = None,
     default_comment_sla_hours: Optional[int] = None,
 ) -> Dict[str, Any]:
-    from grantflow.api import app as api_app_module
-
     current = dict(comment)
     status = str(current.get("status") or "open").strip().lower()
     if status == "resolved":
         return current
     if not reset and str(current.get("due_at") or "").strip():
         if not current.get("sla_hours"):
-            inferred_sla = api_app_module._comment_sla_hours(
+            inferred_sla = _comment_sla_hours(
                 linked_finding_severity=_linked_finding_severity(
                     job, str(current.get("linked_finding_id") or "").strip()
                 ),
@@ -274,38 +258,34 @@ def _ensure_comment_due_at(
         return current
     linked_finding_id = str(current.get("linked_finding_id") or "").strip() or None
     severity = _linked_finding_severity(job, linked_finding_id)
-    sla_hours = api_app_module._comment_sla_hours(
+    sla_hours = _comment_sla_hours(
         linked_finding_severity=severity,
         finding_sla_hours_override=finding_sla_hours_override,
         default_comment_sla_hours=default_comment_sla_hours,
     )
     base_ts = str(current.get("updated_ts") or current.get("ts") or now_iso)
     current["sla_hours"] = sla_hours
-    current["due_at"] = api_app_module._iso_plus_hours(base_ts, sla_hours)
+    current["due_at"] = _iso_plus_hours(base_ts, sla_hours)
     return current
 
 
 def _normalize_review_comments_for_job(job_id: str) -> Optional[Dict[str, Any]]:
-    from grantflow.api import app as api_app_module
-
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         return None
     raw_comments = job.get("review_comments")
     if not isinstance(raw_comments, list):
         return job
     comments = [c for c in raw_comments if isinstance(c, dict)]
-    now_iso = api_app_module._utcnow_iso()
+    now_iso = _utcnow_iso()
     normalized_comments = [_ensure_comment_due_at(comment, job=job, now_iso=now_iso) for comment in comments]
     if normalized_comments == comments:
         return job
-    return api_app_module._update_job(job_id, review_comments=normalized_comments[-500:])
+    return _update_job(job_id, review_comments=normalized_comments[-500:])
 
 
 def _job_is_canceled(job_id: str) -> bool:
-    from grantflow.api import app as api_app_module
-
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     return bool(job and job.get("status") == "canceled")
 
 
@@ -314,8 +294,6 @@ def _dispatch_job_webhook_for_status_change(
     previous: Optional[Dict[str, Any]],
     current: Optional[Dict[str, Any]],
 ) -> None:
-    from grantflow.api import app as api_app_module
-
     if not current:
         return
 
@@ -334,6 +312,8 @@ def _dispatch_job_webhook_for_status_change(
 
     webhook_secret = current.get("webhook_secret") or (previous or {}).get("webhook_secret")
     public_payload = public_job_payload(current)
+    from grantflow.api import app as api_app_module
+
     sender = getattr(api_app_module, "send_job_webhook_event", send_job_webhook_event)
     try:
         sender(
@@ -348,14 +328,12 @@ def _dispatch_job_webhook_for_status_change(
 
 
 def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"], resume_from: HITLStartAt) -> None:
-    from grantflow.api import app as api_app_module
-
     existing_checkpoint_id = str(state.get("hitl_checkpoint_id") or "").strip() or None
     if _job_is_canceled(job_id):
         if existing_checkpoint_id:
             hitl_manager.cancel(existing_checkpoint_id, "Canceled before HITL checkpoint was published")
         return
-    api_app_module._clear_hitl_runtime_state(state, clear_pending=False)
+    _clear_hitl_runtime_state(state, clear_pending=False)
     state["hitl_pending"] = True
     normalize_state_contract(state)
     donor_id = state_donor_id(state, default="unknown")
@@ -363,7 +341,7 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
     if checkpoint_id:
         checkpoint = hitl_manager.get_checkpoint(checkpoint_id)
         checkpoint_stage = str(checkpoint.get("stage") or "").strip().lower() if isinstance(checkpoint, dict) else ""
-        checkpoint_status = api_app_module._checkpoint_status_token(checkpoint) if isinstance(checkpoint, dict) else ""
+        checkpoint_status = _checkpoint_status_token(checkpoint) if isinstance(checkpoint, dict) else ""
         if not checkpoint or checkpoint_status != HITLStatus.PENDING.value or checkpoint_stage != stage:
             if isinstance(checkpoint, dict) and checkpoint_status == HITLStatus.PENDING.value and checkpoint_id:
                 hitl_manager.cancel(checkpoint_id, "Superseded by new HITL checkpoint")
@@ -373,7 +351,7 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
     if _job_is_canceled(job_id):
         hitl_manager.cancel(checkpoint_id, "Canceled before HITL checkpoint was published")
         return
-    api_app_module._set_job(
+    _set_job(
         job_id,
         {
             "status": "pending_hitl",
@@ -384,10 +362,22 @@ def _pause_for_hitl(job_id: str, state: dict, stage: Literal["toc", "logframe"],
             "hitl_enabled": True,
         },
     )
-    api_app_module._record_job_event(
+    _record_job_event(
         job_id,
         "hitl_checkpoint_published",
         checkpoint_id=checkpoint_id,
         checkpoint_stage=stage,
         resume_from=resume_from,
     )
+
+
+def _checkpoint_status_token(checkpoint: Dict[str, Any]) -> str:
+    raw = checkpoint.get("status")
+    return str(getattr(raw, "value", raw) or "").strip().lower()
+
+
+def _clear_hitl_runtime_state(state: dict, *, clear_pending: bool) -> None:
+    for key in RUNTIME_PIPELINE_STATE_KEYS:
+        state.pop(key, None)
+    if clear_pending:
+        state["hitl_pending"] = False

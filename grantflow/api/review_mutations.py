@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 
 from fastapi import HTTPException
 
-from grantflow.api import app as api_app_module
 from grantflow.api.constants import CRITIC_FINDING_STATUSES
 from grantflow.api.idempotency import (
     _idempotency_fingerprint,
@@ -13,7 +12,16 @@ from grantflow.api.idempotency import (
     _normalize_request_id,
     _store_idempotency_response,
 )
+from grantflow.api.idempotency_store_facade import _get_job, _record_job_event, _update_job
 from grantflow.api.public_views import REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS, public_job_review_workflow_sla_payload
+from grantflow.api.review_runtime_helpers import _comment_sla_hours, _iso_plus_hours, _utcnow_iso
+from grantflow.api.review_service import (
+    _ensure_comment_due_at,
+    _ensure_finding_due_at,
+    _normalize_critic_fatal_flaws_for_job,
+    _normalize_review_comments_for_job,
+    _resolve_sla_profile_for_recompute,
+)
 from grantflow.swarm.findings import (
     canonicalize_findings,
     finding_primary_id,
@@ -30,14 +38,14 @@ def _recompute_review_workflow_sla(
     default_comment_sla_hours: Optional[Any] = None,
     use_saved_profile: bool = False,
 ) -> Dict[str, Any]:
-    job = api_app_module._normalize_critic_fatal_flaws_for_job(job_id) or api_app_module._get_job(job_id)
-    job = api_app_module._normalize_review_comments_for_job(job_id) or job
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
+    job = _normalize_review_comments_for_job(job_id) or job
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    now_iso = api_app_module._utcnow_iso()
+    now_iso = _utcnow_iso()
     actor_value = str(actor or "").strip() or "api_user"
-    applied_finding_sla_hours, applied_default_comment_sla_hours = api_app_module._resolve_sla_profile_for_recompute(
+    applied_finding_sla_hours, applied_default_comment_sla_hours = _resolve_sla_profile_for_recompute(
         job=job,
         finding_sla_hours_override=finding_sla_hours_override,
         default_comment_sla_hours=default_comment_sla_hours,
@@ -53,7 +61,7 @@ def _recompute_review_workflow_sla(
     next_flaws: list[Dict[str, Any]] = []
     for item in flaws:
         current = dict(item)
-        recomputed = api_app_module._ensure_finding_due_at(
+        recomputed = _ensure_finding_due_at(
             current,
             now_iso=now_iso,
             reset=True,
@@ -89,7 +97,7 @@ def _recompute_review_workflow_sla(
     next_comments: list[Dict[str, Any]] = []
     for comment in comments:
         current = dict(comment)
-        recomputed = api_app_module._ensure_comment_due_at(
+        recomputed = _ensure_comment_due_at(
             current,
             job=working_job,
             now_iso=now_iso,
@@ -120,10 +128,10 @@ def _recompute_review_workflow_sla(
         update_payload["client_metadata"] = metadata
 
     if update_payload:
-        job = api_app_module._update_job(job_id, **update_payload) or api_app_module._get_job(job_id) or job
+        job = _update_job(job_id, **update_payload) or _get_job(job_id) or job
 
     total_updated_count = finding_updated_count + comment_updated_count
-    api_app_module._record_job_event(
+    _record_job_event(
         job_id,
         "review_workflow_sla_recomputed",
         actor=actor_value,
@@ -175,7 +183,7 @@ def _set_critic_fatal_flaw_status(
         raise HTTPException(status_code=400, detail="Unsupported if_match_status")
     request_id_token = _normalize_request_id(request_id)
 
-    job = api_app_module._normalize_critic_fatal_flaws_for_job(job_id) or api_app_module._get_job(job_id)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     idempotency_fingerprint = _idempotency_fingerprint(
@@ -210,7 +218,7 @@ def _set_critic_fatal_flaw_status(
     changed = False
     updated_finding: Optional[Dict[str, Any]] = None
     next_flaws: list[Dict[str, Any]] = []
-    now = api_app_module._utcnow_iso()
+    now = _utcnow_iso()
     actor_value = str(actor or "").strip() or "api_user"
     for item in flaws:
         current = dict(item)
@@ -248,8 +256,8 @@ def _set_critic_fatal_flaw_status(
     if changed and not dry_run:
         next_state = dict(state)
         write_state_critic_findings(next_state, next_flaws, previous_items=next_flaws, default_source="rules")
-        api_app_module._update_job(job_id, state=next_state)
-        api_app_module._record_job_event(
+        _update_job(job_id, state=next_state)
+        _record_job_event(
             job_id,
             "critic_finding_status_changed",
             finding_id=str(updated_finding.get("id") or finding_id),
@@ -292,7 +300,7 @@ def _apply_critic_finding_status_transition(
     if current_finding_id:
         current["id"] = current_finding_id
         current["finding_id"] = current_finding_id
-    current = api_app_module._ensure_finding_due_at(current, now_iso=now)
+    current = _ensure_finding_due_at(current, now_iso=now)
 
     current_status = str(current.get("status") or "open")
     if current_status == next_status:
@@ -311,7 +319,7 @@ def _apply_critic_finding_status_transition(
         current["acknowledged_by"] = actor_value
         current.pop("resolved_at", None)
         current.pop("resolved_by", None)
-        current = api_app_module._ensure_finding_due_at(current, now_iso=now)
+        current = _ensure_finding_due_at(current, now_iso=now)
     elif next_status == "resolved":
         current["resolved_at"] = now
         current["resolved_by"] = actor_value
@@ -324,7 +332,7 @@ def _apply_critic_finding_status_transition(
         current.pop("acknowledged_by", None)
         current.pop("resolved_at", None)
         current.pop("resolved_by", None)
-        current = api_app_module._ensure_finding_due_at(current, now_iso=now, reset=True)
+        current = _ensure_finding_due_at(current, now_iso=now, reset=True)
     normalized = canonicalize_findings(
         [current], state=state, previous_items=[current], default_source="rules", dedupe=False
     )
@@ -382,7 +390,7 @@ def _set_critic_fatal_flaws_status_bulk(
         raise HTTPException(status_code=400, detail="Provide at least one selector or set apply_to_all=true")
     request_id_token = _normalize_request_id(request_id)
 
-    job = api_app_module._normalize_critic_fatal_flaws_for_job(job_id) or api_app_module._get_job(job_id)
+    job = _normalize_critic_fatal_flaws_for_job(job_id) or _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     idempotency_fingerprint = _idempotency_fingerprint(
@@ -423,7 +431,7 @@ def _set_critic_fatal_flaws_status_bulk(
     available_ids = {finding_primary_id(item) for item in flaws if finding_primary_id(item)}
     not_found_finding_ids = [item for item in requested_finding_ids if item not in available_ids]
 
-    now = api_app_module._utcnow_iso()
+    now = _utcnow_iso()
     actor_value = str(actor or "").strip() or "api_user"
     batch_id = str(uuid.uuid4())
 
@@ -496,9 +504,9 @@ def _set_critic_fatal_flaws_status_bulk(
     if changed and not dry_run:
         next_state = dict(state)
         write_state_critic_findings(next_state, next_flaws, previous_items=next_flaws, default_source="rules")
-        api_app_module._update_job(job_id, state=next_state)
+        _update_job(job_id, state=next_state)
         for updated in changed_items:
-            api_app_module._record_job_event(
+            _record_job_event(
                 job_id,
                 "critic_finding_status_changed",
                 finding_id=str(updated.get("id") or ""),
@@ -557,7 +565,7 @@ def _append_review_comment(
     linked_finding_severity: Optional[str] = None,
     request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     request_id_token = _normalize_request_id(request_id)
@@ -585,13 +593,13 @@ def _append_review_comment(
     comments = [c for c in existing if isinstance(c, dict)] if isinstance(existing, list) else []
     comment: Dict[str, Any] = {
         "comment_id": str(uuid.uuid4()),
-        "ts": api_app_module._utcnow_iso(),
+        "ts": _utcnow_iso(),
         "section": section,
         "status": "open",
         "message": message,
     }
-    comment["sla_hours"] = api_app_module._comment_sla_hours(linked_finding_severity=linked_finding_severity)
-    comment["due_at"] = api_app_module._iso_plus_hours(comment["ts"], int(comment["sla_hours"]))
+    comment["sla_hours"] = _comment_sla_hours(linked_finding_severity=linked_finding_severity)
+    comment["due_at"] = _iso_plus_hours(comment["ts"], int(comment["sla_hours"]))
     if author:
         comment["author"] = author
     if version_id:
@@ -601,8 +609,8 @@ def _append_review_comment(
     if request_id_token:
         comment["request_id"] = request_id_token
     comments.append(comment)
-    api_app_module._update_job(job_id, review_comments=comments[-500:])
-    api_app_module._record_job_event(
+    _update_job(job_id, review_comments=comments[-500:])
+    _record_job_event(
         job_id,
         "review_comment_added",
         comment_id=comment["comment_id"],
@@ -631,7 +639,7 @@ def _set_review_comment_status(
     actor: Optional[str] = None,
     request_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     request_id_token = _normalize_request_id(request_id)
@@ -657,7 +665,7 @@ def _set_review_comment_status(
     updated_comment: Optional[Dict[str, Any]] = None
     changed = False
     status_transitioned = False
-    now_iso = api_app_module._utcnow_iso()
+    now_iso = _utcnow_iso()
     actor_value = str(actor or "").strip() or "api_user"
 
     next_comments: list[Dict[str, Any]] = []
@@ -669,7 +677,7 @@ def _set_review_comment_status(
 
         current = dict(item)
         current_status = str(current.get("status") or "open")
-        current_with_due = api_app_module._ensure_comment_due_at(current, job=job, now_iso=now_iso)
+        current_with_due = _ensure_comment_due_at(current, job=job, now_iso=now_iso)
         if current_with_due != current:
             changed = True
         current = current_with_due
@@ -682,7 +690,7 @@ def _set_review_comment_status(
             elif "resolved_at" in current:
                 current.pop("resolved_at", None)
             if next_status == "open":
-                current = api_app_module._ensure_comment_due_at(current, job=job, now_iso=now_iso, reset=True)
+                current = _ensure_comment_due_at(current, job=job, now_iso=now_iso, reset=True)
             changed = True
             status_transitioned = True
         updated_comment = current
@@ -692,9 +700,9 @@ def _set_review_comment_status(
         raise HTTPException(status_code=404, detail="Comment not found")
 
     if changed:
-        api_app_module._update_job(job_id, review_comments=next_comments[-500:])
+        _update_job(job_id, review_comments=next_comments[-500:])
     if status_transitioned:
-        api_app_module._record_job_event(
+        _record_job_event(
             job_id,
             "review_comment_status_changed",
             comment_id=comment_id,

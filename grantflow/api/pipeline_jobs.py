@@ -4,18 +4,42 @@ from typing import Any, Callable, Dict, Literal
 
 from fastapi import BackgroundTasks, HTTPException
 
-from grantflow.api import app as api_app_module
+from grantflow.api.constants import RUNTIME_PIPELINE_STATE_KEYS, TERMINAL_JOB_STATUSES
+from grantflow.api.idempotency_store_facade import _get_job, _record_job_event, _set_job
+from grantflow.api.orchestrator_service import _evaluate_runtime_grounded_quality_gate_from_state
+from grantflow.api.review_service import _job_is_canceled, _pause_for_hitl
+from grantflow.api.runtime_gate_helpers import (
+    _append_runtime_grounded_quality_gate_finding,
+    _attach_export_contract_gate,
+    _grounding_gate_block_reason,
+    _mel_grounding_policy_block_reason,
+    _runtime_grounded_quality_gate_block_reason,
+)
+from grantflow.api.runtime_service import _job_runner_mode, _uses_queue_runner
 from grantflow.swarm.hitl import HITLStatus
+from grantflow.swarm.state_contract import normalize_state_contract
 
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
 
 
+def _job_runner():
+    from grantflow.api import app as api_app_module
+
+    return api_app_module.JOB_RUNNER
+
+
+def _graph():
+    from grantflow.api import app as api_app_module
+
+    return api_app_module.grantflow_graph
+
+
 def _dispatch_pipeline_task(background_tasks: BackgroundTasks, fn: Callable[..., None], *args: Any) -> str:
-    if api_app_module._uses_queue_runner():
-        accepted = api_app_module.JOB_RUNNER.submit(fn, *args)
+    if _uses_queue_runner():
+        accepted = _job_runner().submit(fn, *args)
         if not accepted:
             raise HTTPException(status_code=503, detail="Job queue is full. Retry shortly.")
-        return api_app_module._job_runner_mode()
+        return _job_runner_mode()
     background_tasks.add_task(fn, *args)
     return "background_tasks"
 
@@ -44,36 +68,36 @@ def _checkpoint_status_token(checkpoint: Dict[str, Any]) -> str:
 
 def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
     try:
-        if api_app_module._job_is_canceled(job_id):
+        if _job_is_canceled(job_id):
             return
-        api_app_module.normalize_state_contract(initial_state)
+        normalize_state_contract(initial_state)
         _clear_hitl_runtime_state(initial_state, clear_pending=True)
         initial_state["hitl_enabled"] = False
         initial_state["_start_at"] = "start"
-        api_app_module._set_job(job_id, {"status": "running", "state": initial_state, "hitl_enabled": False})
-        if api_app_module._job_is_canceled(job_id):
+        _set_job(job_id, {"status": "running", "state": initial_state, "hitl_enabled": False})
+        if _job_is_canceled(job_id):
             return
-        final_state = api_app_module.grantflow_graph.invoke(initial_state)
-        for key in api_app_module.RUNTIME_PIPELINE_STATE_KEYS:
+        final_state = _graph().invoke(initial_state)
+        for key in RUNTIME_PIPELINE_STATE_KEYS:
             final_state.pop(key, None)
         final_state["hitl_pending"] = False
-        api_app_module.normalize_state_contract(final_state)
-        api_app_module._attach_export_contract_gate(final_state)
-        runtime_grounded_gate = api_app_module._evaluate_runtime_grounded_quality_gate_from_state(final_state)
+        normalize_state_contract(final_state)
+        _attach_export_contract_gate(final_state)
+        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
         final_state["grounded_quality_gate"] = runtime_grounded_gate
-        if api_app_module._job_is_canceled(job_id):
+        if _job_is_canceled(job_id):
             return
-        runtime_grounded_block_reason = api_app_module._runtime_grounded_quality_gate_block_reason(final_state)
+        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
         if runtime_grounded_block_reason:
-            api_app_module._append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
-            api_app_module._record_job_event(
+            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
+            _record_job_event(
                 job_id,
                 "runtime_grounded_quality_gate_blocked",
                 mode=str(runtime_grounded_gate.get("mode") or "strict"),
                 summary=str(runtime_grounded_gate.get("summary") or ""),
                 reasons=list(runtime_grounded_gate.get("reasons") or []),
             )
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -83,9 +107,9 @@ def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
                 },
             )
             return
-        grounding_block_reason = api_app_module._grounding_gate_block_reason(final_state)
+        grounding_block_reason = _grounding_gate_block_reason(final_state)
         if grounding_block_reason:
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -95,9 +119,9 @@ def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
                 },
             )
             return
-        mel_grounding_block_reason = api_app_module._mel_grounding_policy_block_reason(final_state)
+        mel_grounding_block_reason = _mel_grounding_policy_block_reason(final_state)
         if mel_grounding_block_reason:
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -107,17 +131,17 @@ def _run_pipeline_to_completion(job_id: str, initial_state: dict) -> None:
                 },
             )
             return
-        api_app_module._set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": False})
+        _set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": False})
     except Exception as exc:
-        api_app_module._set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": False})
+        _set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": False})
 
 
 def _run_pipeline_to_completion_by_job_id(job_id: str) -> None:
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not isinstance(job, dict):
         return
     status = str(job.get("status") or "").strip().lower()
-    if status in api_app_module.TERMINAL_JOB_STATUSES:
+    if status in TERMINAL_JOB_STATUSES:
         return
     if status == "pending_hitl":
         return
@@ -125,22 +149,20 @@ def _run_pipeline_to_completion_by_job_id(job_id: str) -> None:
         return
     state = job.get("state")
     if not isinstance(state, dict):
-        api_app_module._set_job(
-            job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False}
-        )
+        _set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False})
         return
     _run_pipeline_to_completion(job_id, state)
 
 
 def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
     try:
-        if api_app_module._job_is_canceled(job_id):
+        if _job_is_canceled(job_id):
             return
-        api_app_module.normalize_state_contract(state)
+        normalize_state_contract(state)
         _clear_hitl_runtime_state(state, clear_pending=True)
         state["hitl_enabled"] = True
         state["_start_at"] = start_at
-        api_app_module._set_job(
+        _set_job(
             job_id,
             {
                 "status": "running",
@@ -149,12 +171,12 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 "resume_from": start_at,
             },
         )
-        if api_app_module._job_is_canceled(job_id):
+        if _job_is_canceled(job_id):
             return
-        final_state = api_app_module.grantflow_graph.invoke(state)
-        if api_app_module._job_is_canceled(job_id):
+        final_state = _graph().invoke(state)
+        if _job_is_canceled(job_id):
             return
-        api_app_module.normalize_state_contract(final_state)
+        normalize_state_contract(final_state)
         checkpoint_stage = str(final_state.get("hitl_checkpoint_stage") or "").strip().lower()
         checkpoint_resume = str(final_state.get("hitl_resume_from") or "").strip().lower()
         if bool(final_state.get("hitl_pending")) and checkpoint_stage in {"toc", "logframe"}:
@@ -170,10 +192,10 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 resume_literal = "critic"
             else:
                 resume_literal = "mel" if stage_literal == "toc" else "critic"
-            api_app_module._pause_for_hitl(job_id, final_state, stage=stage_literal, resume_from=resume_literal)
+            _pause_for_hitl(job_id, final_state, stage=stage_literal, resume_from=resume_literal)
             return
         if bool(final_state.get("hitl_pending")):
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -183,23 +205,23 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 },
             )
             return
-        for key in api_app_module.RUNTIME_PIPELINE_STATE_KEYS:
+        for key in RUNTIME_PIPELINE_STATE_KEYS:
             final_state.pop(key, None)
         final_state["hitl_pending"] = False
-        api_app_module._attach_export_contract_gate(final_state)
-        runtime_grounded_gate = api_app_module._evaluate_runtime_grounded_quality_gate_from_state(final_state)
+        _attach_export_contract_gate(final_state)
+        runtime_grounded_gate = _evaluate_runtime_grounded_quality_gate_from_state(final_state)
         final_state["grounded_quality_gate"] = runtime_grounded_gate
-        runtime_grounded_block_reason = api_app_module._runtime_grounded_quality_gate_block_reason(final_state)
+        runtime_grounded_block_reason = _runtime_grounded_quality_gate_block_reason(final_state)
         if runtime_grounded_block_reason:
-            api_app_module._append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
-            api_app_module._record_job_event(
+            _append_runtime_grounded_quality_gate_finding(final_state, runtime_grounded_gate)
+            _record_job_event(
                 job_id,
                 "runtime_grounded_quality_gate_blocked",
                 mode=str(runtime_grounded_gate.get("mode") or "strict"),
                 summary=str(runtime_grounded_gate.get("summary") or ""),
                 reasons=list(runtime_grounded_gate.get("reasons") or []),
             )
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -209,9 +231,9 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 },
             )
             return
-        grounding_block_reason = api_app_module._grounding_gate_block_reason(final_state)
+        grounding_block_reason = _grounding_gate_block_reason(final_state)
         if grounding_block_reason:
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -221,9 +243,9 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 },
             )
             return
-        mel_grounding_block_reason = api_app_module._mel_grounding_policy_block_reason(final_state)
+        mel_grounding_block_reason = _mel_grounding_policy_block_reason(final_state)
         if mel_grounding_block_reason:
-            api_app_module._set_job(
+            _set_job(
                 job_id,
                 {
                     "status": "error",
@@ -233,18 +255,18 @@ def _run_hitl_pipeline(job_id: str, state: dict, start_at: HITLStartAt) -> None:
                 },
             )
             return
-        api_app_module._set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": True})
+        _set_job(job_id, {"status": "done", "state": final_state, "hitl_enabled": True})
         return
     except Exception as exc:
-        api_app_module._set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": True, "state": state})
+        _set_job(job_id, {"status": "error", "error": str(exc), "hitl_enabled": True, "state": state})
 
 
 def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
-    job = api_app_module._get_job(job_id)
+    job = _get_job(job_id)
     if not isinstance(job, dict):
         return
     status = str(job.get("status") or "").strip().lower()
-    if status in api_app_module.TERMINAL_JOB_STATUSES:
+    if status in TERMINAL_JOB_STATUSES:
         return
     if status == "pending_hitl":
         return
@@ -252,9 +274,7 @@ def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
         return
     state = job.get("state")
     if not isinstance(state, dict):
-        api_app_module._set_job(
-            job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": True}
-        )
+        _set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": True})
         return
     _run_hitl_pipeline(job_id, state, start_at)
 
@@ -287,7 +307,7 @@ def _resume_target_from_checkpoint(checkpoint: Dict[str, Any], default_resume_fr
 
 
 def _clear_hitl_runtime_state(state: dict, *, clear_pending: bool) -> None:
-    for key in api_app_module.RUNTIME_PIPELINE_STATE_KEYS:
+    for key in RUNTIME_PIPELINE_STATE_KEYS:
         state.pop(key, None)
     if clear_pending:
         state["hitl_pending"] = False

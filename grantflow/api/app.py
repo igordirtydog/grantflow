@@ -77,6 +77,12 @@ from grantflow.api.compat_exports import (  # noqa: F401
     _validate_tenant_authz_configuration,
     _vector_store_readiness,
 )
+from grantflow.api.constants import (  # noqa: F401
+    HITL_HISTORY_EVENT_TYPES,
+    RUNTIME_PIPELINE_STATE_KEYS,
+    STATUS_WEBHOOK_EVENTS,
+    TERMINAL_JOB_STATUSES,
+)
 from grantflow.api.diagnostics_service import (  # noqa: F401
     _configured_runtime_compatibility_policy_mode,
     _python_runtime_compatibility_status,
@@ -150,27 +156,6 @@ from grantflow.swarm.state_contract import normalize_state_contract  # noqa: F40
 JOB_STORE = create_job_store_from_env()
 INGEST_AUDIT_STORE = create_ingest_audit_store_from_env()
 HITLStartAt = Literal["start", "architect", "mel", "critic"]
-TERMINAL_JOB_STATUSES = {"done", "error", "canceled"}
-STATUS_WEBHOOK_EVENTS = {
-    "running": "job.started",
-    "pending_hitl": "job.pending_hitl",
-    "done": "job.completed",
-    "error": "job.failed",
-    "canceled": "job.canceled",
-}
-RUNTIME_PIPELINE_STATE_KEYS = {
-    "_start_at",
-    "hitl_checkpoint_stage",
-    "hitl_resume_from",
-    "hitl_checkpoint_id",
-}
-HITL_HISTORY_EVENT_TYPES = {
-    "status_changed",
-    "resume_requested",
-    "hitl_checkpoint_published",
-    "hitl_checkpoint_decision",
-    "hitl_checkpoint_canceled",
-}
 JOB_RUNNER = _build_job_runner()
 
 
