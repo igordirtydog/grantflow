@@ -206,6 +206,10 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
                 "indicator_id": "IND_001",
                 "name": "Institutional service adoption score",
                 "result_level": "outcome",
+                "baseline": "0 institutions",
+                "target": "4 institutions",
+                "frequency": "quarterly",
+                "formula": "Count of institutions meeting service adoption criteria",
                 "means_of_verification": "Verification annexes and partner review notes",
                 "owner": "Project M&E manager",
             },
@@ -213,6 +217,9 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
                 "indicator_id": "IND_002",
                 "name": "Civil service modernization learning uptake",
                 "result_level": "impact",
+                "baseline": "0 ministries",
+                "target": "2 ministries",
+                "frequency": "annual",
                 "means_of_verification": "CLA evidence and review memos",
                 "owner": "MEL lead",
             },
@@ -248,12 +255,16 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
     assert "USAID Results Framework" in usaid_text
     assert "Critical Assumptions" in usaid_text
     assert "Suggested performance monitoring focus:" in usaid_text
+    assert "Suggested performance indicator rows:" in usaid_text
+    assert "Baseline/Target: 0 institutions -> 4 institutions" in usaid_text
     assert "CLA evidence and review memos" in usaid_text
     assert "EU Intervention Logic" in eu_text
     assert "Overall Objective" in eu_text
     assert "Specific Objectives" in eu_text
     assert "Expected Outcomes" in eu_text
     assert "Suggested monitoring focus:" in eu_text
+    assert "Suggested objective-level LogFrame rows:" in eu_text
+    assert "Frequency: quarterly" in eu_text
     assert "Verification annexes and partner review notes" in eu_text
     assert "Assumptions" in eu_text
     assert "Risks" in eu_text
@@ -262,6 +273,7 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
     assert "PDO1" in wb_text
     assert "Results Chain" in wb_text
     assert "Suggested PDO monitoring focus:" in wb_text
+    assert "Suggested PDO indicator rows:" in wb_text
     assert "ISR aide-memoires and results framework updates" in wb_text
 
 
@@ -856,6 +868,10 @@ def test_excel_export_includes_donor_specific_sheets():
                 "indicator_id": "IND_WB_1",
                 "name": "Agency performance monitoring score",
                 "result_level": "outcome",
+                "baseline": "0 agencies",
+                "target": "8 agencies",
+                "frequency": "semi-annual",
+                "formula": "Count of agencies meeting performance score threshold",
                 "means_of_verification": "ISR aide-memoires and results framework updates",
                 "owner": "PIU results lead",
             },
@@ -863,6 +879,9 @@ def test_excel_export_includes_donor_specific_sheets():
                 "indicator_id": "IND_STATE_1",
                 "name": "Media resilience score",
                 "result_level": "impact",
+                "baseline": "0 organizations",
+                "target": "6 organizations",
+                "frequency": "annual",
                 "means_of_verification": "Editorial risk logs and resilience reviews",
                 "owner": "Program manager and media partner leads",
             },
@@ -949,7 +968,11 @@ def test_excel_export_includes_donor_specific_sheets():
     assert "Suggested Monitoring Focus" in wb_rows[0]
     assert "Suggested Means of Verification" in wb_rows[0]
     assert "Suggested Owner" in wb_rows[0]
+    assert "Suggested Baseline -> Target" in wb_rows[0]
+    assert "Suggested Frequency" in wb_rows[0]
+    assert "Suggested Formula" in wb_rows[0]
     assert any("ISR aide-memoires and results framework updates" in str(row) for row in wb_rows[1:])
+    assert any("0 agencies -> 8 agencies" in str(row) for row in wb_rows[1:])
 
     giz_rows = list(giz_wb["GIZ_Results"].iter_rows(values_only=True))
     assert any(row[0] == "Programme Objective" for row in giz_rows[1:])

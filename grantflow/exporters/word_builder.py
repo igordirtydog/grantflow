@@ -55,6 +55,30 @@ def _add_indicator_focus_block(
         doc.add_paragraph(line, style="List Bullet")
 
 
+def _add_indicator_logframe_block(
+    doc: Document,
+    *,
+    indicators: list[Dict[str, Any]],
+    label: str = "Suggested LogFrame rows",
+) -> None:
+    focus_rows = [row for row in indicators if isinstance(row, dict)]
+    if not focus_rows:
+        return
+    doc.add_paragraph(f"{label}:", style="List Bullet")
+    for row in focus_rows:
+        name = str(row.get("name") or "").strip() or str(row.get("indicator_id") or "Indicator")
+        baseline = str(row.get("baseline") or "").strip() or "TBD"
+        target = str(row.get("target") or "").strip() or "TBD"
+        frequency = str(row.get("frequency") or "").strip()
+        formula = str(row.get("formula") or "").strip()
+        line = f"{name} | Baseline/Target: {baseline} -> {target}"
+        if frequency:
+            line += f" | Frequency: {frequency}"
+        if formula:
+            line += f" | Formula: {formula}"
+        doc.add_paragraph(line, style="List Bullet")
+
+
 def _review_readiness_rows(
     *,
     quality_summary: dict[str, Any],
@@ -273,6 +297,7 @@ def _render_usaid_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Opt
         doc.add_heading("Project Goal", level=2)
         doc.add_paragraph(goal)
         _add_indicator_focus_block(doc, indicators=impact_focus, label="Suggested learning focus")
+        _add_indicator_logframe_block(doc, indicators=impact_focus, label="Suggested goal-level LogFrame rows")
 
     do_list = toc.get("development_objectives")
     if isinstance(do_list, list) and do_list:
@@ -284,6 +309,7 @@ def _render_usaid_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Opt
             do_title = str(do.get("description") or "").strip()
             doc.add_heading(f"{do_id or 'DO'} — {do_title or 'Development Objective'}", level=3)
             _add_indicator_focus_block(doc, indicators=outcome_focus, label="Suggested performance monitoring focus")
+            _add_indicator_logframe_block(doc, indicators=outcome_focus, label="Suggested performance indicator rows")
             ir_list = do.get("intermediate_results")
             if not isinstance(ir_list, list):
                 continue
@@ -343,6 +369,7 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Option
         if rationale:
             doc.add_paragraph(rationale)
         _add_indicator_focus_block(doc, indicators=outcome_focus, label="Suggested monitoring focus")
+        _add_indicator_logframe_block(doc, indicators=outcome_focus, label="Suggested objective-level LogFrame rows")
         rendered = True
 
     specific_objectives = toc.get("specific_objectives")
@@ -358,6 +385,11 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Option
             if rationale:
                 doc.add_paragraph(rationale)
             _add_indicator_focus_block(doc, indicators=outcome_focus[:1], label="Suggested verification focus")
+            _add_indicator_logframe_block(
+                doc,
+                indicators=outcome_focus[:1],
+                label="Suggested specific-objective indicator rows",
+            )
         rendered = True
 
     expected_outcomes = toc.get("expected_outcomes")
@@ -374,6 +406,11 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Option
                 doc.add_paragraph(expected_change)
             _add_indicator_focus_block(
                 doc, indicators=output_focus[:1] or outcome_focus[:1], label="Suggested delivery focus"
+            )
+            _add_indicator_logframe_block(
+                doc,
+                indicators=output_focus[:1] or outcome_focus[:1],
+                label="Suggested outcome indicator rows",
             )
         rendered = True
 
@@ -410,6 +447,11 @@ def _render_worldbank_toc(
         _add_indicator_focus_block(
             doc, indicators=impact_focus or outcome_focus[:1], label="Suggested PDO monitoring focus"
         )
+        _add_indicator_logframe_block(
+            doc,
+            indicators=impact_focus or outcome_focus[:1],
+            label="Suggested PDO indicator rows",
+        )
         rendered = True
 
     objectives = toc.get("objectives")
@@ -426,6 +468,11 @@ def _render_worldbank_toc(
                 doc,
                 indicators=outcome_focus[:1] or impact_focus,
                 label="Suggested results monitoring focus",
+            )
+            _add_indicator_logframe_block(
+                doc,
+                indicators=outcome_focus[:1] or impact_focus,
+                label="Suggested objective indicator rows",
             )
             if description:
                 doc.add_paragraph(description)
@@ -451,6 +498,11 @@ def _render_worldbank_toc(
                 doc,
                 indicators=outcome_focus[:1] or impact_focus,
                 label="Suggested verification focus",
+            )
+            _add_indicator_logframe_block(
+                doc,
+                indicators=outcome_focus[:1] or impact_focus,
+                label="Suggested result indicator rows",
             )
         rendered = True
 
