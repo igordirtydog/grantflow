@@ -112,10 +112,28 @@ def _require_api_key_on_startup() -> bool:
     return _impl()
 
 
+def _require_persistent_stores_on_startup() -> bool:
+    from grantflow.api.runtime_service import _require_persistent_stores_on_startup as _impl
+
+    return _impl()
+
+
 def _validate_api_key_startup_security() -> None:
     from grantflow.api.runtime_service import _validate_api_key_startup_security as _impl
 
     _impl()
+
+
+def _validate_persistent_store_startup_security() -> None:
+    from grantflow.api.runtime_service import _validate_persistent_store_startup_security as _impl
+
+    _impl()
+
+
+def _redis_queue_admin_runner(required_methods: tuple[str, ...]) -> Any:
+    from grantflow.api.queue_admin_service import _redis_queue_admin_runner as _impl
+
+    return _impl(required_methods)
 
 
 def _utcnow_iso() -> str:

@@ -23,6 +23,7 @@ from grantflow.core.config import config
 from grantflow.memory_bank.vector_store import vector_store
 
 _JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue", "redis_queue"}
+_PRODUCTION_ENV_TOKENS = {"prod", "production"}
 
 
 def _app_module():
@@ -124,6 +125,21 @@ def _configured_runtime_compatibility_policy_mode() -> str:
     return "warn"
 
 
+def _deployment_environment() -> str:
+    return str(os.getenv("GRANTFLOW_ENV", "dev") or "dev").strip().lower()
+
+
+def _is_production_environment() -> bool:
+    return _deployment_environment() in _PRODUCTION_ENV_TOKENS
+
+
+def _require_persistent_stores_on_startup() -> bool:
+    explicit = os.getenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP")
+    if explicit is None or not str(explicit).strip():
+        return _is_production_environment()
+    return str(explicit).strip().lower() == "true"
+
+
 def _python_runtime_compatibility_status() -> Dict[str, Any]:
     runtime_sys = _runtime_sys()
     version_info = getattr(runtime_sys, "version_info", sys.version_info)
@@ -215,6 +231,42 @@ def _configuration_warnings() -> list[dict[str, Any]]:
                     "tenant_authz_enabled": True,
                     "default_tenant": default_tenant,
                     "allowed_tenant_count": allowed_tenant_count,
+                },
+            }
+        )
+
+    if _is_production_environment() and not _require_persistent_stores_on_startup():
+        warnings.append(
+            {
+                "code": "PERSISTENT_STORE_STARTUP_GUARD_DISABLED_IN_PRODUCTION",
+                "severity": "medium",
+                "message": (
+                    "Production mode is active but GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP=false. "
+                    "Enable this guard to fail fast when in-memory stores are configured."
+                ),
+                "details": {"environment": _deployment_environment(), "require_persistent_stores_on_startup": False},
+            }
+        )
+
+    store_modes = {
+        "job_store": "sqlite" if getattr(_job_store(), "db_path", None) else "inmem",
+        "hitl_store": "sqlite" if bool(getattr(_hitl_manager(), "_use_sqlite", False)) else "inmem",
+        "ingest_store": "sqlite" if getattr(_ingest_audit_store(), "db_path", None) else "inmem",
+    }
+    non_sqlite_stores = [name for name, mode in store_modes.items() if mode != "sqlite"]
+    if _is_production_environment() and non_sqlite_stores:
+        warnings.append(
+            {
+                "code": "PRODUCTION_NON_PERSISTENT_STORES_ACTIVE",
+                "severity": "high",
+                "message": (
+                    "Production mode with non-persistent stores may lose job/HITL/ingest state across restarts. "
+                    "Use sqlite stores for production safety."
+                ),
+                "details": {
+                    "environment": _deployment_environment(),
+                    "non_persistent_stores": non_sqlite_stores,
+                    "store_modes": store_modes,
                 },
             }
         )

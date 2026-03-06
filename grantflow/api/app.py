@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import sys  # noqa: F401
 from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Literal
+from typing import AsyncIterator, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 
 from grantflow.api.compat_exports import (  # noqa: F401
     _append_runtime_grounded_quality_gate_finding,
@@ -51,7 +51,9 @@ from grantflow.api.compat_exports import (  # noqa: F401
     _pause_for_hitl,
     _record_hitl_feedback_in_state,
     _recompute_review_workflow_sla,
+    _redis_queue_admin_runner,
     _require_api_key_on_startup,
+    _require_persistent_stores_on_startup,
     _resolve_generate_payload_from_preset,
     _resolve_preflight_request_context,
     _resolve_sla_profile_for_recompute,
@@ -72,6 +74,7 @@ from grantflow.api.compat_exports import (  # noqa: F401
     _uses_redis_queue_runner,
     _utcnow_iso,
     _validate_api_key_startup_security,
+    _validate_persistent_store_startup_security,
     _validate_runtime_compatibility_configuration,
     _validate_store_backend_alignment,
     _validate_tenant_authz_configuration,
@@ -175,21 +178,6 @@ app = FastAPI(
 )
 
 install_openapi_api_key_security(app)
-
-
-def _redis_queue_admin_runner(required_methods: tuple[str, ...]) -> Any:
-    if not _uses_redis_queue_runner():
-        raise HTTPException(
-            status_code=409,
-            detail="Dead-letter queue management requires GRANTFLOW_JOB_RUNNER_MODE=redis_queue",
-        )
-    runner = JOB_RUNNER
-    for method_name in required_methods:
-        if not callable(getattr(runner, method_name, None)):
-            raise HTTPException(
-                status_code=409, detail="Redis queue admin operations are unavailable in current runner"
-            )
-    return runner
 
 
 def _load_route_modules() -> None:

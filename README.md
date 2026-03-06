@@ -208,6 +208,7 @@ export GRANTFLOW_SQLITE_PATH=./.data/grantflow_state.db
 Notes:
 - Keep `GRANTFLOW_JOB_STORE` and `GRANTFLOW_HITL_STORE` aligned (`inmem` with `inmem`, or `sqlite` with `sqlite`).
 - On startup, GrantFlow fails fast when these two backends differ to prevent orphaned HITL/job state.
+- If `GRANTFLOW_ENV` is `prod` or `production`, startup also fails by default when any of `GRANTFLOW_JOB_STORE`, `GRANTFLOW_HITL_STORE`, `GRANTFLOW_INGEST_STORE` is non-persistent (`inmem`).
 - Recommended production baseline: `GRANTFLOW_JOB_RUNNER_MODE=redis_queue` with `GRANTFLOW_JOB_STORE=sqlite`, `GRANTFLOW_HITL_STORE=sqlite`, and `GRANTFLOW_INGEST_STORE=sqlite`.
 
 ### 4.4) (Optional) Security defaults for production
@@ -216,11 +217,13 @@ Notes:
 export GRANTFLOW_ENV=production
 export GRANTFLOW_API_KEY=change-me
 export GRANTFLOW_REQUIRE_API_KEY_ON_STARTUP=true
+export GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP=true
 ```
 
 Notes:
 - If `GRANTFLOW_ENV` is `prod` or `production`, startup now fails when `GRANTFLOW_API_KEY` is missing.
-- Override only for controlled environments with `GRANTFLOW_REQUIRE_API_KEY_ON_STARTUP=false`.
+- If `GRANTFLOW_ENV` is `prod` or `production`, startup also fails when in-memory stores are configured.
+- Override only for controlled environments with `GRANTFLOW_REQUIRE_API_KEY_ON_STARTUP=false` and/or `GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP=false`.
 
 ### 5) (Optional) Run preflight readiness check
 

@@ -164,6 +164,13 @@ def _require_api_key_on_startup() -> bool:
     return str(explicit).strip().lower() == "true"
 
 
+def _require_persistent_stores_on_startup() -> bool:
+    explicit = os.getenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP")
+    if explicit is None or not str(explicit).strip():
+        return _is_production_environment()
+    return str(explicit).strip().lower() == "true"
+
+
 def _validate_api_key_startup_security() -> None:
     if not _require_api_key_on_startup():
         return
@@ -175,12 +182,33 @@ def _validate_api_key_startup_security() -> None:
     )
 
 
+def _validate_persistent_store_startup_security() -> None:
+    if not _require_persistent_stores_on_startup():
+        return
+    store_modes = {
+        "GRANTFLOW_JOB_STORE": _job_store_mode(),
+        "GRANTFLOW_HITL_STORE": _hitl_store_mode(),
+        "GRANTFLOW_INGEST_STORE": _ingest_store_mode(),
+    }
+    non_persistent = {name: mode for name, mode in store_modes.items() if mode != "sqlite"}
+    if not non_persistent:
+        return
+    details = ", ".join(f"{name}={mode}" for name, mode in non_persistent.items())
+    raise RuntimeError(
+        "Security defaults violation: persistent stores are required at startup but non-sqlite backends are active "
+        f"({details}). Set GRANTFLOW_JOB_STORE=sqlite, GRANTFLOW_HITL_STORE=sqlite, "
+        "GRANTFLOW_INGEST_STORE=sqlite (and GRANTFLOW_SQLITE_PATH), or disable this guard with "
+        "GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP=false."
+    )
+
+
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI) -> AsyncIterator[None]:
     _validate_store_backend_alignment()
     _validate_tenant_authz_configuration()
     _validate_runtime_compatibility_configuration()
     _validate_api_key_startup_security()
+    _validate_persistent_store_startup_security()
     if _uses_queue_runner():
         _job_runner().start()
     try:

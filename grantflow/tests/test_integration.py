@@ -276,6 +276,113 @@ def test_api_key_startup_security_runs_at_startup(monkeypatch):
         asyncio.run(_start_lifespan())
 
 
+def test_persistent_store_startup_security_blocks_production_with_inmem(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "production")
+    monkeypatch.setenv("GRANTFLOW_API_KEY", "test-secret")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", raising=False)
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    with pytest.raises(RuntimeError, match="GRANTFLOW_JOB_STORE=inmem"):
+        api_app_module._validate_persistent_store_startup_security()
+
+
+def test_persistent_store_startup_security_allows_dev_with_inmem(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "dev")
+    monkeypatch.delenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", raising=False)
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    api_app_module._validate_persistent_store_startup_security()
+
+
+def test_persistent_store_startup_security_allows_explicit_override(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "production")
+    monkeypatch.setenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", "false")
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    api_app_module._validate_persistent_store_startup_security()
+
+
+def test_persistent_store_startup_security_allows_production_with_sqlite(monkeypatch):
+    class FakeJobStore:
+        db_path = "/tmp/grantflow_state.db"
+
+    class FakeHitlManager:
+        _use_sqlite = True
+
+    class FakeIngestAuditStore:
+        db_path = "/tmp/grantflow_state.db"
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "production")
+    monkeypatch.setenv("GRANTFLOW_API_KEY", "test-secret")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", raising=False)
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    api_app_module._validate_persistent_store_startup_security()
+
+
+def test_persistent_store_startup_security_runs_at_startup(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "prod")
+    monkeypatch.setenv("GRANTFLOW_API_KEY", "test-secret")
+    monkeypatch.delenv("API_KEY", raising=False)
+    monkeypatch.delenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", raising=False)
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    async def _start_lifespan():
+        async with api_app_module._app_lifespan(api_app_module.app):
+            return None
+
+    with pytest.raises(RuntimeError, match="persistent stores are required at startup"):
+        asyncio.run(_start_lifespan())
+
+
 def test_demo_console_page_loads():
     response = client.get("/demo")
     assert response.status_code == 200
@@ -1233,6 +1340,34 @@ def test_health_endpoint_reports_default_tenant_not_in_allowlist_warning(monkeyp
     assert any(w.get("code") == "TENANT_DEFAULT_NOT_IN_ALLOWLIST" for w in warnings if isinstance(w, dict))
 
 
+def test_health_endpoint_reports_production_persistent_store_warnings(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "production")
+    monkeypatch.setenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", "false")
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    response = client.get("/health")
+    assert response.status_code == 200
+    body = response.json()
+    warnings = body["diagnostics"].get("configuration_warnings") or []
+    assert any(
+        w.get("code") == "PERSISTENT_STORE_STARTUP_GUARD_DISABLED_IN_PRODUCTION"
+        for w in warnings
+        if isinstance(w, dict)
+    )
+    assert any(w.get("code") == "PRODUCTION_NON_PERSISTENT_STORES_ACTIVE" for w in warnings if isinstance(w, dict))
+
+
 def test_health_endpoint_reports_python_version_warning(monkeypatch):
     monkeypatch.setattr(api_app_module.sys, "version_info", (3, 14, 0, "final", 0))
 
@@ -1319,6 +1454,34 @@ def test_ready_endpoint_reports_default_tenant_not_in_allowlist_warning(monkeypa
     body = response.json()
     warnings = body["checks"].get("configuration_warnings") or []
     assert any(w.get("code") == "TENANT_DEFAULT_NOT_IN_ALLOWLIST" for w in warnings if isinstance(w, dict))
+
+
+def test_ready_endpoint_reports_production_persistent_store_warnings(monkeypatch):
+    class FakeJobStore:
+        db_path = None
+
+    class FakeHitlManager:
+        _use_sqlite = False
+
+    class FakeIngestAuditStore:
+        db_path = None
+
+    monkeypatch.setenv("GRANTFLOW_ENV", "production")
+    monkeypatch.setenv("GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP", "false")
+    monkeypatch.setattr(api_app_module, "JOB_STORE", FakeJobStore())
+    monkeypatch.setattr(api_app_module, "hitl_manager", FakeHitlManager())
+    monkeypatch.setattr(api_app_module, "INGEST_AUDIT_STORE", FakeIngestAuditStore())
+
+    response = client.get("/ready")
+    assert response.status_code == 200
+    body = response.json()
+    warnings = body["checks"].get("configuration_warnings") or []
+    assert any(
+        w.get("code") == "PERSISTENT_STORE_STARTUP_GUARD_DISABLED_IN_PRODUCTION"
+        for w in warnings
+        if isinstance(w, dict)
+    )
+    assert any(w.get("code") == "PRODUCTION_NON_PERSISTENT_STORES_ACTIVE" for w in warnings if isinstance(w, dict))
 
 
 def test_ready_endpoint_reports_python_version_warning(monkeypatch):
