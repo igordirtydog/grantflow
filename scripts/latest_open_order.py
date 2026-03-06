@@ -24,6 +24,21 @@ def _readlink_target(path: Path) -> str:
     return str(path.readlink())
 
 
+def _read_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _extract_backtick_value(text: str, prefix: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(prefix) and "`" in line:
+            parts = line.split("`")
+            if len(parts) >= 3:
+                return parts[1]
+    return "-"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build a short open-order guide for the latest GrantFlow demo/commercial artifacts."
@@ -35,6 +50,12 @@ def main() -> int:
     build_dir = Path(str(args.build_dir)).resolve()
     output_path = Path(str(args.output)).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    executive_readme = build_dir / "latest-executive-pack" / "README.md"
+    executive_text = _read_text(executive_readme)
+    featured_donor = _extract_backtick_value(executive_text, "- Featured donor: `")
+    open_findings = _extract_backtick_value(executive_text, "- Open critic findings (featured case): `")
+    fallback_citations = _extract_backtick_value(executive_text, "- Fallback/strategy citations (featured case): `")
+    logframe_ready = _extract_backtick_value(executive_text, "- Cases with complete LogFrame operational coverage: `")
 
     lines: list[str] = []
     lines.append("# GrantFlow Latest Open Order")
@@ -60,6 +81,14 @@ def main() -> int:
     lines.append("5. Use `latest-oem-pack/README.md` when the audience is technical or partnership-focused.")
     lines.append("6. Use `latest-pilot-archive/` or the zip under the archive folder for external sharing.")
     lines.append("")
+    if executive_text:
+        lines.append("## Featured Readiness Snapshot")
+        lines.append("")
+        lines.append(f"- Featured donor: `{featured_donor}`")
+        lines.append(f"- Open critic findings: `{open_findings}`")
+        lines.append(f"- Fallback/strategy citations: `{fallback_citations}`")
+        lines.append(f"- Complete LogFrame operational coverage: `{logframe_ready}`")
+        lines.append("")
     lines.append("## Notes")
     lines.append("")
     lines.append("- This guide depends on `make latest-links` having run successfully.")

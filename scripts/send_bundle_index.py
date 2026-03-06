@@ -33,6 +33,21 @@ def _zip_detail(path: Path, root: Path) -> str:
     return f"`{_safe_rel(path, root)}` ({size_mb:.2f} MB)"
 
 
+def _read_text(path: Path) -> str:
+    if not path.exists():
+        return ""
+    return path.read_text(encoding="utf-8")
+
+
+def _extract_backtick_value(text: str, prefix: str) -> str:
+    for line in text.splitlines():
+        if line.startswith(prefix) and "`" in line:
+            parts = line.split("`")
+            if len(parts) >= 3:
+                return parts[1]
+    return "-"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build a send-oriented index of current GrantFlow fast/full demo bundles."
@@ -51,6 +66,14 @@ def main() -> int:
     latest_full_zip = _latest_matching(build_dir, "release-demo-bundle/*.zip", kind="file")
     latest_handout = _latest_matching(build_dir, "pilot-handout*.md", kind="file")
     latest_open_order = build_dir / "latest-open-order.md"
+    executive_readme = build_dir / "latest-executive-pack" / "README.md"
+    executive_text = _read_text(executive_readme)
+    featured_donor = _extract_backtick_value(executive_text, "- Featured donor: `")
+    featured_preset = _extract_backtick_value(executive_text, "- Featured preset: `")
+    open_findings = _extract_backtick_value(executive_text, "- Open critic findings (featured case): `")
+    fallback_citations = _extract_backtick_value(executive_text, "- Fallback/strategy citations (featured case): `")
+    logframe_ready = _extract_backtick_value(executive_text, "- Cases with complete LogFrame operational coverage: `")
+    smart_coverage = _extract_backtick_value(executive_text, "- SMART coverage (featured case): `")
 
     lines: list[str] = []
     lines.append("# GrantFlow Send Bundle Index")
@@ -87,6 +110,16 @@ def main() -> int:
         "- Pilot archive/OEM artifacts: only when the recipient needs raw evidence or technical diligence details."
     )
     lines.append("")
+    if executive_text:
+        lines.append("## Featured Readiness Snapshot")
+        lines.append("")
+        lines.append(f"- Featured donor: `{featured_donor}`")
+        lines.append(f"- Featured preset: `{featured_preset}`")
+        lines.append(f"- Open critic findings: `{open_findings}`")
+        lines.append(f"- Fallback/strategy citations: `{fallback_citations}`")
+        lines.append(f"- Complete LogFrame operational coverage: `{logframe_ready}`")
+        lines.append(f"- SMART coverage (featured case): `{smart_coverage}`")
+        lines.append("")
     lines.append("## Supporting Artifacts")
     lines.append("")
     lines.append(
