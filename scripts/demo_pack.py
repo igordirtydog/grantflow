@@ -9,6 +9,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlencode
 
 
 DEFAULT_PRESET_KEYS = (
@@ -140,6 +141,114 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
+def _apply_generate_overrides(
+    payload: dict[str, Any],
+    *,
+    llm_mode: bool,
+    hitl_enabled: bool,
+    architect_rag_enabled: bool,
+) -> dict[str, Any]:
+    out = dict(payload)
+    out["llm_mode"] = bool(llm_mode)
+    out["hitl_enabled"] = bool(hitl_enabled)
+    out["architect_rag_enabled"] = bool(architect_rag_enabled)
+    return out
+
+
+def _resolve_local_preset_detail(
+    preset_key: str,
+    *,
+    llm_mode: bool,
+    hitl_enabled: bool,
+    architect_rag_enabled: bool,
+) -> dict[str, Any]:
+    from grantflow.api.presets_service import _generate_preset_rows_for_public, _resolve_generate_payload_from_preset
+
+    source_kind, generate_payload = _resolve_generate_payload_from_preset(preset_key, preset_type="auto")
+    target: dict[str, Any] | None = None
+    for row in _generate_preset_rows_for_public():
+        if isinstance(row, dict) and str(row.get("preset_key") or "").strip() == preset_key:
+            target = dict(row)
+            break
+    resolved_payload = _apply_generate_overrides(
+        dict(generate_payload),
+        llm_mode=llm_mode,
+        hitl_enabled=hitl_enabled,
+        architect_rag_enabled=architect_rag_enabled,
+    )
+    return {
+        "preset_key": preset_key,
+        "donor_id": str((target or {}).get("donor_id") or resolved_payload.get("donor_id") or "").strip() or None,
+        "title": (target or {}).get("title"),
+        "label": (target or {}).get("label"),
+        "source_kind": (target or {}).get("source_kind") or source_kind,
+        "source_file": (target or {}).get("source_file"),
+        "generate_payload": resolved_payload,
+    }
+
+
+def _resolve_preset_detail(
+    base_url: str,
+    preset_key: str,
+    *,
+    api_key: str | None,
+    llm_mode: bool,
+    hitl_enabled: bool,
+    architect_rag_enabled: bool,
+) -> dict[str, Any]:
+    query = urlencode(
+        {
+            "llm_mode": "true" if llm_mode else "false",
+            "hitl_enabled": "true" if hitl_enabled else "false",
+            "architect_rag_enabled": "true" if architect_rag_enabled else "false",
+        }
+    )
+    url = f"{base_url}/generate/presets/{preset_key}?{query}"
+    try:
+        return _json_request("GET", url, api_key=api_key)
+    except RuntimeError as exc:
+        if "HTTP 404" not in str(exc):
+            raise
+    return _resolve_local_preset_detail(
+        preset_key,
+        llm_mode=llm_mode,
+        hitl_enabled=hitl_enabled,
+        architect_rag_enabled=architect_rag_enabled,
+    )
+
+
+def _submit_generate_request(
+    base_url: str,
+    *,
+    preset_key: str,
+    preset_detail: dict[str, Any],
+    request_payload: dict[str, Any],
+    api_key: str | None,
+) -> tuple[dict[str, Any], str]:
+    try:
+        response = _json_request(
+            "POST",
+            f"{base_url}/generate/from-preset",
+            payload=request_payload,
+            api_key=api_key,
+        )
+        return response, "from-preset"
+    except RuntimeError as exc:
+        if "HTTP 404" not in str(exc):
+            raise
+
+    generate_payload = dict(preset_detail.get("generate_payload") or {})
+    if not generate_payload:
+        raise RuntimeError(f"Could not build generate payload for preset {preset_key}")
+    response = _json_request(
+        "POST",
+        f"{base_url}/generate",
+        payload=generate_payload,
+        api_key=api_key,
+    )
+    return response, "generate"
+
+
 def _build_summary(root: Path, rows: list[dict[str, Any]], *, llm_mode: bool, hitl_preset_key: str | None) -> str:
     lines: list[str] = []
     lines.append(f"# Demo Pack — {root.name}")
@@ -221,13 +330,20 @@ def main() -> int:
     summary_rows: list[dict[str, Any]] = []
 
     for preset_key in preset_keys:
-        preset_detail = _json_request("GET", f"{base_url}/generate/presets/{preset_key}", api_key=api_key)
+        hitl_enabled = bool(hitl_preset_key and preset_key == hitl_preset_key)
+        preset_detail = _resolve_preset_detail(
+            base_url,
+            preset_key,
+            api_key=api_key,
+            llm_mode=bool(args.llm_mode),
+            hitl_enabled=hitl_enabled,
+            architect_rag_enabled=bool(args.architect_rag_enabled),
+        )
         generate_payload = dict(preset_detail.get("generate_payload") or {})
         donor_id = str(generate_payload.get("donor_id") or preset_detail.get("donor_id") or "").strip()
         if not donor_id:
             raise RuntimeError(f"Could not resolve donor_id for preset {preset_key}")
 
-        hitl_enabled = bool(hitl_preset_key and preset_key == hitl_preset_key)
         request_payload = {
             "preset_key": preset_key,
             "preset_type": "auto",
@@ -242,10 +358,11 @@ def main() -> int:
         _write_json(case_dir / "preset-detail.json", preset_detail)
         _write_json(case_dir / "generate-request.json", request_payload)
 
-        generate_response = _json_request(
-            "POST",
-            f"{base_url}/generate/from-preset",
-            payload=request_payload,
+        generate_response, generate_mode = _submit_generate_request(
+            base_url,
+            preset_key=preset_key,
+            preset_detail=preset_detail,
+            request_payload=request_payload,
             api_key=api_key,
         )
         _write_json(case_dir / "generate-response.json", generate_response)
@@ -322,6 +439,7 @@ def main() -> int:
                 "citation_count": citations_payload.get("citation_count"),
                 "hitl_enabled": hitl_enabled,
                 "case_dir": case_dir_name,
+                "generate_mode": generate_mode,
             }
         )
 
