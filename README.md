@@ -700,6 +700,9 @@ docker-compose up --build
 
 By default, compose starts `api + worker + redis + chroma`.
 
+Production rollout checklist:
+- `docs/deployment-checklist.md`
+
 Production preflight checks:
 
 ```bash
@@ -730,6 +733,7 @@ Current constraints:
 
 - Full guide: `docs/full-guide.md`
 - Architecture overview: `docs/architecture.md`
+- Deployment checklist: `docs/deployment-checklist.md`
 - Troubleshooting guide: `docs/troubleshooting.md`
 - Contributor map: `docs/contributor-map.md`
 - Operator runbook: `docs/operations-runbook.md`

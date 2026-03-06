@@ -322,6 +322,9 @@ Open:
 - `http://localhost:8000/docs`
 - Compose starts `api + worker + redis + chroma` by default.
 
+Production rollout checklist:
+- `docs/deployment-checklist.md`
+
 ## 12) Development
 
 ### Tests
@@ -346,6 +349,7 @@ mypy grantflow/api grantflow/core/stores.py grantflow/swarm/versioning.py
 - API stability policy: `docs/api-stability-policy.md`
 - PR/commit conventions: `CONTRIBUTING.md`
 - Architecture overview: `docs/architecture.md`
+- Deployment checklist: `docs/deployment-checklist.md`
 - Troubleshooting: `docs/troubleshooting.md`
 - Operations runbook: `docs/operations-runbook.md`
 
