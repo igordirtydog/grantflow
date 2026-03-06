@@ -18,6 +18,9 @@ _DONOR_QUERY_PRESETS: dict[str, list[str]] = {
         "specific objectives",
         "expected outcomes",
         "results framework",
+        "logframe",
+        "action document",
+        "means of verification",
     ],
     "worldbank": [
         "project development objective",
@@ -25,6 +28,9 @@ _DONOR_QUERY_PRESETS: dict[str, list[str]] = {
         "results framework",
         "indicator focus",
         "service delivery",
+        "implementation status results report",
+        "project development objective indicators",
+        "intermediate results indicators",
     ],
     "giz": [
         "technical cooperation",
@@ -94,17 +100,25 @@ def context_query_hints(input_context: Dict[str, Any] | None, *, max_items: int 
     return " | ".join(hints)
 
 
-def toc_query_hints(toc_payload: Any, *, max_items: int = 3) -> str:
+def toc_query_hints(toc_payload: Any, *, max_items: int = 4) -> str:
     if not isinstance(toc_payload, dict):
         return ""
     hints: list[str] = []
-    for key in ("project_goal", "project_development_objective", "brief"):
+    for key in ("project_goal", "project_development_objective", "program_goal", "programme_objective", "brief"):
         raw = toc_payload.get(key)
         text = str(raw or "").strip()
         if text:
             hints.append(text)
         if len(hints) >= max_items:
             break
+    overall_objective = toc_payload.get("overall_objective")
+    if len(hints) < max_items and isinstance(overall_objective, dict):
+        for key in ("title", "rationale"):
+            text = str(overall_objective.get(key) or "").strip()
+            if text:
+                hints.append(text)
+            if len(hints) >= max_items:
+                break
     objectives = toc_payload.get("objectives")
     if len(hints) < max_items and isinstance(objectives, list):
         for row in objectives[:2]:
@@ -113,6 +127,36 @@ def toc_query_hints(toc_payload: Any, *, max_items: int = 3) -> str:
             title = str(row.get("title") or "").strip()
             if title:
                 hints.append(title)
+            if len(hints) >= max_items:
+                break
+    specific_objectives = toc_payload.get("specific_objectives")
+    if len(hints) < max_items and isinstance(specific_objectives, list):
+        for row in specific_objectives[:2]:
+            if not isinstance(row, dict):
+                continue
+            title = str(row.get("title") or "").strip()
+            if title:
+                hints.append(title)
+            if len(hints) >= max_items:
+                break
+    expected_outcomes = toc_payload.get("expected_outcomes")
+    if len(hints) < max_items and isinstance(expected_outcomes, list):
+        for row in expected_outcomes[:2]:
+            if not isinstance(row, dict):
+                continue
+            text = str(row.get("expected_change") or row.get("title") or "").strip()
+            if text:
+                hints.append(text)
+            if len(hints) >= max_items:
+                break
+    results_chain = toc_payload.get("results_chain")
+    if len(hints) < max_items and isinstance(results_chain, list):
+        for row in results_chain[:2]:
+            if not isinstance(row, dict):
+                continue
+            text = str(row.get("description") or row.get("title") or row.get("indicator_focus") or "").strip()
+            if text:
+                hints.append(text)
             if len(hints) >= max_items:
                 break
     return " | ".join(hints)
