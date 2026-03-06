@@ -5,7 +5,6 @@ from typing import Any, Dict, Optional
 
 from fastapi import BackgroundTasks, HTTPException, Query, Request
 
-from grantflow.api import app as api_app_module
 from grantflow.api.app import (
     _checkpoint_status_token,
     _clear_hitl_runtime_state,
@@ -75,6 +74,12 @@ from grantflow.swarm.hitl import HITLStatus, hitl_manager
 from grantflow.swarm.state_contract import build_graph_state, normalize_state_contract
 
 
+def _app_module():
+    from grantflow.api import app as api_app_module
+
+    return api_app_module
+
+
 @jobs_router.post(
     "/generate/preflight",
     response_model=GeneratePreflightPublicResponse,
@@ -89,7 +94,7 @@ def generate_preflight(req: GeneratePreflightRequest, request: Request):
         client_metadata=req.client_metadata,
         input_context=req.input_context,
     )
-    return api_app_module._build_generate_preflight(
+    return _app_module()._build_generate_preflight(
         donor_id=donor,
         strategy=strategy,
         client_metadata=client_metadata,
@@ -256,7 +261,7 @@ async def generate(
     preflight_client_metadata = dict(client_metadata) if isinstance(client_metadata, dict) else {}
     if isinstance(input_payload, dict) and input_payload:
         preflight_client_metadata["_preflight_input_context"] = dict(input_payload)
-    preflight = api_app_module._build_generate_preflight(
+    preflight = _app_module()._build_generate_preflight(
         donor_id=donor,
         strategy=strategy,
         client_metadata=preflight_client_metadata or None,
@@ -369,14 +374,14 @@ async def generate(
                 queue_backend = _dispatch_pipeline_task(background_tasks, _run_hitl_pipeline_by_job_id, job_id, "start")
             else:
                 queue_backend = _dispatch_pipeline_task(
-                    background_tasks, api_app_module._run_hitl_pipeline, job_id, initial_state, "start"
+                    background_tasks, _app_module()._run_hitl_pipeline, job_id, initial_state, "start"
                 )
         else:
             if _uses_redis_queue_runner():
                 queue_backend = _dispatch_pipeline_task(background_tasks, _run_pipeline_to_completion_by_job_id, job_id)
             else:
                 queue_backend = _dispatch_pipeline_task(
-                    background_tasks, api_app_module._run_pipeline_to_completion, job_id, initial_state
+                    background_tasks, _app_module()._run_pipeline_to_completion, job_id, initial_state
                 )
     except HTTPException as exc:
         _set_job(
@@ -570,7 +575,7 @@ async def resume_job(
         else:
             queue_backend = _dispatch_pipeline_task(
                 background_tasks,
-                api_app_module._run_hitl_pipeline,
+                _app_module()._run_hitl_pipeline,
                 job_id,
                 state,
                 start_at,

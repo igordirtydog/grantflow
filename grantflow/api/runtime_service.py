@@ -18,6 +18,28 @@ JOB_RUNNER_MODES = {"background_tasks", "inmemory_queue", "redis_queue"}
 PRODUCTION_ENV_TOKENS = {"prod", "production"}
 
 
+def _app_module():
+    from grantflow.api import app as api_app_module
+
+    return api_app_module
+
+
+def _job_store():
+    return _app_module().JOB_STORE
+
+
+def _hitl_manager():
+    return _app_module().hitl_manager
+
+
+def _ingest_audit_store():
+    return _app_module().INGEST_AUDIT_STORE
+
+
+def _job_runner():
+    return _app_module().JOB_RUNNER
+
+
 def _job_runner_mode() -> str:
     raw_mode = str(getattr(config.job_runner, "mode", "background_tasks") or "background_tasks").strip().lower()
     if raw_mode not in JOB_RUNNER_MODES:
@@ -60,21 +82,15 @@ def _build_job_runner():
 
 
 def _job_store_mode() -> str:
-    from grantflow.api import app as api_app_module
-
-    return "sqlite" if getattr(api_app_module.JOB_STORE, "db_path", None) else "inmem"
+    return "sqlite" if getattr(_job_store(), "db_path", None) else "inmem"
 
 
 def _hitl_store_mode() -> str:
-    from grantflow.api import app as api_app_module
-
-    return "sqlite" if bool(getattr(api_app_module.hitl_manager, "_use_sqlite", False)) else "inmem"
+    return "sqlite" if bool(getattr(_hitl_manager(), "_use_sqlite", False)) else "inmem"
 
 
 def _ingest_store_mode() -> str:
-    from grantflow.api import app as api_app_module
-
-    return "sqlite" if getattr(api_app_module.INGEST_AUDIT_STORE, "db_path", None) else "inmem"
+    return "sqlite" if getattr(_ingest_audit_store(), "db_path", None) else "inmem"
 
 
 def _validate_store_backend_alignment() -> None:
@@ -161,16 +177,14 @@ def _validate_api_key_startup_security() -> None:
 
 @asynccontextmanager
 async def _app_lifespan(_: FastAPI) -> AsyncIterator[None]:
-    from grantflow.api import app as api_app_module
-
     _validate_store_backend_alignment()
     _validate_tenant_authz_configuration()
     _validate_runtime_compatibility_configuration()
     _validate_api_key_startup_security()
     if _uses_queue_runner():
-        api_app_module.JOB_RUNNER.start()
+        _job_runner().start()
     try:
         yield
     finally:
         if _uses_queue_runner():
-            api_app_module.JOB_RUNNER.stop()
+            _job_runner().stop()

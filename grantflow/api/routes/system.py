@@ -2,17 +2,18 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 
-from grantflow.api import app as api_app_module
+from grantflow.api.diagnostics_service import _health_diagnostics
 from grantflow.api.readiness_service import _build_readiness_payload
 from grantflow.api.routers import system_router
+from grantflow.core.version import __version__
 
 
 @system_router.get("/health")
 def health_check():
     return {
         "status": "healthy",
-        "version": api_app_module.__version__,
-        "diagnostics": api_app_module._health_diagnostics(),
+        "version": __version__,
+        "diagnostics": _health_diagnostics(),
     }
 
 

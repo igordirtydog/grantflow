@@ -7,7 +7,6 @@ from typing import Optional
 from fastapi import HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from grantflow.api import app as api_app_module
 from grantflow.api.app import (
     _configured_export_require_grounded_gate_pass,
     _evaluate_export_contract_gate,
@@ -79,6 +78,12 @@ from grantflow.api.tenant import (
     _resolve_tenant_id,
 )
 from grantflow.api.routers import exports_router
+
+
+def _app_module():
+    from grantflow.api import app as api_app_module
+
+    return api_app_module
 
 
 @exports_router.get("/queue/dead-letter/export")
@@ -1190,7 +1195,7 @@ def export_artifacts(req: ExportRequest, request: Request):
         xlsx_bytes: Optional[bytes] = None
 
         if fmt in {"docx", "both"}:
-            docx_bytes = api_app_module.build_docx_from_toc(
+            docx_bytes = _app_module().build_docx_from_toc(
                 toc_draft,
                 donor_id,
                 logframe_draft=logframe_draft,
@@ -1200,7 +1205,7 @@ def export_artifacts(req: ExportRequest, request: Request):
             )
 
         if fmt in {"xlsx", "both"}:
-            xlsx_bytes = api_app_module.build_xlsx_from_logframe(
+            xlsx_bytes = _app_module().build_xlsx_from_logframe(
                 logframe_draft,
                 donor_id,
                 toc_draft=toc_draft,
