@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh diligence-index diligence-index-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -62,6 +62,8 @@ PILOT_ARCHIVE_OEM_DIR ?= $(OEM_PACK_OUT_DIR)
 PILOT_ARCHIVE_OUT_DIR ?= build/pilot-archive
 PILOT_ARCHIVE_NAME ?=
 PILOT_ARCHIVE_INCLUDE_OEM ?= 1
+DILIGENCE_INDEX_BUILD_DIR ?= build
+DILIGENCE_INDEX_OUT ?= build/diligence-index.md
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -305,3 +307,11 @@ pilot-archive:
 
 pilot-archive-refresh: oem-pack-refresh
 	$(MAKE) pilot-archive PILOT_ARCHIVE_PILOT_DIR=$(PILOT_PACK_DIR) PILOT_ARCHIVE_EXECUTIVE_DIR=$(EXECUTIVE_PACK_OUT_DIR) PILOT_ARCHIVE_OEM_DIR=$(OEM_PACK_OUT_DIR) PILOT_ARCHIVE_OUT_DIR=$(PILOT_ARCHIVE_OUT_DIR) PILOT_ARCHIVE_NAME=$(PILOT_ARCHIVE_NAME) PILOT_ARCHIVE_INCLUDE_OEM=$(PILOT_ARCHIVE_INCLUDE_OEM)
+
+diligence-index:
+	$(PYTHON) scripts/diligence_index.py \
+		--build-dir $(DILIGENCE_INDEX_BUILD_DIR) \
+		--output $(DILIGENCE_INDEX_OUT)
+
+diligence-index-refresh: pilot-archive-refresh
+	$(MAKE) diligence-index DILIGENCE_INDEX_BUILD_DIR=$(DILIGENCE_INDEX_BUILD_DIR) DILIGENCE_INDEX_OUT=$(DILIGENCE_INDEX_OUT)

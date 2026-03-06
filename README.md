@@ -184,6 +184,8 @@ make oem-pack
 make oem-pack-refresh
 make pilot-archive
 make pilot-archive-refresh
+make diligence-index
+make diligence-index-refresh
 ```
 
 Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xlsx` / ZIP artifacts. The target expects a running local API at `http://127.0.0.1:8000`.
@@ -202,6 +204,8 @@ Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xl
 `make oem-pack-refresh` rebuilds the full chain first, then writes the OEM pack.
 `make pilot-archive` zips the pilot, executive, and optional OEM packs into a sendable archive.
 `make pilot-archive-refresh` rebuilds the full chain first, then writes the archive.
+`make diligence-index` builds a single local index of generated packs and archives under `build/`.
+`make diligence-index-refresh` rebuilds the full chain first, then writes the index.
 
 ## Quick Start
 
