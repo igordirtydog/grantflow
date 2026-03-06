@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -25,6 +25,13 @@ LLM_GROUNDED_STRICT_DONORS ?= usaid,eu,worldbank,giz,state_department
 LLM_GROUNDED_STRICT_MIN_SEED_PER_FAMILY ?= 1
 LLM_GROUNDED_STRICT_GATE_THRESHOLDS ?= grantflow/eval/fixtures/llm_grounded_strict_donor_gate_thresholds.json
 RBM_SAMPLE_IDS ?= rbm-usaid-ai-civil-service-kazakhstan,rbm-eu-youth-employment-jordan
+DEMO_PACK_DIR ?= build/demo-pack
+DEMO_PACK_API_BASE ?= http://127.0.0.1:8000
+DEMO_PACK_API_KEY ?=
+DEMO_PACK_PRESET_KEYS ?= usaid_gov_ai_kazakhstan,eu_digital_governance_moldova,worldbank_public_sector_uzbekistan
+DEMO_PACK_HITL_PRESET_KEY ?= usaid_gov_ai_kazakhstan
+DEMO_PACK_LLM_MODE ?= 0
+DEMO_PACK_ARCHITECT_RAG_ENABLED ?= 0
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -181,3 +188,14 @@ refresh-grounded-baseline:
 		--cases-file $(GROUNDED_CASES_FILE) \
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--out $(GROUNDED_BASELINE)
+
+demo-pack:
+	mkdir -p $(DEMO_PACK_DIR)
+	$(PYTHON) scripts/demo_pack.py \
+		--api-base $(DEMO_PACK_API_BASE) \
+		--output-dir $(DEMO_PACK_DIR) \
+		--api-key "$(DEMO_PACK_API_KEY)" \
+		--preset-keys $(DEMO_PACK_PRESET_KEYS) \
+		--hitl-preset-key $(DEMO_PACK_HITL_PRESET_KEY) \
+		$(if $(filter 1 true TRUE yes YES,$(DEMO_PACK_LLM_MODE)),--llm-mode,) \
+		$(if $(filter 1 true TRUE yes YES,$(DEMO_PACK_ARCHITECT_RAG_ENABLED)),--architect-rag-enabled,)

@@ -165,6 +165,14 @@ Use this path for pilot conversations and technical evaluation:
 
 For ready-made example artifacts, use files in `docs/samples/` and `docs/pilot_runs/2026-02-27/`.
 
+One-command local bundle generation:
+
+```bash
+make demo-pack
+```
+
+Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xlsx` / ZIP artifacts. The target expects a running local API at `http://127.0.0.1:8000`.
+
 ## Quick Start
 
 ### 1) Install

@@ -23,6 +23,14 @@ uvicorn grantflow.api.app:app --reload
 Optional:
 - open Demo Console at `http://127.0.0.1:8000/demo`
 
+Fastest reproducible bundle path:
+
+```bash
+make demo-pack
+```
+
+This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
+
 ## 3) Operator Demo Flow (API-first)
 
 ### Step A: health/readiness
@@ -134,3 +142,12 @@ curl -s http://127.0.0.1:8000/status/<JOB_ID>/hitl/history
 - Final donor compliance sign-off remains human responsibility.
 - Built-in auth is API-key based; enterprise IAM is expected at platform/gateway layer.
 
+## 8) Make Target Options
+
+Useful overrides:
+
+```bash
+make demo-pack DEMO_PACK_DIR=build/demo-pack-llm DEMO_PACK_LLM_MODE=1 DEMO_PACK_ARCHITECT_RAG_ENABLED=1
+make demo-pack DEMO_PACK_PRESET_KEYS=usaid_gov_ai_kazakhstan,worldbank_public_sector_uzbekistan
+make demo-pack DEMO_PACK_API_KEY=change-me
+```
