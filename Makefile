@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -35,6 +35,8 @@ DEMO_PACK_ARCHITECT_RAG_ENABLED ?= 0
 PILOT_PACK_DIR ?= build/pilot-pack
 PILOT_PACK_DEMO_DIR ?= $(DEMO_PACK_DIR)
 PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO ?= 0
+BUYER_BRIEF_PILOT_DIR ?= $(PILOT_PACK_DIR)
+BUYER_BRIEF_OUT ?=
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -209,3 +211,11 @@ pilot-pack: demo-pack
 		--demo-pack-dir $(PILOT_PACK_DEMO_DIR) \
 		--output-dir $(PILOT_PACK_DIR) \
 		$(if $(filter 1 true TRUE yes YES,$(PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO)),--include-productization-memo,)
+
+buyer-brief:
+	$(PYTHON) scripts/buyer_brief.py \
+		--pilot-pack-dir $(BUYER_BRIEF_PILOT_DIR) \
+		$(if $(strip $(BUYER_BRIEF_OUT)),--output $(BUYER_BRIEF_OUT),)
+
+buyer-brief-refresh: pilot-pack
+	$(MAKE) buyer-brief BUYER_BRIEF_PILOT_DIR=$(PILOT_PACK_DIR) BUYER_BRIEF_OUT=$(BUYER_BRIEF_OUT)

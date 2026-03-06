@@ -28,10 +28,14 @@ Fastest reproducible bundle path:
 ```bash
 make demo-pack
 make pilot-pack
+make buyer-brief
+make buyer-brief-refresh
 ```
 
 This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
 `make pilot-pack` additionally assembles a stakeholder-facing folder in `build/pilot-pack/` with the live run evidence plus buyer and pilot evaluation docs.
+`make buyer-brief` writes a concise executive summary markdown from an existing pilot pack.
+`make buyer-brief-refresh` rebuilds the pilot pack first, then writes the brief.
 
 ## 3) Operator Demo Flow (API-first)
 
@@ -153,4 +157,6 @@ make demo-pack DEMO_PACK_DIR=build/demo-pack-llm DEMO_PACK_LLM_MODE=1 DEMO_PACK_
 make demo-pack DEMO_PACK_PRESET_KEYS=usaid_gov_ai_kazakhstan,worldbank_public_sector_uzbekistan
 make demo-pack DEMO_PACK_API_KEY=change-me
 make pilot-pack PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
+make buyer-brief BUYER_BRIEF_OUT=build/pilot-pack/buyer-brief-custom.md
+make buyer-brief-refresh PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 ```
