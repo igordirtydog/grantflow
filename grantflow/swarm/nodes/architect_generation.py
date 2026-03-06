@@ -526,6 +526,24 @@ def _claim_priority(statement_path: str) -> int:
     return 1
 
 
+def _architect_result_level(statement_path: str) -> str:
+    path = str(statement_path or "").lower()
+    if path in {
+        "toc.project_goal",
+        "toc.project_development_objective",
+        "toc.program_goal",
+        "toc.programme_objective",
+    }:
+        return "impact"
+    if any(token in path for token in (".development_objectives[", ".specific_objectives[", ".objectives[")):
+        return "outcome"
+    if any(token in path for token in (".expected_outcomes[", ".results_chain[", ".outcomes[")):
+        return "outcome"
+    if ".outputs[" in path:
+        return "output"
+    return "general"
+
+
 def extract_architect_claim_records(
     toc_payload: Dict[str, Any],
     *,
@@ -548,6 +566,7 @@ def extract_architect_claim_records(
                 "statement_path": statement_path,
                 "statement": clean_statement,
                 "priority": _claim_priority(statement_path),
+                "result_level": _architect_result_level(statement_path),
             }
         )
     deduped.sort(
@@ -671,6 +690,7 @@ def build_architect_claim_citations(
                 "label": f"Based on {namespace}",
                 "used_for": "toc_draft",
                 "statement_path": "toc",
+                "result_level": "general",
             }
         )
         return citations
@@ -685,6 +705,7 @@ def build_architect_claim_citations(
                 if not statement:
                     continue
                 priority = int(row.get("priority") or 1)
+                result_level = str(row.get("result_level") or _architect_result_level(statement_path))
                 synthetic_doc_id = f"strategy::{namespace_normalized}::{statement_path}"
                 confidence_threshold = architect_claim_confidence_threshold(
                     donor_id=donor_id,
@@ -704,6 +725,7 @@ def build_architect_claim_citations(
                         "statement_path": statement_path,
                         "statement": statement[:240],
                         "statement_priority": priority,
+                        "result_level": result_level,
                         "excerpt": statement[:240],
                         "citation_confidence": 0.75,
                         "raw_claim_confidence": 0.75,
@@ -729,6 +751,7 @@ def build_architect_claim_citations(
                         "used_for": "toc_claim",
                         "statement_path": "toc",
                         "statement": "ToC claims generated from donor strategy without retrieval.",
+                        "result_level": "general",
                         "citation_confidence": 0.75,
                         "raw_claim_confidence": 0.75,
                         "evidence_score": 0.75,
@@ -748,6 +771,7 @@ def build_architect_claim_citations(
             if not statement:
                 continue
             priority = int(row.get("priority") or 1)
+            result_level = str(row.get("result_level") or _architect_result_level(statement_path))
             citations.append(
                 {
                     "stage": "architect",
@@ -759,6 +783,7 @@ def build_architect_claim_citations(
                     "statement_path": statement_path,
                     "statement": statement[:240],
                     "statement_priority": priority,
+                    "result_level": result_level,
                     "citation_confidence": 0.1,
                     "raw_claim_confidence": 0.1,
                     "evidence_score": 0.1,
@@ -782,6 +807,7 @@ def build_architect_claim_citations(
                     "used_for": "toc_claim",
                     "statement_path": "toc",
                     "statement": "ToC claims generated without retrieval evidence.",
+                    "result_level": "general",
                     "citation_confidence": 0.1,
                     "raw_claim_confidence": 0.1,
                     "evidence_score": 0.1,
@@ -799,6 +825,7 @@ def build_architect_claim_citations(
         statement_path = str(row.get("statement_path") or "toc")
         statement = str(row.get("statement") or "").strip()
         priority = int(row.get("priority") or 1)
+        result_level = str(row.get("result_level") or _architect_result_level(statement_path))
         if not statement:
             continue
         hit: Dict[str, Any]
@@ -847,6 +874,7 @@ def build_architect_claim_citations(
                 "statement_path": statement_path,
                 "statement": statement[:240],
                 "statement_priority": priority,
+                "result_level": result_level,
                 "excerpt": str(hit.get("excerpt") or "")[:240] if hit else None,
                 "citation_confidence": round(confidence if hit else 0.1, 4),
                 "raw_claim_confidence": round(raw_claim_confidence if hit else 0.1, 4),

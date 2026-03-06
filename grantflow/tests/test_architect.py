@@ -70,6 +70,7 @@ def test_architect_generates_contract_validated_toc_with_optional_retrieval_disa
     architect_citations = [c for c in citations if isinstance(c, dict) and c.get("stage") == "architect"]
     assert architect_citations
     assert any(c.get("statement_path") for c in architect_citations)
+    assert all(c.get("result_level") in {"impact", "outcome", "output", "general"} for c in architect_citations)
     assert any("citation_confidence" in c for c in architect_citations)
     assert all(0.0 <= float(c.get("citation_confidence", 0.0)) <= 1.0 for c in architect_citations)
 
@@ -217,6 +218,7 @@ def test_architect_claim_citations_without_hits_emit_per_claim_fallback_records(
     assert all(c["citation_type"] == "fallback_namespace" for c in citations)
     assert all(c.get("used_for") == "toc_claim" for c in citations)
     assert all(str(c.get("statement_path") or "").strip() for c in citations)
+    assert all(c.get("result_level") in {"impact", "outcome", "output", "general"} for c in citations)
     assert all(c.get("traceability_status") == "missing" for c in citations)
     assert all(c.get("traceability_complete") is False for c in citations)
     assert all("no retrieved evidence" in str(c.get("label") or "").lower() for c in citations)
@@ -242,6 +244,7 @@ def test_architect_claim_citations_without_hits_use_strategy_reference_when_retr
     assert all(c["citation_type"] == "strategy_reference" for c in citations)
     assert all(c.get("used_for") == "toc_claim" for c in citations)
     assert all(str(c.get("statement_path") or "").strip() for c in citations)
+    assert all(c.get("result_level") in {"impact", "outcome", "output", "general"} for c in citations)
     assert all(c.get("traceability_status") == "complete" for c in citations)
     assert all(c.get("traceability_complete") is True for c in citations)
     assert all(str(c.get("doc_id") or "").startswith("strategy::") for c in citations)

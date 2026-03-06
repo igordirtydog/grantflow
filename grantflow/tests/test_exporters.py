@@ -32,6 +32,8 @@ def _sample_citations():
             "label": "USAID ADS 201 p.12",
             "excerpt": "Official indicator guidance excerpt",
             "citation_confidence": 0.82,
+            "result_level": "outcome",
+            "statement_path": "toc.development_objectives[0].description",
         }
     ]
 
@@ -101,6 +103,8 @@ def test_word_export_includes_citation_traceability_section():
     assert "USAID ADS 201 p.12" in text
     assert "Official indicator guidance excerpt" in text
     assert "conf 0.82" in text
+    assert "level outcome" in text
+    assert "path toc.development_objectives[0].description" in text
     assert "Critic Findings" in text
     assert "TOC_SCHEMA_INVALID" in text
     assert "Review Comments" in text
@@ -336,9 +340,11 @@ def test_excel_export_includes_citations_sheet():
 
     ws = wb["Citations"]
     rows = list(ws.iter_rows(values_only=True))
-    assert rows[0][:5] == ("Stage", "Type", "Used For", "Label", "Confidence")
+    assert rows[0][:7] == ("Stage", "Type", "Used For", "Label", "Confidence", "Result Level", "Statement Path")
     assert any(row[3] == "USAID ADS 201 p.12" for row in rows[1:])
     assert any(abs(float(row[4]) - 0.82) < 1e-9 for row in rows[1:] if row[4] is not None)
+    assert any(row[5] == "outcome" for row in rows[1:])
+    assert any(row[6] == "toc.development_objectives[0].description" for row in rows[1:])
 
     findings_rows = list(wb["Critic Findings"].iter_rows(values_only=True))
     assert findings_rows[0][:4] == ("Status", "Severity", "Section", "Code")
