@@ -89,7 +89,7 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make baseline-fill-template-refresh` rebuilds pilot metrics first, then writes the baseline worksheet.
 `make clean-demo-artifacts-dry-run` lists generated bundles slated for cleanup.
 `make clean-demo-artifacts` removes generated bundles and leaves unrelated files alone.
-`make latest-links` writes stable `build/latest-*` symlinks to the newest generated bundles.
+`make latest-links` writes stable `build/latest-*` symlinks to the newest generated bundles, including fast/full send bundles and their zip files.
 `make latest-links-refresh` rebuilds the full chain first, then refreshes those symlinks.
 `make pilot-handout` writes a short single-file pilot summary.
 `make pilot-handout-refresh` rebuilds the full chain first, then writes the handout.

@@ -12,17 +12,32 @@ LINK_SPECS = (
     ("latest-executive-pack", "executive-pack*"),
     ("latest-oem-pack", "oem-pack*"),
     ("latest-pilot-archive", "pilot-archive*"),
+    ("latest-fast-send-bundle", "release-demo-bundle-fast*/*"),
+    ("latest-full-send-bundle", "release-demo-bundle/*"),
 )
 
-FILE_LINK_SPECS = (("latest-diligence-index.md", "diligence-index.md"),)
+FILE_LINK_SPECS = (
+    ("latest-diligence-index.md", "diligence-index.md"),
+    ("latest-send-bundle-index.md", "send-bundle-index.md"),
+    ("latest-fast-send-bundle.zip", "release-demo-bundle-fast*/*.zip"),
+    ("latest-full-send-bundle.zip", "release-demo-bundle/*.zip"),
+)
 
 
-def _is_generated_pack(path: Path, *, link_name: str) -> bool:
-    return path.name != link_name and not path.name.startswith("latest-")
+def _is_generated_pack(path: Path, *, link_name: str, expect_file: bool) -> bool:
+    if path.name == link_name or path.name.startswith("latest-"):
+        return False
+    if expect_file:
+        return path.is_file()
+    return path.is_dir()
 
 
-def _pick_latest(build_dir: Path, pattern: str, *, link_name: str) -> Path | None:
-    candidates = [path for path in build_dir.glob(pattern) if _is_generated_pack(path, link_name=link_name)]
+def _pick_latest(build_dir: Path, pattern: str, *, link_name: str, expect_file: bool) -> Path | None:
+    candidates = [
+        path
+        for path in build_dir.glob(pattern)
+        if _is_generated_pack(path, link_name=link_name, expect_file=expect_file)
+    ]
     if not candidates:
         return None
     return max(candidates, key=lambda path: (path.stat().st_mtime, path.name))
@@ -49,7 +64,7 @@ def main() -> int:
 
     created = 0
     for link_name, pattern in LINK_SPECS:
-        target = _pick_latest(build_dir, pattern, link_name=link_name)
+        target = _pick_latest(build_dir, pattern, link_name=link_name, expect_file=False)
         if target is None:
             continue
         link_path = build_dir / link_name
@@ -58,7 +73,7 @@ def main() -> int:
         created += 1
 
     for link_name, pattern in FILE_LINK_SPECS:
-        target = _pick_latest(build_dir, pattern, link_name=link_name)
+        target = _pick_latest(build_dir, pattern, link_name=link_name, expect_file=True)
         if target is None:
             continue
         link_path = build_dir / link_name

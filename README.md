@@ -231,7 +231,7 @@ Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xl
 `make baseline-fill-template-refresh` rebuilds pilot metrics first, then writes the baseline worksheet.
 `make clean-demo-artifacts-dry-run` lists generated demo/commercial bundles that would be removed from `build/`.
 `make clean-demo-artifacts` removes only those generated bundles via an allowlist.
-`make latest-links` creates stable `build/latest-*` symlinks to the newest generated packs.
+`make latest-links` creates stable `build/latest-*` symlinks to the newest generated packs, including fast/full send bundles and their zip files.
 `make latest-links-refresh` rebuilds the full chain first, then refreshes those symlinks.
 `make pilot-handout` builds a short one-file summary from an existing pilot pack and executive pack.
 `make pilot-handout-refresh` rebuilds the full chain first, then writes the handout.
