@@ -36,6 +36,25 @@ def _slugify(value: str) -> str:
     return token.strip("-") or "bundle"
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _format_num(value: float | int | None) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, int):
+        return str(value)
+    if float(value).is_integer():
+        return str(int(value))
+    return f"{value:.2f}"
+
+
 def _resolve_case_dir(
     rows: list[dict[str, Any]],
     *,
@@ -67,6 +86,9 @@ def _build_summary(
     selected_row: dict[str, Any],
     total_cases: int,
     done_cases: int,
+    featured_review_readiness: dict[str, Any],
+    featured_mel_summary: dict[str, Any],
+    review_ready_cases: str,
 ) -> str:
     lines: list[str] = []
     lines.append("# GrantFlow Executive Pack")
@@ -88,6 +110,36 @@ def _build_summary(
     lines.append(f"- Featured donor: `{selected_row.get('donor_id')}`")
     lines.append(f"- Featured preset: `{selected_row.get('preset_key')}`")
     lines.append(f"- Featured job id: `{selected_row.get('job_id')}`")
+    lines.append("")
+    lines.append("## Readiness Snapshot")
+    lines.append(
+        f"- Open critic findings (featured case): `{featured_review_readiness.get('open_critic_findings', '-')}`"
+    )
+    lines.append(
+        f"- High-severity open findings (featured case): `{featured_review_readiness.get('high_severity_open_findings', '-')}`"
+    )
+    lines.append(
+        f"- Fallback/strategy citations (featured case): `{featured_review_readiness.get('fallback_strategy_citations', '-')}`"
+    )
+    lines.append(
+        f"- Low-confidence citations (featured case): `{featured_review_readiness.get('low_confidence_citations', '-')}`"
+    )
+    lines.append(f"- Cases with complete LogFrame operational coverage: `{review_ready_cases}`")
+    lines.append(
+        f"- SMART coverage (featured case): "
+        f"`{_format_num(_safe_float(featured_mel_summary.get('smart_field_coverage_rate')))}"
+        "`"
+    )
+    lines.append(
+        f"- MoV coverage (featured case): "
+        f"`{_format_num(_safe_float(featured_mel_summary.get('means_of_verification_coverage_rate')))}"
+        "`"
+    )
+    lines.append(
+        f"- Owner coverage (featured case): "
+        f"`{_format_num(_safe_float(featured_mel_summary.get('owner_coverage_rate')))}"
+        "`"
+    )
     lines.append("")
     lines.append("## Open In Order")
     lines.append("1. `buyer-brief.md`")
@@ -151,6 +203,32 @@ def main() -> int:
     shutil.copytree(source_case_pack_dir, bundled_case_dir)
 
     done_cases = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "done")
+    quality_payload = _read_json(pilot_pack_dir / "live-runs" / resolved_case_dir / "quality.json")
+    if not isinstance(quality_payload, dict):
+        quality_payload = {}
+    featured_review_readiness = quality_payload.get("review_readiness_summary")
+    if not isinstance(featured_review_readiness, dict):
+        featured_review_readiness = {}
+    featured_mel_summary = quality_payload.get("mel")
+    if not isinstance(featured_mel_summary, dict):
+        featured_mel_summary = {}
+    review_ready_cases_count = 0
+    for row in rows:
+        case_dir = str(row.get("case_dir") or "").strip()
+        quality_path = pilot_pack_dir / "live-runs" / case_dir / "quality.json"
+        if not quality_path.exists():
+            continue
+        payload = _read_json(quality_path)
+        if not isinstance(payload, dict):
+            continue
+        mel = payload.get("mel")
+        if not isinstance(mel, dict):
+            continue
+        smart = _safe_float(mel.get("smart_field_coverage_rate"))
+        mov = _safe_float(mel.get("means_of_verification_coverage_rate"))
+        owner = _safe_float(mel.get("owner_coverage_rate"))
+        if smart == 1.0 and mov == 1.0 and owner == 1.0:
+            review_ready_cases_count += 1
     (output_dir / "README.md").write_text(
         _build_summary(
             executive_pack_name=output_dir.name,
@@ -159,6 +237,9 @@ def main() -> int:
             selected_row=selected_row,
             total_cases=len(rows),
             done_cases=done_cases,
+            featured_review_readiness=featured_review_readiness,
+            featured_mel_summary=featured_mel_summary,
+            review_ready_cases=f"{review_ready_cases_count}/{len(rows)}",
         ),
         encoding="utf-8",
     )
