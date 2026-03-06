@@ -665,6 +665,21 @@ def test_mel_donor_aware_institution_and_organization_targets():
     assert state_target == "6 organizations"
 
 
+def test_mel_state_department_impact_media_resilience_targets_use_organizations():
+    baseline, target = mel_module._resolve_baseline_target(
+        baseline_raw="TBD",
+        target_raw="TBD",
+        indicator_name="Improve Independent Media Resilience outcomes in Georgia.",
+        input_context={},
+        idx=0,
+        donor_id="state_department",
+        result_level="impact",
+    )
+
+    assert baseline == "0 organizations"
+    assert target == "6 organizations"
+
+
 def test_mel_donor_aware_default_frequency_profiles():
     usaid_item = mel_module._normalize_indicator_item(
         {

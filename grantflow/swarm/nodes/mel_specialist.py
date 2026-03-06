@@ -1042,6 +1042,22 @@ def _is_organization_indicator(name: str) -> bool:
     )
 
 
+def _is_state_department_organizational_indicator(name: str) -> bool:
+    if _is_organization_indicator(name):
+        return True
+    return any(
+        token in name
+        for token in (
+            "independent media",
+            "media resilience",
+            "media ecosystem",
+            "journalist",
+            "journalism",
+            "local media",
+        )
+    )
+
+
 def _suggest_baseline_target(
     *,
     indicator_name: str,
@@ -1072,7 +1088,7 @@ def _suggest_baseline_target(
         return "90 days", f"{target_days} days"
     if any(token in name for token in ("percent", "%", "rate", "share", "coverage")):
         return "0%", f"{percent_target}%"
-    if donor_id in {"state_department", "us_state_department"} and _is_organization_indicator(name):
+    if donor_id in {"state_department", "us_state_department"} and _is_state_department_organizational_indicator(name):
         return "0 organizations", f"{organization_target} organizations"
     if _is_policy_indicator(name):
         return "0 policies", f"{policy_target} policies"
@@ -1084,6 +1100,8 @@ def _suggest_baseline_target(
         return "0 institutions", f"{institution_target} institutions"
     if _is_people_indicator(name):
         return "0 people", f"{max(seed, people_floor)} people"
+    if donor_id in {"state_department", "us_state_department"} and _is_state_department_organizational_indicator(name):
+        return "0 organizations", f"{organization_target} organizations"
     if _is_organization_indicator(name):
         return "0 organizations", f"{organization_target} organizations"
 
