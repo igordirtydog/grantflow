@@ -186,6 +186,8 @@ make pilot-archive
 make pilot-archive-refresh
 make diligence-index
 make diligence-index-refresh
+make baseline-fill-template
+make baseline-fill-template-refresh
 ```
 
 Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xlsx` / ZIP artifacts. The target expects a running local API at `http://127.0.0.1:8000`.
@@ -206,6 +208,8 @@ Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xl
 `make pilot-archive-refresh` rebuilds the full chain first, then writes the archive.
 `make diligence-index` builds a single local index of generated packs and archives under `build/`.
 `make diligence-index-refresh` rebuilds the full chain first, then writes the index.
+`make baseline-fill-template` builds a fillable baseline worksheet from an existing `pilot-metrics.csv`.
+`make baseline-fill-template-refresh` rebuilds pilot metrics first, then writes the baseline worksheet.
 
 ## Quick Start
 

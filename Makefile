@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh diligence-index diligence-index-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh diligence-index diligence-index-refresh baseline-fill-template baseline-fill-template-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -64,6 +64,10 @@ PILOT_ARCHIVE_NAME ?=
 PILOT_ARCHIVE_INCLUDE_OEM ?= 1
 DILIGENCE_INDEX_BUILD_DIR ?= build
 DILIGENCE_INDEX_OUT ?= build/diligence-index.md
+BASELINE_TEMPLATE_PILOT_DIR ?= $(PILOT_PACK_DIR)
+BASELINE_TEMPLATE_METRICS_CSV ?=
+BASELINE_TEMPLATE_CSV_OUT ?=
+BASELINE_TEMPLATE_MD_OUT ?=
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -315,3 +319,13 @@ diligence-index:
 
 diligence-index-refresh: pilot-archive-refresh
 	$(MAKE) diligence-index DILIGENCE_INDEX_BUILD_DIR=$(DILIGENCE_INDEX_BUILD_DIR) DILIGENCE_INDEX_OUT=$(DILIGENCE_INDEX_OUT)
+
+baseline-fill-template:
+	$(PYTHON) scripts/baseline_fill_template.py \
+		--pilot-pack-dir $(BASELINE_TEMPLATE_PILOT_DIR) \
+		$(if $(strip $(BASELINE_TEMPLATE_METRICS_CSV)),--metrics-csv $(BASELINE_TEMPLATE_METRICS_CSV),) \
+		$(if $(strip $(BASELINE_TEMPLATE_CSV_OUT)),--csv-out $(BASELINE_TEMPLATE_CSV_OUT),) \
+		$(if $(strip $(BASELINE_TEMPLATE_MD_OUT)),--md-out $(BASELINE_TEMPLATE_MD_OUT),)
+
+baseline-fill-template-refresh: pilot-metrics-refresh
+	$(MAKE) baseline-fill-template BASELINE_TEMPLATE_PILOT_DIR=$(PILOT_PACK_DIR) BASELINE_TEMPLATE_METRICS_CSV=$(BASELINE_TEMPLATE_METRICS_CSV) BASELINE_TEMPLATE_CSV_OUT=$(BASELINE_TEMPLATE_CSV_OUT) BASELINE_TEMPLATE_MD_OUT=$(BASELINE_TEMPLATE_MD_OUT)
