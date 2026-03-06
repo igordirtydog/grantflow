@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh diligence-index diligence-index-refresh baseline-fill-template baseline-fill-template-refresh clean-demo-artifacts clean-demo-artifacts-dry-run latest-links latest-links-refresh pilot-handout pilot-handout-refresh smoke-demo-refresh latest-open-order latest-open-order-refresh pilot-refresh-fast verify-latest-stack verify-latest-stack-refresh release-demo-bundle release-demo-bundle-fast send-bundle-index send-bundle-index-refresh open-latest-send open-latest-send-refresh open-latest-send-fast open-latest-send-fast-refresh buyer-demo-open buyer-demo-open-refresh ci-demo-smoke
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline seed-live-corpus eval-grounded-target-live demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh diligence-index diligence-index-refresh baseline-fill-template baseline-fill-template-refresh clean-demo-artifacts clean-demo-artifacts-dry-run latest-links latest-links-refresh pilot-handout pilot-handout-refresh smoke-demo-refresh latest-open-order latest-open-order-refresh pilot-refresh-fast verify-latest-stack verify-latest-stack-refresh release-demo-bundle release-demo-bundle-fast send-bundle-index send-bundle-index-refresh open-latest-send open-latest-send-refresh open-latest-send-fast open-latest-send-fast-refresh buyer-demo-open buyer-demo-open-refresh ci-demo-smoke
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -91,6 +91,15 @@ SEND_BUNDLE_INDEX_BUILD_DIR ?= build
 SEND_BUNDLE_INDEX_OUT ?= build/send-bundle-index.md
 OPEN_LATEST_SEND_BUILD_DIR ?= build
 OPEN_LATEST_SEND_MODE ?= print
+LIVE_API_BASE ?= http://127.0.0.1:8000
+LIVE_API_KEY ?=
+LIVE_SEED_MANIFEST ?= docs/rag_seed_corpus/ingest_manifest.jsonl
+LIVE_SEED_DONORS ?=
+LIVE_EVAL_CONTAINER ?= grantflow_api
+GROUNDED_TARGET_CASES_FILE ?= grantflow/eval/cases/grounded_cases.json
+GROUNDED_TARGET_CASE_IDS ?= state_department_media_georgia_grounded
+GROUNDED_TARGET_SUITE_LABEL ?= grounded-target-live
+GROUNDED_TARGET_ARTIFACT_PREFIX ?= $(EVAL_ARTIFACTS_DIR)/grounded-target-live
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -247,6 +256,23 @@ refresh-grounded-baseline:
 		--cases-file $(GROUNDED_CASES_FILE) \
 		--seed-rag-manifest $(GROUNDED_SEED_MANIFEST) \
 		--out $(GROUNDED_BASELINE)
+
+seed-live-corpus:
+	API_BASE=$(LIVE_API_BASE) API_KEY="$(LIVE_API_KEY)" MANIFEST=$(LIVE_SEED_MANIFEST) DONOR_IDS="$(LIVE_SEED_DONORS)" \
+		bash docs/rag_seed_corpus/bulk_ingest_seed_corpus.sh
+
+eval-grounded-target-live:
+	mkdir -p $(EVAL_ARTIFACTS_DIR)
+	@tmp_prefix=$$(printf '%s' "$(GROUNDED_TARGET_ARTIFACT_PREFIX)" | tr '/.' '__'); \
+	docker exec $(LIVE_EVAL_CONTAINER) python -m grantflow.eval.harness \
+		--suite-label $(GROUNDED_TARGET_SUITE_LABEL) \
+		--cases-file /app/$(GROUNDED_TARGET_CASES_FILE) \
+		$(foreach case,$(GROUNDED_TARGET_CASE_IDS),--case-id $(case)) \
+		--json-out /tmp/$${tmp_prefix}.json \
+		--text-out /tmp/$${tmp_prefix}.txt && \
+	docker cp $(LIVE_EVAL_CONTAINER):/tmp/$${tmp_prefix}.json $(GROUNDED_TARGET_ARTIFACT_PREFIX).json && \
+	docker cp $(LIVE_EVAL_CONTAINER):/tmp/$${tmp_prefix}.txt $(GROUNDED_TARGET_ARTIFACT_PREFIX).txt && \
+	cat $(GROUNDED_TARGET_ARTIFACT_PREFIX).txt
 
 demo-pack:
 	mkdir -p $(DEMO_PACK_DIR)

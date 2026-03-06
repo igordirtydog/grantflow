@@ -735,6 +735,25 @@ make eval-grounded-ab
 make eval-grounded-tail
 ```
 
+For live Docker runtime checks against the running `grantflow_api` container:
+
+```bash
+# seed only the donors you want to verify against the live API/Chroma runtime
+make seed-live-corpus LIVE_SEED_DONORS=eu,worldbank,giz,state_department
+
+# run a targeted strict grounded check inside the container runtime
+make eval-grounded-target-live \
+  GROUNDED_TARGET_CASES_FILE=grantflow/eval/cases/grounded_cases.json \
+  GROUNDED_TARGET_CASE_IDS="state_department_media_georgia_grounded"
+
+# strict donor-specific case from the LLM grounded suite (still works in deterministic mode if case llm_mode=false)
+make eval-grounded-target-live \
+  GROUNDED_TARGET_CASES_FILE=grantflow/eval/cases/llm_grounded_strict_cases.json \
+  GROUNDED_TARGET_CASE_IDS="giz_sme_resilience_jordan_grounded_strict"
+```
+
+`seed-live-corpus` uses `docs/rag_seed_corpus/bulk_ingest_seed_corpus.sh` and respects `LIVE_SEED_DONORS` as a comma-separated donor filter. `eval-grounded-target-live` writes `eval-artifacts/grounded-target-live.txt` and `.json` by default using the actual container runtime rather than the local Python environment.
+
 `--seed-rag-manifest` resolves each manifest `donor_id` via `DonorFactory` and ingests into the donor strategy RAG namespace (for example, `usaid -> usaid_ads201`, `state_department -> us_state_department_guidance`).
 Use `scripts/check_seeded_corpus.py` to fail fast when seeded artifacts are missing:
 
