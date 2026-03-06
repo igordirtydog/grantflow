@@ -30,8 +30,12 @@ PREFERRED_TARGETS = {
     "latest-executive-pack": "executive-pack",
     "latest-oem-pack": "oem-pack",
     "latest-pilot-archive": "pilot-archive",
+    "latest-fast-send-bundle": "release-demo-bundle-fast/grantflow-demo-bundle-fast",
+    "latest-full-send-bundle": "release-demo-bundle/grantflow-demo-bundle",
     "latest-diligence-index.md": "diligence-index.md",
     "latest-send-bundle-index.md": "send-bundle-index.md",
+    "latest-fast-send-bundle.zip": "release-demo-bundle-fast/grantflow-demo-bundle-fast.zip",
+    "latest-full-send-bundle.zip": "release-demo-bundle/grantflow-demo-bundle.zip",
 }
 
 
