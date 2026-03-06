@@ -83,6 +83,8 @@ MEL_COVERAGE_FIELDS = (
     "definition",
     "data_source",
     "disaggregation",
+    "means_of_verification",
+    "owner",
     "result_level",
 )
 MEL_SMART_COVERAGE_FIELDS = (
@@ -2329,6 +2331,8 @@ def _mel_indicator_coverage_summary(logframe_draft: Dict[str, Any]) -> Dict[str,
     definition_coverage_rate = _rate(int(coverage_counts.get("definition", 0)))
     data_source_coverage_rate = _rate(int(coverage_counts.get("data_source", 0)))
     disaggregation_coverage_rate = _rate(int(coverage_counts.get("disaggregation", 0)))
+    means_of_verification_coverage_rate = _rate(int(coverage_counts.get("means_of_verification", 0)))
+    owner_coverage_rate = _rate(int(coverage_counts.get("owner", 0)))
     result_level_coverage_rate = _rate(int(coverage_counts.get("result_level", 0)))
 
     risk_level = _mel_risk_level(
@@ -2350,6 +2354,8 @@ def _mel_indicator_coverage_summary(logframe_draft: Dict[str, Any]) -> Dict[str,
         "definition_coverage_rate": definition_coverage_rate,
         "data_source_coverage_rate": data_source_coverage_rate,
         "disaggregation_coverage_rate": disaggregation_coverage_rate,
+        "means_of_verification_coverage_rate": means_of_verification_coverage_rate,
+        "owner_coverage_rate": owner_coverage_rate,
         "result_level_coverage_rate": result_level_coverage_rate,
         "smart_field_coverage_rate": smart_field_coverage_rate,
         "baseline_placeholder_count": baseline_placeholder_count,

@@ -6880,6 +6880,8 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
                             "formula": "Count of trainees completing curriculum",
                             "definition": "Number of civil servants completing certified AI modules.",
                             "data_source": "Training attendance and certification registry",
+                            "means_of_verification": "Certification registry and spot-check attendance files",
+                            "owner": "MEL lead and implementing partner M&E team",
                             "disaggregation": ["sex", "age", "region"],
                             "result_level": "outcome",
                         },
@@ -6890,6 +6892,7 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
                             "target": "",
                             "frequency": "semiannual",
                             "data_source": "Ministerial SOP approval records",
+                            "owner": "Program manager",
                             "result_level": "output",
                         },
                     ]
@@ -7109,6 +7112,8 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
     assert mel_summary.get("definition_coverage_rate") == 0.5
     assert mel_summary.get("data_source_coverage_rate") == 1.0
     assert mel_summary.get("disaggregation_coverage_rate") == 0.5
+    assert mel_summary.get("means_of_verification_coverage_rate") == 0.5
+    assert mel_summary.get("owner_coverage_rate") == 1.0
     assert mel_summary.get("result_level_coverage_rate") == 1.0
     assert mel_summary.get("smart_field_coverage_rate") == 0.7143
     assert mel_summary.get("risk_level") == "medium"
@@ -7122,6 +7127,8 @@ def test_quality_summary_endpoint_aggregates_quality_signals():
         "definition": 1,
         "data_source": 0,
         "disaggregation": 1,
+        "means_of_verification": 1,
+        "owner": 0,
         "result_level": 0,
     }
     assert mel_summary.get("result_level_counts") == {"impact": 0, "outcome": 1, "output": 1, "unknown": 0}

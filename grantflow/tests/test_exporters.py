@@ -275,6 +275,8 @@ def test_word_export_includes_mel_indicator_summary_when_logframe_provided():
                 "formula": "(Numerator / Denominator) * 100",
                 "definition": "Share of target population receiving the service.",
                 "data_source": "PMP indicator tracking dataset",
+                "means_of_verification": "Verified PMP records and spot-check files",
+                "owner": "MEL lead and implementing partner M&E team",
                 "disaggregation": ["sex", "age", "location"],
                 "citation": "USAID ADS 201 p.12",
                 "justification": "Tracks outcome-level adoption.",
@@ -290,6 +292,8 @@ def test_word_export_includes_mel_indicator_summary_when_logframe_provided():
     assert "Baseline/Target: 0% -> 30%" in text
     assert "Frequency: quarterly" in text
     assert "Data source: PMP indicator tracking dataset" in text
+    assert "Means of verification: Verified PMP records and spot-check files" in text
+    assert "Owner: MEL lead and implementing partner M&E team" in text
     assert "Disaggregation: sex, age, location" in text
 
 

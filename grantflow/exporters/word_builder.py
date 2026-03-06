@@ -485,6 +485,8 @@ def _add_mel_indicator_summary_section(doc: Document, logframe_draft: Optional[D
         formula = str(indicator.get("formula") or "").strip()
         definition = str(indicator.get("definition") or "").strip()
         data_source = str(indicator.get("data_source") or "").strip()
+        means_of_verification = str(indicator.get("means_of_verification") or "").strip()
+        owner = str(indicator.get("owner") or "").strip()
         citation = str(indicator.get("citation") or "").strip()
         justification = str(indicator.get("justification") or "").strip()
         disaggregation_raw = indicator.get("disaggregation")
@@ -507,6 +509,10 @@ def _add_mel_indicator_summary_section(doc: Document, logframe_draft: Optional[D
             details.append(f"Definition: {definition}")
         if data_source:
             details.append(f"Data source: {data_source}")
+        if means_of_verification:
+            details.append(f"Means of verification: {means_of_verification}")
+        if owner:
+            details.append(f"Owner: {owner}")
         if disaggregation:
             details.append(f"Disaggregation: {disaggregation}")
         if citation:
