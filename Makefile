@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -38,6 +38,12 @@ qa-fast:
 
 qa-hitl:
 	$(PYTHON) -m pytest grantflow/tests/test_integration.py -k "test_quality_summary_endpoint_aggregates_quality_signals or test_hitl_pause_resume_flow_supports_export_payload_and_export or test_hitl_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_logframe_reject_then_resume_flow_supports_export_payload_and_export or test_hitl_mixed_checkpoints_reject_approve_flow_records_history_events or test_status_hitl_history_endpoint_lists_and_filters_events" -q
+
+preflight-prod-api:
+	$(PYTHON) scripts/preflight_prod_config.py --role api
+
+preflight-prod-worker:
+	$(PYTHON) scripts/preflight_prod_config.py --role worker
 
 eval-grounded-ab:
 	mkdir -p $(EVAL_ARTIFACTS_DIR)
