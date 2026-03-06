@@ -19,6 +19,21 @@ This is the shortest path to navigate the codebase without guessing.
   - presets/donor catalog/demo page: `grantflow/api/routes/presets.py`
   - read-only portfolio views: `grantflow/api/routes/portfolio_read.py`
 
+## Product and Demo Assets
+
+- Product overview (buyer-facing):
+  - `docs/buyer-one-pager.md`
+- Demo operator script + 5-minute narrative:
+  - `docs/demo-runbook.md`
+- Productization gap analysis:
+  - `docs/productization-gaps-memo.md`
+- Pilot acceptance template:
+  - `docs/pilot-evaluation-checklist.md`
+- Sample artifacts for demos:
+  - `docs/samples/`
+- Pilot snapshot packs:
+  - `docs/pilot_runs/`
+
 ## Schemas and Contracts
 
 - Request/response schemas:

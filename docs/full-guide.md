@@ -1,5 +1,11 @@
 # GrantFlow Full Guide
 
+Quick companion docs:
+- buyer-facing summary: `docs/buyer-one-pager.md`
+- demo operator flow and founder script: `docs/demo-runbook.md`
+- productization readiness memo: `docs/productization-gaps-memo.md`
+- pilot evaluation template: `docs/pilot-evaluation-checklist.md`
+
 ## 1) Product Scope
 
 GrantFlow is an API-first backend for institutional proposal operations.

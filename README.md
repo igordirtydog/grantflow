@@ -1,6 +1,6 @@
 # GrantFlow
 
-Institutional proposal operating system: compliance-aware, agentic workflow engine for donor-funded programs with strategy-driven drafting, HITL governance, citation traceability, and export-ready artifacts.
+Proposal operations platform for high-stakes donor workflows. GrantFlow is a compliance-aware, agentic backend that turns raw program intent into reviewable draft artifacts with governance, traceability, and export-ready outputs.
 
 [![CI](https://github.com/vassiliylakhonin/grantflow/actions/workflows/ci.yml/badge.svg)](https://github.com/vassiliylakhonin/grantflow/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -19,9 +19,11 @@ Institutional proposal operating system: compliance-aware, agentic workflow engi
   - API key auth enabled (`GRANTFLOW_API_KEY`)
 - Operator docs:
   - `docs/operations-runbook.md`
+  - `docs/demo-runbook.md`
   - `docs/troubleshooting.md`
   - `docs/architecture.md`
   - `docs/contributor-map.md`
+  - `docs/buyer-one-pager.md`
   - `SECURITY.md`
 
 ## What It Is
@@ -44,6 +46,35 @@ Current focus:
 - NGOs and implementing organizations
 - consulting firms managing donor submissions
 - program/MEL teams handling institutional compliance workflows
+
+## Who It Is Not For
+
+- teams looking for a general-purpose grant-writing chatbot
+- individual fundraising use cases (for example, ad-hoc small grant copywriting)
+- organizations that only need plain text generation without review controls or audit traces
+
+## Why Not Just Use Generic AI Tools?
+
+Generic LLM tools generate text. Proposal operations teams need controlled workflow.
+
+What GrantFlow adds on top of generic AI writing:
+- stage-based pipeline with explicit transitions (`discovery -> architect -> mel -> critic`)
+- donor strategy routing and schema-bound draft structures
+- HITL pause/approve/resume controls
+- structured critic findings + comment workflows
+- traceability endpoints (citations, versions, events, quality, metrics)
+- export payload flow and review-package artifact generation (`.docx`, `.xlsx`, ZIP)
+
+## How This Fits Real Proposal Workflows
+
+Typical operating model in proposal teams:
+- capture/program team submits core concept + constraints
+- drafting engine produces structured ToC/LogFrame/MEL artifacts
+- reviewers triage findings and comments
+- designated approvers control pause/resume checkpoints (HITL)
+- finalized package is exported for downstream submission workflow
+
+GrantFlow covers the drafting-control-review-export layer. Final donor compliance sign-off remains a human responsibility.
 
 ## Architecture (Current)
 
@@ -75,6 +106,12 @@ Execution flow snapshot:
   - fetch sanitized payload: `GET /status/{job_id}/export-payload`
   - generate artifacts: `POST /export`
 
+Technical evaluator quick view:
+- API surface is split by route domain (`jobs`, `review`, `ingest`, `exports`, `system`, `portfolio`)
+- runtime supports local mode and queue-backed mode (`redis_queue` + worker)
+- readiness includes policy-aware checks (`/ready`) and diagnostics snapshot (`/health`)
+- contract-heavy test coverage exists in `grantflow/tests/*` (integration, exporters, critic/findings, state contract, eval harness)
+
 ## Operating Paths
 
 `Golden path` (recommended production):
@@ -103,6 +140,30 @@ Specialized strategies:
 
 Generic strategy:
 - broader donor catalog via `GET /donors`
+
+## Recommended Demo Flow
+
+Use this path for pilot conversations and technical evaluation:
+
+1. Start API (`uvicorn grantflow.api.app:app --reload`) and open `GET /demo`.
+2. Generate from an existing preset (`POST /generate/from-preset` or Demo Console preset selector).
+3. Inspect draft status and quality signals:
+   - `GET /status/{job_id}`
+   - `GET /status/{job_id}/quality`
+   - `GET /status/{job_id}/critic`
+4. Show review traceability:
+   - `GET /status/{job_id}/citations`
+   - `GET /status/{job_id}/versions`
+   - `GET /status/{job_id}/events`
+5. (Optional) Show HITL governance:
+   - run with `hitl_enabled=true`
+   - approve with `POST /hitl/approve`
+   - continue with `POST /resume/{job_id}`
+6. Export review package:
+   - `GET /status/{job_id}/export-payload`
+   - `POST /export`
+
+For ready-made example artifacts, use files in `docs/samples/` and `docs/pilot_runs/2026-02-27/`.
 
 ## Quick Start
 
@@ -699,6 +760,7 @@ docker-compose up --build
 ```
 
 By default, compose starts `api + worker + redis + chroma`.
+The bundled compose profile is demo/dev-oriented (`GRANTFLOW_ENV=dev`) and is not a hardened production deployment template.
 
 Production rollout checklist:
 - `docs/deployment-checklist.md`
@@ -732,11 +794,15 @@ Current constraints:
 ## Documentation
 
 - Full guide: `docs/full-guide.md`
+- Buyer one-pager: `docs/buyer-one-pager.md`
 - Architecture overview: `docs/architecture.md`
 - Deployment checklist: `docs/deployment-checklist.md`
+- Pilot evaluation checklist: `docs/pilot-evaluation-checklist.md`
 - Troubleshooting guide: `docs/troubleshooting.md`
 - Contributor map: `docs/contributor-map.md`
 - Operator runbook: `docs/operations-runbook.md`
+- Demo runbook + 5-minute founder script: `docs/demo-runbook.md`
+- Productization gaps memo: `docs/productization-gaps-memo.md`
 - Security policy: `SECURITY.md`
 - Contribution process: `CONTRIBUTING.md`
 - Git/PR process: `docs/git-process.md`

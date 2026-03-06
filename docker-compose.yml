@@ -19,7 +19,7 @@ services:
       - GRANTFLOW_JOB_RUNNER_REDIS_QUEUE_NAME=grantflow:jobs
       - GRANTFLOW_JOB_RUNNER_REDIS_MAX_ATTEMPTS=3
       - GRANTFLOW_JOB_RUNNER_REDIS_DEAD_LETTER_QUEUE_NAME=grantflow:jobs:dead
-      - ENV=prod
+      - GRANTFLOW_ENV=dev
     depends_on:
       - chroma
       - redis
@@ -45,7 +45,7 @@ services:
       - GRANTFLOW_JOB_RUNNER_REDIS_QUEUE_NAME=grantflow:jobs
       - GRANTFLOW_JOB_RUNNER_REDIS_MAX_ATTEMPTS=3
       - GRANTFLOW_JOB_RUNNER_REDIS_DEAD_LETTER_QUEUE_NAME=grantflow:jobs:dead
-      - ENV=prod
+      - GRANTFLOW_ENV=dev
     depends_on:
       - chroma
       - redis
