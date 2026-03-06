@@ -36,6 +36,8 @@ make pilot-scorecard
 make pilot-scorecard-refresh
 make case-study-pack
 make case-study-pack-refresh
+make executive-pack
+make executive-pack-refresh
 ```
 
 This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
@@ -48,6 +50,8 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make pilot-scorecard-refresh` rebuilds the pilot pack, metrics, and brief first, then writes the scorecard.
 `make case-study-pack` writes a compact single-case pack from an existing pilot pack.
 `make case-study-pack-refresh` rebuilds the pilot pack, metrics, brief, and scorecard first, then writes the case pack.
+`make executive-pack` writes a send-ready buyer folder from an existing pilot pack and case-study pack.
+`make executive-pack-refresh` rebuilds the full chain first, then writes the executive pack.
 
 ## 3) Operator Demo Flow (API-first)
 
@@ -177,4 +181,6 @@ make pilot-scorecard PILOT_SCORECARD_PILOT_DIR=build/pilot-pack-smoke
 make pilot-scorecard-refresh PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 make case-study-pack CASE_STUDY_PILOT_DIR=build/pilot-pack-smoke CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan
 make case-study-pack-refresh CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
+make executive-pack EXECUTIVE_PACK_PILOT_DIR=build/pilot-pack-smoke EXECUTIVE_PACK_CASE_STUDY_DIR=build/case-study-pack-smoke EXECUTIVE_PACK_PRESET_KEY=usaid_gov_ai_kazakhstan EXECUTIVE_PACK_OUT_DIR=build/executive-pack-smoke
+make executive-pack-refresh CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 ```

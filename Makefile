@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -46,6 +46,11 @@ CASE_STUDY_PILOT_DIR ?= $(PILOT_PACK_DIR)
 CASE_STUDY_CASE_DIR ?=
 CASE_STUDY_PRESET_KEY ?=
 CASE_STUDY_OUT_DIR ?= build/case-study-pack
+EXECUTIVE_PACK_PILOT_DIR ?= $(PILOT_PACK_DIR)
+EXECUTIVE_PACK_CASE_STUDY_DIR ?= $(CASE_STUDY_OUT_DIR)
+EXECUTIVE_PACK_CASE_DIR ?= $(CASE_STUDY_CASE_DIR)
+EXECUTIVE_PACK_PRESET_KEY ?= $(CASE_STUDY_PRESET_KEY)
+EXECUTIVE_PACK_OUT_DIR ?= build/executive-pack
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -255,3 +260,14 @@ case-study-pack:
 
 case-study-pack-refresh: pilot-scorecard-refresh
 	$(MAKE) case-study-pack CASE_STUDY_PILOT_DIR=$(PILOT_PACK_DIR) CASE_STUDY_CASE_DIR=$(CASE_STUDY_CASE_DIR) CASE_STUDY_PRESET_KEY=$(CASE_STUDY_PRESET_KEY) CASE_STUDY_OUT_DIR=$(CASE_STUDY_OUT_DIR)
+
+executive-pack:
+	$(PYTHON) scripts/executive_pack.py \
+		--pilot-pack-dir $(EXECUTIVE_PACK_PILOT_DIR) \
+		--case-study-dir $(EXECUTIVE_PACK_CASE_STUDY_DIR) \
+		$(if $(strip $(EXECUTIVE_PACK_CASE_DIR)),--case-dir $(EXECUTIVE_PACK_CASE_DIR),) \
+		$(if $(strip $(EXECUTIVE_PACK_PRESET_KEY)),--preset-key $(EXECUTIVE_PACK_PRESET_KEY),) \
+		--output-dir $(EXECUTIVE_PACK_OUT_DIR)
+
+executive-pack-refresh: case-study-pack-refresh
+	$(MAKE) executive-pack EXECUTIVE_PACK_PILOT_DIR=$(PILOT_PACK_DIR) EXECUTIVE_PACK_CASE_STUDY_DIR=$(CASE_STUDY_OUT_DIR) EXECUTIVE_PACK_CASE_DIR=$(CASE_STUDY_CASE_DIR) EXECUTIVE_PACK_PRESET_KEY=$(CASE_STUDY_PRESET_KEY) EXECUTIVE_PACK_OUT_DIR=$(EXECUTIVE_PACK_OUT_DIR)
