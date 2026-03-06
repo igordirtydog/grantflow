@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -42,6 +42,10 @@ PILOT_METRICS_CSV_OUT ?=
 PILOT_METRICS_MD_OUT ?=
 PILOT_SCORECARD_PILOT_DIR ?= $(PILOT_PACK_DIR)
 PILOT_SCORECARD_OUT ?=
+CASE_STUDY_PILOT_DIR ?= $(PILOT_PACK_DIR)
+CASE_STUDY_CASE_DIR ?=
+CASE_STUDY_PRESET_KEY ?=
+CASE_STUDY_OUT_DIR ?= build/case-study-pack
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -241,3 +245,13 @@ pilot-scorecard:
 
 pilot-scorecard-refresh: pilot-metrics-refresh buyer-brief
 	$(MAKE) pilot-scorecard PILOT_SCORECARD_PILOT_DIR=$(PILOT_PACK_DIR) PILOT_SCORECARD_OUT=$(PILOT_SCORECARD_OUT)
+
+case-study-pack:
+	$(PYTHON) scripts/case_study_pack.py \
+		--pilot-pack-dir $(CASE_STUDY_PILOT_DIR) \
+		$(if $(strip $(CASE_STUDY_CASE_DIR)),--case-dir $(CASE_STUDY_CASE_DIR),) \
+		$(if $(strip $(CASE_STUDY_PRESET_KEY)),--preset-key $(CASE_STUDY_PRESET_KEY),) \
+		--output-dir $(CASE_STUDY_OUT_DIR)
+
+case-study-pack-refresh: pilot-scorecard-refresh
+	$(MAKE) case-study-pack CASE_STUDY_PILOT_DIR=$(PILOT_PACK_DIR) CASE_STUDY_CASE_DIR=$(CASE_STUDY_CASE_DIR) CASE_STUDY_PRESET_KEY=$(CASE_STUDY_PRESET_KEY) CASE_STUDY_OUT_DIR=$(CASE_STUDY_OUT_DIR)

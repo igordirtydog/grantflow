@@ -176,6 +176,8 @@ make pilot-metrics
 make pilot-metrics-refresh
 make pilot-scorecard
 make pilot-scorecard-refresh
+make case-study-pack
+make case-study-pack-refresh
 ```
 
 Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xlsx` / ZIP artifacts. The target expects a running local API at `http://127.0.0.1:8000`.
@@ -186,6 +188,8 @@ Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xl
 `make pilot-metrics-refresh` rebuilds the pilot pack first and then writes the metric tables.
 `make pilot-scorecard` builds a buyer-facing go/no-go memo from an existing pilot pack.
 `make pilot-scorecard-refresh` rebuilds the pilot pack, metrics, and brief first, then writes the scorecard.
+`make case-study-pack` builds a compact single-case buyer/demo pack from an existing pilot pack.
+`make case-study-pack-refresh` rebuilds the pilot pack, metrics, brief, and scorecard first, then writes the case pack.
 
 ## Quick Start
 
