@@ -44,6 +44,19 @@ Use `GET /donors` to resolve canonical IDs and aliases at runtime.
 
 ## 4) Run Modes
 
+### Golden production path (recommended)
+
+- queue mode: `GRANTFLOW_JOB_RUNNER_MODE=redis_queue`
+- API role: dispatcher (`GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED=false`)
+- worker role: separate `python -m grantflow.worker`
+- persistence: `GRANTFLOW_JOB_STORE=sqlite`, `GRANTFLOW_HITL_STORE=sqlite`, `GRANTFLOW_INGEST_STORE=sqlite`
+- auth: `GRANTFLOW_API_KEY` configured
+
+Mode classification:
+- `background_tasks`: supported local/dev mode (default)
+- `inmemory_queue`: advanced local testing mode (non-durable queue)
+- `redis_queue`: recommended production mode (durable queue + dedicated workers)
+
 ### Deterministic lane
 - `llm_mode=false`
 - best for CI, regression, and reproducible smoke checks
@@ -97,6 +110,17 @@ python -m grantflow.worker
 
 This runs API as dispatcher-only and executes pipeline tasks in a dedicated worker process.
 Use `GET /queue/worker-heartbeat` for a lightweight worker liveness check in redis dispatcher setups.
+
+For production, pair this with persistent sqlite stores and API key auth:
+
+```bash
+export GRANTFLOW_ENV=production
+export GRANTFLOW_API_KEY=change-me
+export GRANTFLOW_JOB_STORE=sqlite
+export GRANTFLOW_HITL_STORE=sqlite
+export GRANTFLOW_INGEST_STORE=sqlite
+export GRANTFLOW_SQLITE_PATH=./.data/grantflow_state.db
+```
 
 ### Health/readiness
 

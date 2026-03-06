@@ -6,6 +6,22 @@ Institutional proposal operating system: compliance-aware, agentic workflow engi
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/Python-3.11--3.13-blue.svg)](https://www.python.org/)
 
+## Start Here
+
+- Local dev (fastest path):
+  1. `pip install ".[dev]"`
+  2. `uvicorn grantflow.api.app:app --reload`
+  3. `curl -s http://127.0.0.1:8000/health && curl -s http://127.0.0.1:8000/ready`
+- Recommended production path:
+  - API in `redis_queue` dispatcher mode + dedicated `grantflow.worker` process
+  - Redis queue enabled
+  - persistent stores (`GRANTFLOW_JOB_STORE=sqlite`, `GRANTFLOW_HITL_STORE=sqlite`, `GRANTFLOW_INGEST_STORE=sqlite`)
+  - API key auth enabled (`GRANTFLOW_API_KEY`)
+- Operator docs:
+  - `docs/operations-runbook.md`
+  - `docs/contributor-map.md`
+  - `SECURITY.md`
+
 ## What It Is
 
 GrantFlow is an API-first backend for institutional proposal workflows.
@@ -39,6 +55,40 @@ Architect generation modes:
 - `llm_mode=false`: `deterministic:contract_synthesizer` (schema-valid non-LLM draft)
 - `llm_mode=true`: LLM structured output via strategy `Architect` prompt + `get_toc_schema()`
 - emergency fallback to `fallback:contract_synthesizer` only when LLM mode is requested but unavailable/invalid
+
+Execution flow snapshot:
+- Request entry:
+  - job submit: `POST /generate` or `POST /generate/from-preset`
+  - preflight/readiness: `POST /generate/preflight`, `GET /ready`
+- Orchestration path:
+  - discovery normalizes contract + donor strategy
+  - architect drafts ToC
+  - mel builds indicators/logframe
+  - critic emits structured findings and quality signals
+- Review/HITL path:
+  - optional pause after architect and/or mel
+  - reviewer action via `POST /hitl/approve`
+  - continuation via `POST /resume/{job_id}`
+- Export path:
+  - fetch sanitized payload: `GET /status/{job_id}/export-payload`
+  - generate artifacts: `POST /export`
+
+## Operating Paths
+
+`Golden path` (recommended production):
+- `GRANTFLOW_JOB_RUNNER_MODE=redis_queue`
+- API dispatcher (`GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED=false`) + separate `python -m grantflow.worker`
+- persistent sqlite stores for job/hitl/ingest
+- API key configured
+
+`Supported local/dev path`:
+- `GRANTFLOW_JOB_RUNNER_MODE=background_tasks`
+- in-memory stores allowed
+- optional API key
+
+`Advanced / non-default path`:
+- `GRANTFLOW_JOB_RUNNER_MODE=inmemory_queue` for local queue behavior testing
+- usable, but not recommended as primary production mode (no durable queue backend)
 
 ## Donor Coverage
 
@@ -107,6 +157,21 @@ curl -s http://127.0.0.1:8000/ready
 ```
 
 `/ready` now includes `checks.preflight_grounding_policy`, `checks.runtime_grounded_quality_gate`, `checks.runtime_compatibility_policy`, and `checks.tenant_authz_configuration_policy` with active modes and thresholds/status, plus `checks.configuration_warnings` for setup risks (for example Chroma/API port conflicts).
+
+### Common Setup Mistakes
+
+- API/Chroma port collision:
+  - if `CHROMA_HOST` is set and `CHROMA_PORT=8000`, it may conflict with API port `8000`
+  - use `CHROMA_PORT=8001` or run API on another port
+- Diverged store backends:
+  - `GRANTFLOW_JOB_STORE` and `GRANTFLOW_HITL_STORE` must match
+  - startup fails if they differ
+- Production without persistence:
+  - in `prod|production`, startup fails by default if job/hitl/ingest stores are not sqlite
+- Production without API key:
+  - in `prod|production`, startup fails by default if `GRANTFLOW_API_KEY` is not set
+- Redis dispatcher without live worker:
+  - with strict heartbeat policy, `/ready` degrades when worker heartbeat is missing/stale
 
 ### 4) (Optional) Configure preflight grounding thresholds
 
@@ -640,7 +705,7 @@ GrantFlow is production-oriented backend infrastructure, but not a “one-click 
 Current constraints:
 - final compliance sign-off remains human responsibility
 - grounded quality depends on uploaded corpus relevance
-- queue-backed worker scaling is not yet the default runtime mode
+- background_tasks is still the default local mode; recommended production mode is redis queue + worker
 
 ## Sample Outputs
 
@@ -655,6 +720,9 @@ Current constraints:
 ## Documentation
 
 - Full guide: `docs/full-guide.md`
+- Contributor map: `docs/contributor-map.md`
+- Operator runbook: `docs/operations-runbook.md`
+- Security policy: `SECURITY.md`
 - Contribution process: `CONTRIBUTING.md`
 - Git/PR process: `docs/git-process.md`
 - API stability policy: `docs/api-stability-policy.md`

@@ -1,5 +1,13 @@
 # Contributing
 
+## Start Here
+
+- Contributor map: `docs/contributor-map.md`
+- Full guide: `docs/full-guide.md`
+- Operator runbook (runtime triage): `docs/operations-runbook.md`
+- Security expectations: `SECURITY.md`
+- API stability constraints: `docs/api-stability-policy.md`
+
 ## Branches and PRs
 
 - Open feature branches from `main`.
