@@ -40,6 +40,8 @@ make executive-pack
 make executive-pack-refresh
 make oem-pack
 make oem-pack-refresh
+make pilot-archive
+make pilot-archive-refresh
 ```
 
 This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
@@ -56,6 +58,8 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make executive-pack-refresh` rebuilds the full chain first, then writes the executive pack.
 `make oem-pack` writes a technical partner diligence folder from an existing pilot pack and executive pack.
 `make oem-pack-refresh` rebuilds the full chain first, then writes the OEM pack.
+`make pilot-archive` writes a zip-ready archive from the pilot, executive, and optional OEM packs.
+`make pilot-archive-refresh` rebuilds the full chain first, then writes the archive.
 
 ## 3) Operator Demo Flow (API-first)
 
@@ -189,4 +193,6 @@ make executive-pack EXECUTIVE_PACK_PILOT_DIR=build/pilot-pack-smoke EXECUTIVE_PA
 make executive-pack-refresh CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 make oem-pack OEM_PACK_PILOT_DIR=build/pilot-pack-smoke OEM_PACK_EXECUTIVE_DIR=build/executive-pack-smoke OEM_PACK_PRESET_KEY=usaid_gov_ai_kazakhstan OEM_PACK_OUT_DIR=build/oem-pack-smoke
 make oem-pack-refresh CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
+make pilot-archive PILOT_ARCHIVE_PILOT_DIR=build/pilot-pack-smoke PILOT_ARCHIVE_EXECUTIVE_DIR=build/executive-pack-smoke PILOT_ARCHIVE_OEM_DIR=build/oem-pack-smoke PILOT_ARCHIVE_OUT_DIR=build/pilot-archive-smoke PILOT_ARCHIVE_NAME=grantflow-smoke PILOT_ARCHIVE_INCLUDE_OEM=1
+make pilot-archive-refresh CASE_STUDY_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1 PILOT_ARCHIVE_NAME=grantflow-pilot
 ```

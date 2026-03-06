@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh case-study-pack case-study-pack-refresh executive-pack executive-pack-refresh oem-pack oem-pack-refresh pilot-archive pilot-archive-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -56,6 +56,12 @@ OEM_PACK_EXECUTIVE_DIR ?= $(EXECUTIVE_PACK_OUT_DIR)
 OEM_PACK_CASE_DIR ?= $(EXECUTIVE_PACK_CASE_DIR)
 OEM_PACK_PRESET_KEY ?= $(EXECUTIVE_PACK_PRESET_KEY)
 OEM_PACK_OUT_DIR ?= build/oem-pack
+PILOT_ARCHIVE_PILOT_DIR ?= $(PILOT_PACK_DIR)
+PILOT_ARCHIVE_EXECUTIVE_DIR ?= $(EXECUTIVE_PACK_OUT_DIR)
+PILOT_ARCHIVE_OEM_DIR ?= $(OEM_PACK_OUT_DIR)
+PILOT_ARCHIVE_OUT_DIR ?= build/pilot-archive
+PILOT_ARCHIVE_NAME ?=
+PILOT_ARCHIVE_INCLUDE_OEM ?= 1
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -287,3 +293,15 @@ oem-pack:
 
 oem-pack-refresh: executive-pack-refresh
 	$(MAKE) oem-pack OEM_PACK_PILOT_DIR=$(PILOT_PACK_DIR) OEM_PACK_EXECUTIVE_DIR=$(EXECUTIVE_PACK_OUT_DIR) OEM_PACK_CASE_DIR=$(EXECUTIVE_PACK_CASE_DIR) OEM_PACK_PRESET_KEY=$(EXECUTIVE_PACK_PRESET_KEY) OEM_PACK_OUT_DIR=$(OEM_PACK_OUT_DIR)
+
+pilot-archive:
+	$(PYTHON) scripts/pilot_archive.py \
+		--pilot-pack-dir $(PILOT_ARCHIVE_PILOT_DIR) \
+		--executive-pack-dir $(PILOT_ARCHIVE_EXECUTIVE_DIR) \
+		--oem-pack-dir $(PILOT_ARCHIVE_OEM_DIR) \
+		--output-dir $(PILOT_ARCHIVE_OUT_DIR) \
+		$(if $(strip $(PILOT_ARCHIVE_NAME)),--archive-name $(PILOT_ARCHIVE_NAME),) \
+		$(if $(filter 1 true TRUE yes YES,$(PILOT_ARCHIVE_INCLUDE_OEM)),--include-oem,)
+
+pilot-archive-refresh: oem-pack-refresh
+	$(MAKE) pilot-archive PILOT_ARCHIVE_PILOT_DIR=$(PILOT_PACK_DIR) PILOT_ARCHIVE_EXECUTIVE_DIR=$(EXECUTIVE_PACK_OUT_DIR) PILOT_ARCHIVE_OEM_DIR=$(OEM_PACK_OUT_DIR) PILOT_ARCHIVE_OUT_DIR=$(PILOT_ARCHIVE_OUT_DIR) PILOT_ARCHIVE_NAME=$(PILOT_ARCHIVE_NAME) PILOT_ARCHIVE_INCLUDE_OEM=$(PILOT_ARCHIVE_INCLUDE_OEM)
