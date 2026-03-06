@@ -13,6 +13,40 @@ from grantflow.exporters.template_profile import build_export_template_profile, 
 from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 
+def _normalized_indicator_rows(logframe_draft: Optional[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    if not isinstance(logframe_draft, dict):
+        return []
+    raw = logframe_draft.get("indicators")
+    return [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+
+
+def _indicator_focus_rows(
+    indicators: list[Dict[str, Any]],
+    *,
+    result_level: Optional[str] = None,
+    limit: int = 2,
+) -> list[Dict[str, Any]]:
+    rows = indicators
+    if result_level:
+        token = str(result_level).strip().lower()
+        rows = [row for row in indicators if str(row.get("result_level") or "").strip().lower() == token]
+    return rows[: max(0, limit)]
+
+
+def _indicator_focus_cells(indicators: list[Dict[str, Any]]) -> tuple[str, str, str]:
+    focus_rows = [row for row in indicators if isinstance(row, dict)]
+    if not focus_rows:
+        return "", "", ""
+    names = ", ".join(str(row.get("name") or "").strip() for row in focus_rows if str(row.get("name") or "").strip())
+    mov = "; ".join(
+        str(row.get("means_of_verification") or "").strip()
+        for row in focus_rows
+        if str(row.get("means_of_verification") or "").strip()
+    )
+    owner = "; ".join(str(row.get("owner") or "").strip() for row in focus_rows if str(row.get("owner") or "").strip())
+    return names, mov, owner
+
+
 def _review_readiness_rows(
     *,
     quality_summary: dict[str, Any],
@@ -318,8 +352,15 @@ def _sheet_headers(ws) -> list[str]:
     return [str(value).strip() for value in row if str(value or "").strip()]
 
 
-def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
+def _add_usaid_results_sheet(
+    wb: Workbook,
+    toc_payload: Dict[str, Any],
+    *,
+    logframe_draft: Optional[Dict[str, Any]] = None,
+) -> None:
     toc = _toc_root(toc_payload)
+    indicators = _normalized_indicator_rows(logframe_draft)
+    outcome_focus = _indicator_focus_rows(indicators, result_level="outcome", limit=2)
     ws = wb.create_sheet("USAID_RF")
     headers = [
         "DO ID",
@@ -333,6 +374,9 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
         "Target",
         "Justification",
         "Citation",
+        "Suggested Monitoring Focus",
+        "Suggested Means of Verification",
+        "Suggested Owner",
     ]
     thin_border = _apply_table_header(ws, headers)
 
@@ -354,6 +398,7 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
                 output_desc = output.get("description", "")
                 indicators = output.get("indicators") or []
                 if not isinstance(indicators, list) or not indicators:
+                    focus_name, focus_mov, focus_owner = _indicator_focus_cells(outcome_focus)
                     ws.append(
                         [
                             do_id,
@@ -367,6 +412,9 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
                             "",
                             "",
                             "",
+                            focus_name,
+                            focus_mov,
+                            focus_owner,
                         ]
                     )
                     for col in range(1, len(headers) + 1):
@@ -376,6 +424,7 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
                 for ind in indicators:
                     if not isinstance(ind, dict):
                         continue
+                    focus_name, focus_mov, focus_owner = _indicator_focus_cells(outcome_focus)
                     ws.append(
                         [
                             do_id,
@@ -389,6 +438,9 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
                             ind.get("target", ""),
                             ind.get("justification", ""),
                             ind.get("citation", ""),
+                            focus_name,
+                            focus_mov,
+                            focus_owner,
                         ]
                     )
                     for col in range(1, len(headers) + 1):
@@ -397,20 +449,40 @@ def _add_usaid_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
     _autosize_columns(ws)
 
 
-def _add_eu_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
+def _add_eu_results_sheet(
+    wb: Workbook,
+    toc_payload: Dict[str, Any],
+    *,
+    logframe_draft: Optional[Dict[str, Any]] = None,
+) -> None:
     toc = _toc_root(toc_payload)
+    indicators = _normalized_indicator_rows(logframe_draft)
+    outcome_focus = _indicator_focus_rows(indicators, result_level="outcome", limit=2)
+    output_focus = _indicator_focus_rows(indicators, result_level="output", limit=2)
     ws = wb.create_sheet("EU_Intervention")
-    headers = ["Level", "ID", "Title", "Description"]
+    headers = [
+        "Level",
+        "ID",
+        "Title",
+        "Description",
+        "Suggested Monitoring Focus",
+        "Suggested Means of Verification",
+        "Suggested Owner",
+    ]
     thin_border = _apply_table_header(ws, headers)
     row_idx = 2
     overall = toc.get("overall_objective") if isinstance(toc, dict) else None
     if isinstance(overall, dict):
+        focus_name, focus_mov, focus_owner = _indicator_focus_cells(outcome_focus)
         ws.append(
             [
                 "Overall Objective",
                 overall.get("objective_id", ""),
                 overall.get("title", ""),
                 overall.get("rationale", ""),
+                focus_name,
+                focus_mov,
+                focus_owner,
             ]
         )
         for col in range(1, len(headers) + 1):
@@ -422,12 +494,16 @@ def _add_eu_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
         for row in specific_objectives:
             if not isinstance(row, dict):
                 continue
+            focus_name, focus_mov, focus_owner = _indicator_focus_cells(outcome_focus[:1] or outcome_focus)
             ws.append(
                 [
                     "Specific Objective",
                     row.get("objective_id", ""),
                     row.get("title", ""),
                     row.get("rationale", ""),
+                    focus_name,
+                    focus_mov,
+                    focus_owner,
                 ]
             )
             for col in range(1, len(headers) + 1):
@@ -439,13 +515,24 @@ def _add_eu_results_sheet(wb: Workbook, toc_payload: Dict[str, Any]) -> None:
         for row in expected_outcomes:
             if not isinstance(row, dict):
                 continue
-            ws.append(["Outcome", row.get("outcome_id", ""), row.get("title", ""), row.get("expected_change", "")])
+            focus_name, focus_mov, focus_owner = _indicator_focus_cells(output_focus[:1] or outcome_focus[:1])
+            ws.append(
+                [
+                    "Outcome",
+                    row.get("outcome_id", ""),
+                    row.get("title", ""),
+                    row.get("expected_change", ""),
+                    focus_name,
+                    focus_mov,
+                    focus_owner,
+                ]
+            )
             for col in range(1, len(headers) + 1):
                 ws.cell(row=row_idx, column=col).border = thin_border
             row_idx += 1
 
     if row_idx == 2:
-        ws.append(["", "", "", ""])
+        ws.append(["", "", "", "", "", "", ""])
         for col in range(1, len(headers) + 1):
             ws.cell(row=row_idx, column=col).border = thin_border
         row_idx += 1
@@ -729,9 +816,9 @@ def build_xlsx_from_logframe(
     profile = build_export_template_profile(donor_id=donor_id, toc_payload=toc_payload)
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
-        _add_usaid_results_sheet(wb, toc_payload)
+        _add_usaid_results_sheet(wb, toc_payload, logframe_draft=logframe_draft)
     elif donor_key == "eu":
-        _add_eu_results_sheet(wb, toc_payload)
+        _add_eu_results_sheet(wb, toc_payload, logframe_draft=logframe_draft)
     elif donor_key == "worldbank":
         _add_worldbank_results_sheet(wb, toc_payload)
     elif donor_key == "giz":

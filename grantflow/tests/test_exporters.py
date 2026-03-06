@@ -200,8 +200,27 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
         }
     }
 
-    usaid_doc = Document(BytesIO(build_docx_from_toc(usaid_toc, "usaid")))
-    eu_doc = Document(BytesIO(build_docx_from_toc(eu_toc, "eu")))
+    donor_logframe = {
+        "indicators": [
+            {
+                "indicator_id": "IND_001",
+                "name": "Institutional service adoption score",
+                "result_level": "outcome",
+                "means_of_verification": "Verification annexes and partner review notes",
+                "owner": "Project M&E manager",
+            },
+            {
+                "indicator_id": "IND_002",
+                "name": "Civil service modernization learning uptake",
+                "result_level": "impact",
+                "means_of_verification": "CLA evidence and review memos",
+                "owner": "MEL lead",
+            },
+        ]
+    }
+
+    usaid_doc = Document(BytesIO(build_docx_from_toc(usaid_toc, "usaid", logframe_draft=donor_logframe)))
+    eu_doc = Document(BytesIO(build_docx_from_toc(eu_toc, "eu", logframe_draft=donor_logframe)))
     wb_doc = Document(BytesIO(build_docx_from_toc(wb_toc, "worldbank")))
     usaid_text = "\n".join(p.text for p in usaid_doc.paragraphs)
     eu_text = "\n".join(p.text for p in eu_doc.paragraphs)
@@ -209,10 +228,14 @@ def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
 
     assert "USAID Results Framework" in usaid_text
     assert "Critical Assumptions" in usaid_text
+    assert "Suggested performance monitoring focus:" in usaid_text
+    assert "CLA evidence and review memos" in usaid_text
     assert "EU Intervention Logic" in eu_text
     assert "Overall Objective" in eu_text
     assert "Specific Objectives" in eu_text
     assert "Expected Outcomes" in eu_text
+    assert "Suggested monitoring focus:" in eu_text
+    assert "Verification annexes and partner review notes" in eu_text
     assert "Assumptions" in eu_text
     assert "Risks" in eu_text
     assert "World Bank Results Framework" in wb_text
@@ -462,6 +485,80 @@ def test_excel_export_includes_template_meta_sheet():
     assert float(row_map["Coverage Rate"]) > 0.32
     assert "specific_objectives" in str(row_map["Missing Sections"])
     assert "expected_outcomes" in str(row_map["Missing Sections"])
+
+
+def test_excel_donor_sheets_include_suggested_monitoring_focus_columns():
+    donor_logframe = {
+        "indicators": [
+            {
+                "indicator_id": "IND_001",
+                "name": "Institutional service adoption score",
+                "result_level": "outcome",
+                "means_of_verification": "Verification annexes and partner review notes",
+                "owner": "Project M&E manager",
+            },
+            {
+                "indicator_id": "IND_002",
+                "name": "Civil service modernization learning uptake",
+                "result_level": "impact",
+                "means_of_verification": "CLA evidence and review memos",
+                "owner": "MEL lead",
+            },
+        ]
+    }
+    usaid_toc = {
+        "toc": {
+            "project_goal": "Improve civic services",
+            "development_objectives": [
+                {
+                    "do_id": "DO1",
+                    "description": "Improved digital delivery",
+                    "intermediate_results": [
+                        {
+                            "ir_id": "IR1.1",
+                            "description": "Capacity strengthened",
+                            "outputs": [
+                                {
+                                    "output_id": "O1.1.1",
+                                    "description": "Training delivered",
+                                    "indicators": [],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+    eu_toc = {
+        "toc": {
+            "overall_objective": {"objective_id": "OO1", "title": "Digital governance", "rationale": "EU fit"},
+            "specific_objectives": [
+                {"objective_id": "SO1", "title": "Service quality", "rationale": "Improve delivery standards"}
+            ],
+            "expected_outcomes": [
+                {"outcome_id": "OUT1", "title": "Citizen trust", "expected_change": "Higher service satisfaction"}
+            ],
+        }
+    }
+
+    usaid_wb = load_workbook(BytesIO(build_xlsx_from_logframe(donor_logframe, "usaid", toc_draft=usaid_toc)))
+    eu_wb = load_workbook(BytesIO(build_xlsx_from_logframe(donor_logframe, "eu", toc_draft=eu_toc)))
+
+    usaid_rows = list(usaid_wb["USAID_RF"].iter_rows(values_only=True))
+    eu_rows = list(eu_wb["EU_Intervention"].iter_rows(values_only=True))
+
+    assert "Suggested Monitoring Focus" in usaid_rows[0]
+    assert "Suggested Means of Verification" in usaid_rows[0]
+    assert "Suggested Owner" in usaid_rows[0]
+    assert "Institutional service adoption score" in str(usaid_rows[1])
+    assert "Project M&E manager" in str(usaid_rows[1])
+
+    assert "Suggested Monitoring Focus" in eu_rows[0]
+    assert "Suggested Means of Verification" in eu_rows[0]
+    assert "Suggested Owner" in eu_rows[0]
+    assert "Institutional service adoption score" in str(eu_rows[1])
+    assert "Verification annexes and partner review notes" in str(eu_rows[1])
 
 
 def test_excel_export_includes_export_contract_sheet():

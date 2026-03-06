@@ -13,6 +13,48 @@ from grantflow.exporters.template_profile import build_export_template_profile, 
 from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 
+def _normalized_indicator_rows(logframe_draft: Optional[Dict[str, Any]]) -> list[Dict[str, Any]]:
+    if not isinstance(logframe_draft, dict):
+        return []
+    raw = logframe_draft.get("indicators")
+    return [row for row in raw if isinstance(row, dict)] if isinstance(raw, list) else []
+
+
+def _indicator_focus_rows(
+    indicators: list[Dict[str, Any]],
+    *,
+    result_level: Optional[str] = None,
+    limit: int = 2,
+) -> list[Dict[str, Any]]:
+    rows = indicators
+    if result_level:
+        token = str(result_level).strip().lower()
+        rows = [row for row in indicators if str(row.get("result_level") or "").strip().lower() == token]
+    return rows[: max(0, limit)]
+
+
+def _add_indicator_focus_block(
+    doc: Document,
+    *,
+    indicators: list[Dict[str, Any]],
+    label: str = "Monitoring focus",
+) -> None:
+    focus_rows = [row for row in indicators if isinstance(row, dict)]
+    if not focus_rows:
+        return
+    doc.add_paragraph(f"{label}:", style="List Bullet")
+    for row in focus_rows:
+        name = str(row.get("name") or "").strip() or str(row.get("indicator_id") or "Indicator")
+        mov = str(row.get("means_of_verification") or "").strip()
+        owner = str(row.get("owner") or "").strip()
+        line = name
+        if mov:
+            line += f" | Means of verification: {mov}"
+        if owner:
+            line += f" | Owner: {owner}"
+        doc.add_paragraph(line, style="List Bullet")
+
+
 def _review_readiness_rows(
     *,
     quality_summary: dict[str, Any],
@@ -221,12 +263,16 @@ def _toc_root(toc_draft: Dict[str, Any], donor_id: str | None = None) -> Dict[st
     return normalize_toc_for_export(donor_key, unwrap_toc_payload(toc_draft))
 
 
-def _render_usaid_toc(doc: Document, toc: Dict[str, Any]) -> None:
+def _render_usaid_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Optional[Dict[str, Any]] = None) -> None:
+    indicators = _normalized_indicator_rows(logframe_draft)
+    outcome_focus = _indicator_focus_rows(indicators, result_level="outcome", limit=2)
+    impact_focus = _indicator_focus_rows(indicators, result_level="impact", limit=1)
     doc.add_heading("USAID Results Framework", level=1)
     goal = str(toc.get("project_goal") or "").strip()
     if goal:
         doc.add_heading("Project Goal", level=2)
         doc.add_paragraph(goal)
+        _add_indicator_focus_block(doc, indicators=impact_focus, label="Suggested learning focus")
 
     do_list = toc.get("development_objectives")
     if isinstance(do_list, list) and do_list:
@@ -237,6 +283,7 @@ def _render_usaid_toc(doc: Document, toc: Dict[str, Any]) -> None:
             do_id = str(do.get("do_id") or "").strip()
             do_title = str(do.get("description") or "").strip()
             doc.add_heading(f"{do_id or 'DO'} — {do_title or 'Development Objective'}", level=3)
+            _add_indicator_focus_block(doc, indicators=outcome_focus, label="Suggested performance monitoring focus")
             ir_list = do.get("intermediate_results")
             if not isinstance(ir_list, list):
                 continue
@@ -279,7 +326,10 @@ def _render_usaid_toc(doc: Document, toc: Dict[str, Any]) -> None:
             doc.add_paragraph(str(assumption), style="List Bullet")
 
 
-def _render_eu_toc(doc: Document, toc: Dict[str, Any]) -> None:
+def _render_eu_toc(doc: Document, toc: Dict[str, Any], *, logframe_draft: Optional[Dict[str, Any]] = None) -> None:
+    indicators = _normalized_indicator_rows(logframe_draft)
+    outcome_focus = _indicator_focus_rows(indicators, result_level="outcome", limit=2)
+    output_focus = _indicator_focus_rows(indicators, result_level="output", limit=2)
     doc.add_heading("EU Intervention Logic", level=1)
     overall = toc.get("overall_objective")
     rendered = False
@@ -292,6 +342,7 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any]) -> None:
             doc.add_paragraph(f"{objective_id or 'Objective'} — {title or '-'}")
         if rationale:
             doc.add_paragraph(rationale)
+        _add_indicator_focus_block(doc, indicators=outcome_focus, label="Suggested monitoring focus")
         rendered = True
 
     specific_objectives = toc.get("specific_objectives")
@@ -306,6 +357,7 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any]) -> None:
             doc.add_paragraph(f"{objective_id or 'SO'} — {title or '-'}", style="List Bullet")
             if rationale:
                 doc.add_paragraph(rationale)
+            _add_indicator_focus_block(doc, indicators=outcome_focus[:1], label="Suggested verification focus")
         rendered = True
 
     expected_outcomes = toc.get("expected_outcomes")
@@ -320,6 +372,9 @@ def _render_eu_toc(doc: Document, toc: Dict[str, Any]) -> None:
             doc.add_paragraph(f"{outcome_id or 'Outcome'} — {title or '-'}", style="List Bullet")
             if expected_change:
                 doc.add_paragraph(expected_change)
+            _add_indicator_focus_block(
+                doc, indicators=output_focus[:1] or outcome_focus[:1], label="Suggested delivery focus"
+            )
         rendered = True
 
     assumptions = toc.get("assumptions")
@@ -666,9 +721,9 @@ def build_docx_from_toc(
 
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
-        _render_usaid_toc(doc, toc_content)
+        _render_usaid_toc(doc, toc_content, logframe_draft=logframe_draft)
     elif donor_key == "eu":
-        _render_eu_toc(doc, toc_content)
+        _render_eu_toc(doc, toc_content, logframe_draft=logframe_draft)
     elif donor_key == "worldbank":
         _render_worldbank_toc(doc, toc_content)
     elif donor_key == "giz":
