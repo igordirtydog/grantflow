@@ -47,6 +47,16 @@ def _format_num(value: float | int | None) -> str:
     return f"{value:.2f}"
 
 
+def _load_case_quality(pilot_pack_dir: Path, case_dir: str) -> dict[str, Any]:
+    if not case_dir:
+        return {}
+    path = pilot_pack_dir / "live-runs" / case_dir / "quality.json"
+    if not path.exists():
+        return {}
+    payload = _read_json(path)
+    return payload if isinstance(payload, dict) else {}
+
+
 def _build_brief(
     rows: list[dict[str, Any]],
     *,
@@ -133,16 +143,71 @@ def main() -> int:
     if not isinstance(rows, list) or not rows:
         raise SystemExit("pilot pack live-runs/benchmark-results.json must contain a non-empty list")
 
+    quality_payloads = [_load_case_quality(pilot_pack_dir, str(row.get("case_dir") or "").strip()) for row in rows]
+    readiness_summaries = [
+        payload.get("review_readiness_summary")
+        for payload in quality_payloads
+        if isinstance(payload.get("review_readiness_summary"), dict)
+    ]
+    mel_summaries = [payload.get("mel") for payload in quality_payloads if isinstance(payload.get("mel"), dict)]
+
+    open_findings_avg = _avg(
+        [_safe_int(item.get("open_critic_findings")) for item in readiness_summaries if isinstance(item, dict)]
+    )
+    fallback_citations_avg = _avg(
+        [_safe_int(item.get("fallback_strategy_citations")) for item in readiness_summaries if isinstance(item, dict)]
+    )
+    low_confidence_avg = _avg(
+        [_safe_int(item.get("low_confidence_citations")) for item in readiness_summaries if isinstance(item, dict)]
+    )
+    mov_coverage_avg = _avg(
+        [
+            _safe_float(item.get("means_of_verification_coverage_rate"))
+            for item in mel_summaries
+            if isinstance(item, dict)
+        ]
+    )
+    owner_coverage_avg = _avg(
+        [_safe_float(item.get("owner_coverage_rate")) for item in mel_summaries if isinstance(item, dict)]
+    )
+    smart_coverage_avg = _avg(
+        [_safe_float(item.get("smart_field_coverage_rate")) for item in mel_summaries if isinstance(item, dict)]
+    )
+    review_ready_cases = sum(
+        1
+        for item in mel_summaries
+        if isinstance(item, dict)
+        and _safe_float(item.get("means_of_verification_coverage_rate")) == 1.0
+        and _safe_float(item.get("owner_coverage_rate")) == 1.0
+        and _safe_float(item.get("smart_field_coverage_rate")) == 1.0
+    )
+
     output_path = Path(str(args.output)).resolve() if str(args.output).strip() else pilot_pack_dir / "buyer-brief.md"
     include_productization_memo = (pilot_pack_dir / "productization-gaps-memo.md").exists()
-    output_path.write_text(
-        _build_brief(
-            rows,
-            pilot_pack_name=pilot_pack_dir.name,
-            include_productization_memo=include_productization_memo,
-        ),
-        encoding="utf-8",
+    text = _build_brief(
+        rows,
+        pilot_pack_name=pilot_pack_dir.name,
+        include_productization_memo=include_productization_memo,
     )
+    insert_lines = [
+        "## Review Readiness Snapshot",
+        f"- Open critic findings per case: `{_format_num(open_findings_avg)}`",
+        f"- Fallback/strategy citations per case: `{_format_num(fallback_citations_avg)}`",
+        f"- Low-confidence citations per case: `{_format_num(low_confidence_avg)}`",
+        "",
+        "## LogFrame Readiness Snapshot",
+        f"- Cases with complete SMART + MoV + owner coverage: `{review_ready_cases}/{len(rows)}`",
+        f"- Average SMART field coverage: `{_format_num(smart_coverage_avg)}`",
+        f"- Average means-of-verification coverage: `{_format_num(mov_coverage_avg)}`",
+        f"- Average owner coverage: `{_format_num(owner_coverage_avg)}`",
+        "",
+    ]
+    text = text.replace(
+        "## What This Demonstrates\n",
+        "\n".join(insert_lines) + "\n## What This Demonstrates\n",
+        1,
+    )
+    output_path.write_text(text, encoding="utf-8")
     print(f"buyer brief saved to {output_path}")
     return 0
 

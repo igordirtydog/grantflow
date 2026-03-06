@@ -33,6 +33,15 @@ def _resolve_featured_case(
     return rows[0]
 
 
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _build_handout(
     *,
     pilot_pack_name: str,
@@ -44,6 +53,9 @@ def _build_handout(
     verdict: str,
     readiness: str,
     baseline_complete_cases: str,
+    featured_review_readiness: dict[str, Any],
+    featured_mel_summary: dict[str, Any],
+    review_ready_cases: str,
 ) -> str:
     done_cases = sum(1 for row in rows if str(row.get("status") or "").strip().lower() == "done")
     donors = sorted({str(row.get("donor_id") or "").strip() for row in rows if str(row.get("donor_id") or "").strip()})
@@ -72,6 +84,7 @@ def _build_handout(
     lines.append(f"- Current scorecard verdict: `{verdict}`")
     lines.append(f"- Current readiness color: `{readiness}`")
     lines.append(f"- Baseline-complete cases: `{baseline_complete_cases}`")
+    lines.append(f"- Cases with complete LogFrame operational coverage: `{review_ready_cases}`")
     lines.append("")
     lines.append("## Why This Matters")
     lines.append("- Faster path to a reviewable draft, not just generated text.")
@@ -85,6 +98,18 @@ def _build_handout(
     lines.append(f"- Job ID: `{featured_row.get('job_id')}`")
     lines.append(f"- Status: `{featured_row.get('status')}`")
     lines.append(f"- HITL enabled: `{'true' if featured_row.get('hitl_enabled') else 'false'}`")
+    if featured_review_readiness:
+        lines.append(f"- Open critic findings: `{featured_review_readiness.get('open_critic_findings', '-')}`")
+        lines.append(
+            f"- Fallback/strategy citations: `{featured_review_readiness.get('fallback_strategy_citations', '-')}`"
+        )
+    if featured_mel_summary:
+        mov = featured_mel_summary.get("means_of_verification_coverage_rate")
+        owner = featured_mel_summary.get("owner_coverage_rate")
+        smart = featured_mel_summary.get("smart_field_coverage_rate")
+        lines.append(f"- SMART coverage: `{smart:.2f}`" if isinstance(smart, (int, float)) else "- SMART coverage: `-`")
+        lines.append(f"- MoV coverage: `{mov:.2f}`" if isinstance(mov, (int, float)) else "- MoV coverage: `-`")
+        lines.append(f"- Owner coverage: `{owner:.2f}`" if isinstance(owner, (int, float)) else "- Owner coverage: `-`")
     lines.append("")
     lines.append("## What To Open Next")
     lines.append("1. `buyer-brief.md` for the short commercial summary.")
@@ -165,6 +190,28 @@ def main() -> int:
     quality_avg = sum(quality_values) / len(quality_values) if quality_values else None
     critic_avg = sum(critic_values) / len(critic_values) if critic_values else None
 
+    quality_path = pilot_pack_dir / "live-runs" / str(featured_row.get("case_dir") or "") / "quality.json"
+    quality_payload = _read_json(quality_path) if quality_path.exists() else {}
+    featured_review_readiness = (
+        quality_payload.get("review_readiness_summary") if isinstance(quality_payload, dict) else {}
+    )
+    featured_review_readiness = featured_review_readiness if isinstance(featured_review_readiness, dict) else {}
+    featured_mel_summary = quality_payload.get("mel") if isinstance(quality_payload, dict) else {}
+    featured_mel_summary = featured_mel_summary if isinstance(featured_mel_summary, dict) else {}
+
+    review_ready_cases_count = 0
+    for row in rows:
+        row_quality_path = pilot_pack_dir / "live-runs" / str(row.get("case_dir") or "") / "quality.json"
+        row_quality = _read_json(row_quality_path) if row_quality_path.exists() else {}
+        mel = row_quality.get("mel") if isinstance(row_quality, dict) else {}
+        if not isinstance(mel, dict):
+            continue
+        smart = _safe_float(mel.get("smart_field_coverage_rate"))
+        mov = _safe_float(mel.get("means_of_verification_coverage_rate"))
+        owner = _safe_float(mel.get("owner_coverage_rate"))
+        if smart == 1.0 and mov == 1.0 and owner == 1.0:
+            review_ready_cases_count += 1
+
     output_path.write_text(
         _build_handout(
             pilot_pack_name=pilot_pack_dir.name,
@@ -176,6 +223,9 @@ def main() -> int:
             verdict=verdict,
             readiness=readiness,
             baseline_complete_cases=baseline_complete_cases,
+            featured_review_readiness=featured_review_readiness,
+            featured_mel_summary=featured_mel_summary,
+            review_ready_cases=f"{review_ready_cases_count}/{len(rows)}",
         ),
         encoding="utf-8",
     )
