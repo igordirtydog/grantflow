@@ -197,6 +197,7 @@ make pilot-handout-refresh
 make smoke-demo-refresh
 make latest-open-order
 make latest-open-order-refresh
+make pilot-refresh-fast
 ```
 
 Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xlsx` / ZIP artifacts. The target expects a running local API at `http://127.0.0.1:8000`.
@@ -228,6 +229,7 @@ Default output: `build/demo-pack/` with per-case JSON traces plus `.docx` / `.xl
 `make smoke-demo-refresh` runs the full default smoke demo chain through handout generation.
 `make latest-open-order` writes a short guide describing what to open in `build/latest-*` and in what order.
 `make latest-open-order-refresh` rebuilds the chain first, then writes the guide.
+`make pilot-refresh-fast` rebuilds the buyer-facing chain quickly without OEM pack, archive, or diligence index.
 
 ## Quick Start
 
