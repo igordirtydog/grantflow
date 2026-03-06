@@ -1,4 +1,4 @@
-.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh
+.PHONY: deps-guard qa-fast qa-hitl preflight-prod-api preflight-prod-worker eval-grounded-ab eval-grounded-tail eval-llm-sampled eval-llm-grounded-strict eval-rbm-samples refresh-grounded-baseline demo-pack pilot-pack buyer-brief buyer-brief-refresh pilot-metrics pilot-metrics-refresh pilot-scorecard pilot-scorecard-refresh
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 EVAL_ARTIFACTS_DIR ?= eval-artifacts
@@ -40,6 +40,8 @@ BUYER_BRIEF_OUT ?=
 PILOT_METRICS_PILOT_DIR ?= $(PILOT_PACK_DIR)
 PILOT_METRICS_CSV_OUT ?=
 PILOT_METRICS_MD_OUT ?=
+PILOT_SCORECARD_PILOT_DIR ?= $(PILOT_PACK_DIR)
+PILOT_SCORECARD_OUT ?=
 
 deps-guard:
 	$(PYTHON) scripts/dependency_contract_guard.py
@@ -231,3 +233,11 @@ pilot-metrics:
 
 pilot-metrics-refresh: pilot-pack
 	$(MAKE) pilot-metrics PILOT_METRICS_PILOT_DIR=$(PILOT_PACK_DIR) PILOT_METRICS_CSV_OUT=$(PILOT_METRICS_CSV_OUT) PILOT_METRICS_MD_OUT=$(PILOT_METRICS_MD_OUT)
+
+pilot-scorecard:
+	$(PYTHON) scripts/pilot_scorecard.py \
+		--pilot-pack-dir $(PILOT_SCORECARD_PILOT_DIR) \
+		$(if $(strip $(PILOT_SCORECARD_OUT)),--output $(PILOT_SCORECARD_OUT),)
+
+pilot-scorecard-refresh: pilot-metrics-refresh buyer-brief
+	$(MAKE) pilot-scorecard PILOT_SCORECARD_PILOT_DIR=$(PILOT_PACK_DIR) PILOT_SCORECARD_OUT=$(PILOT_SCORECARD_OUT)

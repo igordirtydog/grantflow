@@ -32,6 +32,8 @@ make buyer-brief
 make buyer-brief-refresh
 make pilot-metrics
 make pilot-metrics-refresh
+make pilot-scorecard
+make pilot-scorecard-refresh
 ```
 
 This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
@@ -40,6 +42,8 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make buyer-brief-refresh` rebuilds the pilot pack first, then writes the brief.
 `make pilot-metrics` writes metric tables from an existing pilot pack.
 `make pilot-metrics-refresh` rebuilds the pilot pack first, then writes the metric tables.
+`make pilot-scorecard` writes a short go/no-go memo from an existing pilot pack.
+`make pilot-scorecard-refresh` rebuilds the pilot pack, metrics, and brief first, then writes the scorecard.
 
 ## 3) Operator Demo Flow (API-first)
 
@@ -165,4 +169,6 @@ make buyer-brief BUYER_BRIEF_OUT=build/pilot-pack/buyer-brief-custom.md
 make buyer-brief-refresh PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 make pilot-metrics PILOT_METRICS_PILOT_DIR=build/pilot-pack-smoke
 make pilot-metrics-refresh PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
+make pilot-scorecard PILOT_SCORECARD_PILOT_DIR=build/pilot-pack-smoke
+make pilot-scorecard-refresh PILOT_PACK_INCLUDE_PRODUCTIZATION_MEMO=1
 ```
