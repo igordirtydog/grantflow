@@ -56,6 +56,8 @@ make smoke-demo-refresh
 make latest-open-order
 make latest-open-order-refresh
 make pilot-refresh-fast
+make verify-latest-stack
+make verify-latest-stack-refresh
 ```
 
 This writes a ready-to-review bundle to `build/demo-pack/` using live API runs and auto-drains one HITL case by default.
@@ -88,6 +90,8 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make latest-open-order` writes a short "what to open next" guide for `build/latest-*`.
 `make latest-open-order-refresh` rebuilds the chain first, then writes that guide.
 `make pilot-refresh-fast` runs the buyer-facing refresh path without OEM pack, archive, or diligence index.
+`make verify-latest-stack` verifies that `build/latest-*` symlinks and key files exist.
+`make verify-latest-stack-refresh` rebuilds the chain first, then verifies the latest stack.
 
 ## 3) Operator Demo Flow (API-first)
 
@@ -237,4 +241,6 @@ make smoke-demo-refresh PILOT_HANDOUT_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_A
 make latest-open-order LATEST_OPEN_ORDER_BUILD_DIR=build LATEST_OPEN_ORDER_OUT=build/latest-open-order.md
 make latest-open-order-refresh LATEST_OPEN_ORDER_BUILD_DIR=build LATEST_OPEN_ORDER_OUT=build/latest-open-order.md
 make pilot-refresh-fast PILOT_HANDOUT_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_HANDOUT_OUT=build/pilot-handout.md
+make verify-latest-stack VERIFY_LATEST_STACK_BUILD_DIR=build
+make verify-latest-stack-refresh VERIFY_LATEST_STACK_BUILD_DIR=build
 ```
