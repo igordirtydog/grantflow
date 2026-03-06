@@ -595,6 +595,7 @@ def build_xlsx_from_logframe(
     thin_border = _apply_table_header(ws, headers)
 
     indicators = logframe_draft.get("indicators", []) if logframe_draft else []
+
     def _cell_text(value: Any) -> str:
         if value is None:
             return ""

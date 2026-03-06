@@ -14,7 +14,12 @@ from grantflow.api.idempotency import (
     _store_idempotency_response,
 )
 from grantflow.api.public_views import REVIEW_WORKFLOW_OVERDUE_DEFAULT_HOURS, public_job_review_workflow_sla_payload
-from grantflow.swarm.findings import canonicalize_findings, finding_primary_id, state_critic_findings, write_state_critic_findings
+from grantflow.swarm.findings import (
+    canonicalize_findings,
+    finding_primary_id,
+    state_critic_findings,
+    write_state_critic_findings,
+)
 
 
 def _recompute_review_workflow_sla(

@@ -278,7 +278,9 @@ def _estimate_preflight_architect_claims(
     architect_claim_citations = [
         c
         for c in claim_citations
-        if isinstance(c, dict) and str(c.get("used_for") or "") == "toc_claim" and str(c.get("statement_path") or "").strip()
+        if isinstance(c, dict)
+        and str(c.get("used_for") or "") == "toc_claim"
+        and str(c.get("statement_path") or "").strip()
     ]
     claim_coverage = generation_meta.get("claim_coverage") if isinstance(generation_meta, dict) else {}
     claim_coverage = claim_coverage if isinstance(claim_coverage, dict) else {}
@@ -290,8 +292,12 @@ def _estimate_preflight_architect_claims(
     traceability_complete_count = sum(
         1 for c in architect_claim_citations if citation_traceability_status(c) == "complete"
     )
-    traceability_partial_count = sum(1 for c in architect_claim_citations if citation_traceability_status(c) == "partial")
-    traceability_missing_count = sum(1 for c in architect_claim_citations if citation_traceability_status(c) == "missing")
+    traceability_partial_count = sum(
+        1 for c in architect_claim_citations if citation_traceability_status(c) == "partial"
+    )
+    traceability_missing_count = sum(
+        1 for c in architect_claim_citations if citation_traceability_status(c) == "missing"
+    )
     traceability_gap_count = traceability_partial_count + traceability_missing_count
     threshold_considered = 0
     threshold_hits = 0
@@ -318,7 +324,9 @@ def _estimate_preflight_architect_claims(
     key_claim_coverage_ratio = claim_coverage.get("key_claim_coverage_ratio")
     fallback_claim_ratio = claim_coverage.get("fallback_claim_ratio")
     try:
-        key_claim_coverage_ratio = round(float(key_claim_coverage_ratio), 4) if key_claim_coverage_ratio is not None else None
+        key_claim_coverage_ratio = (
+            round(float(key_claim_coverage_ratio), 4) if key_claim_coverage_ratio is not None else None
+        )
     except (TypeError, ValueError):
         key_claim_coverage_ratio = None
     try:
@@ -341,7 +349,9 @@ def _estimate_preflight_architect_claims(
         "traceability_missing_citation_count": traceability_missing_count,
         "traceability_gap_citation_count": traceability_gap_count,
         "traceability_gap_rate": _safe_rate(traceability_gap_count, claim_count),
-        "retrieval_hits_count": int(retrieval_summary.get("hits_count") or 0) if isinstance(retrieval_summary, dict) else 0,
+        "retrieval_hits_count": (
+            int(retrieval_summary.get("hits_count") or 0) if isinstance(retrieval_summary, dict) else 0
+        ),
         "retrieval_expected": bool(architect_rag_enabled),
     }
 

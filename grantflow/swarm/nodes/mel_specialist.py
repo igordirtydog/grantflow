@@ -422,9 +422,7 @@ def _apply_indicator_defaults(
 
     raw_definition = str(out.get("definition") or "").strip()
     if not raw_definition:
-        out["definition"] = (
-            f"{str(out.get('name') or 'Indicator').strip()} tracked at {current_result_level} level."
-        )
+        out["definition"] = f"{str(out.get('name') or 'Indicator').strip()} tracked at {current_result_level} level."
     else:
         out["definition"] = raw_definition
 
@@ -504,17 +502,17 @@ def _deterministic_indicators_from_toc(
         indicators.append(
             _apply_indicator_defaults(
                 _copy_optional_indicator_fields_from_hit(
-                {
-                "indicator_id": str(hit.get("indicator_id") or f"IND_{idx + 1:03d}"),
-                "name": name or f"Results indicator {idx + 1}",
-                "justification": justification,
-                "citation": citation,
-                "baseline": baseline,
-                "target": target,
-                "evidence_excerpt": str(hit.get("excerpt") or statement)[:240],
-                "toc_statement_path": statement_path,
-                },
-                hit,
+                    {
+                        "indicator_id": str(hit.get("indicator_id") or f"IND_{idx + 1:03d}"),
+                        "name": name or f"Results indicator {idx + 1}",
+                        "justification": justification,
+                        "citation": citation,
+                        "baseline": baseline,
+                        "target": target,
+                        "evidence_excerpt": str(hit.get("excerpt") or statement)[:240],
+                        "toc_statement_path": statement_path,
+                    },
+                    hit,
                 ),
                 donor_id=donor_id,
                 toc_statement_path=statement_path,
@@ -1091,14 +1089,14 @@ def _fallback_indicator(
     )
     return _apply_indicator_defaults(
         {
-        "indicator_id": "IND_001",
-        "name": "Project Output Indicator",
-        "justification": "Fallback indicator used because donor-specific RAG retrieval returned no grounded results.",
-        "citation": namespace,
-        "baseline": baseline,
-        "target": target,
-        "result_level": "output",
-        "evidence_excerpt": None,
+            "indicator_id": "IND_001",
+            "name": "Project Output Indicator",
+            "justification": "Fallback indicator used because donor-specific RAG retrieval returned no grounded results.",
+            "citation": namespace,
+            "baseline": baseline,
+            "target": target,
+            "result_level": "output",
+            "evidence_excerpt": None,
         },
         donor_id=donor_id,
         toc_statement_path="toc.outputs[0]",
@@ -1293,8 +1291,14 @@ def _build_mel_citations(
                 "citation_type": citation_type,
                 "namespace": namespace,
                 "namespace_normalized": namespace_normalized,
-                "doc_id": hit.get("doc_id") if hit else (indicator_doc_id if use_strategy_reference_when_no_hits else None),
-                "source": hit.get("source") if hit else (f"strategy::{donor_id}" if use_strategy_reference_when_no_hits else None),
+                "doc_id": (
+                    hit.get("doc_id") if hit else (indicator_doc_id if use_strategy_reference_when_no_hits else None)
+                ),
+                "source": (
+                    hit.get("source")
+                    if hit
+                    else (f"strategy::{donor_id}" if use_strategy_reference_when_no_hits else None)
+                ),
                 "page": hit.get("page"),
                 "page_start": hit.get("page_start"),
                 "page_end": hit.get("page_end"),

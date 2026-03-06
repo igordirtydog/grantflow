@@ -2307,7 +2307,9 @@ def _mel_indicator_coverage_summary(logframe_draft: Dict[str, Any]) -> Dict[str,
     }
     smart_fields_present_total = sum(int(coverage_counts.get(field, 0)) for field in MEL_SMART_COVERAGE_FIELDS)
     smart_fields_total = indicator_count * len(MEL_SMART_COVERAGE_FIELDS)
-    smart_field_coverage_rate = round(smart_fields_present_total / smart_fields_total, 4) if smart_fields_total else None
+    smart_field_coverage_rate = (
+        round(smart_fields_present_total / smart_fields_total, 4) if smart_fields_total else None
+    )
     baseline_coverage_rate = _rate(int(coverage_counts.get("baseline", 0)))
     target_coverage_rate = _rate(int(coverage_counts.get("target", 0)))
     frequency_coverage_rate = _rate(int(coverage_counts.get("frequency", 0)))
@@ -3547,9 +3549,9 @@ def public_portfolio_quality_payload(
                     bounded_rate = max(0.0, min(1.0, float(rate_raw)))
                     field_present = bounded_rate * float(row_indicator_count)
             if field_present is not None:
-                mel_field_present_weighted_totals[field] = (
-                    float(mel_field_present_weighted_totals.get(field, 0.0)) + float(field_present)
-                )
+                mel_field_present_weighted_totals[field] = float(
+                    mel_field_present_weighted_totals.get(field, 0.0)
+                ) + float(field_present)
 
         mel_baseline_placeholder_count += _coerce_int(row_mel.get("baseline_placeholder_count"), default=0)
         mel_target_placeholder_count += _coerce_int(row_mel.get("target_placeholder_count"), default=0)
@@ -3564,7 +3566,9 @@ def public_portfolio_quality_payload(
             mel_result_level_counts_total[level] = int(mel_result_level_counts_total.get(level, 0)) + level_count
             row_result_level_total += level_count
         if row_indicator_count > 0 and row_result_level_total <= 0:
-            mel_result_level_counts_total["unknown"] = int(mel_result_level_counts_total.get("unknown", 0)) + row_indicator_count
+            mel_result_level_counts_total["unknown"] = (
+                int(mel_result_level_counts_total.get("unknown", 0)) + row_indicator_count
+            )
 
         donor_for_row = str(row.get("_donor_id") or "unknown")
         row_grounded_gate: Dict[str, Any] = (
@@ -3695,14 +3699,12 @@ def public_portfolio_quality_payload(
                 _coerce_int(donor_mel.get("indicator_count_total"), default=0) + donor_row_indicator_count
             )
 
-        donor_mel["baseline_placeholder_count"] = (
-            _coerce_int(donor_mel.get("baseline_placeholder_count"), default=0)
-            + _coerce_int(row_mel.get("baseline_placeholder_count"), default=0)
-        )
-        donor_mel["target_placeholder_count"] = (
-            _coerce_int(donor_mel.get("target_placeholder_count"), default=0)
-            + _coerce_int(row_mel.get("target_placeholder_count"), default=0)
-        )
+        donor_mel["baseline_placeholder_count"] = _coerce_int(
+            donor_mel.get("baseline_placeholder_count"), default=0
+        ) + _coerce_int(row_mel.get("baseline_placeholder_count"), default=0)
+        donor_mel["target_placeholder_count"] = _coerce_int(
+            donor_mel.get("target_placeholder_count"), default=0
+        ) + _coerce_int(row_mel.get("target_placeholder_count"), default=0)
         donor_row_missing_field_counts = (
             cast(Dict[str, Any], row_mel.get("missing_field_counts"))
             if isinstance(row_mel.get("missing_field_counts"), dict)
@@ -3727,9 +3729,9 @@ def public_portfolio_quality_payload(
                     bounded_rate = max(0.0, min(1.0, float(rate_raw)))
                     donor_field_present = bounded_rate * float(donor_row_indicator_count)
             if donor_field_present is not None:
-                donor_field_present_weighted_totals[field] = (
-                    float(donor_field_present_weighted_totals.get(field, 0.0)) + float(donor_field_present)
-                )
+                donor_field_present_weighted_totals[field] = float(
+                    donor_field_present_weighted_totals.get(field, 0.0)
+                ) + float(donor_field_present)
         donor_mel["field_present_weighted_totals"] = donor_field_present_weighted_totals
 
         donor_row_result_level_counts = (
@@ -3745,10 +3747,14 @@ def public_portfolio_quality_payload(
         donor_row_result_level_total = 0
         for level in ("impact", "outcome", "output", "unknown"):
             level_count = _coerce_int(donor_row_result_level_counts.get(level), default=0)
-            donor_result_level_counts[level] = _coerce_int(donor_result_level_counts.get(level), default=0) + level_count
+            donor_result_level_counts[level] = (
+                _coerce_int(donor_result_level_counts.get(level), default=0) + level_count
+            )
             donor_row_result_level_total += level_count
         if donor_row_indicator_count > 0 and donor_row_result_level_total <= 0:
-            donor_result_level_counts["unknown"] = _coerce_int(donor_result_level_counts.get("unknown"), default=0) + donor_row_indicator_count
+            donor_result_level_counts["unknown"] = (
+                _coerce_int(donor_result_level_counts.get("unknown"), default=0) + donor_row_indicator_count
+            )
         donor_mel["result_level_counts"] = donor_result_level_counts
         donor_row["open_findings_total"] += int(row_critic.get("open_finding_count") or 0)
         donor_row["high_severity_findings_total"] += int(row_critic.get("high_severity_fatal_flaw_count") or 0)
@@ -4117,21 +4123,23 @@ def public_portfolio_quality_payload(
             )
             donor_mel_missing_field_counts: Dict[str, int] = {
                 field: (
-                    max(
-                        0,
-                        int(
-                            round(
-                                max(
-                                    0.0,
-                                    float(donor_mel_indicator_count_total)
-                                    - float(donor_mel_field_totals.get(field, 0.0)),
+                    (
+                        max(
+                            0,
+                            int(
+                                round(
+                                    max(
+                                        0.0,
+                                        float(donor_mel_indicator_count_total)
+                                        - float(donor_mel_field_totals.get(field, 0.0)),
+                                    )
                                 )
-                            )
-                        ),
+                            ),
+                        )
                     )
+                    if donor_mel_indicator_count_total > 0
+                    else 0
                 )
-                if donor_mel_indicator_count_total > 0
-                else 0
                 for field in MEL_COVERAGE_FIELDS
             }
             donor_mel_coverage_rates: Dict[str, Optional[float]] = {
@@ -4271,17 +4279,23 @@ def public_portfolio_quality_payload(
     }
     mel_missing_field_counts: Dict[str, int] = {
         field: (
-            max(
-                0,
-                int(
-                    round(
-                        max(0.0, float(mel_indicator_count_total) - float(mel_field_present_weighted_totals.get(field, 0.0)))
-                    )
-                ),
+            (
+                max(
+                    0,
+                    int(
+                        round(
+                            max(
+                                0.0,
+                                float(mel_indicator_count_total)
+                                - float(mel_field_present_weighted_totals.get(field, 0.0)),
+                            )
+                        )
+                    ),
+                )
             )
+            if mel_indicator_count_total > 0
+            else 0
         )
-        if mel_indicator_count_total > 0
-        else 0
         for field in MEL_COVERAGE_FIELDS
     }
     mel_coverage_rates: Dict[str, Optional[float]] = {
@@ -4292,7 +4306,9 @@ def public_portfolio_quality_payload(
         )
         for field in MEL_COVERAGE_FIELDS
     }
-    mel_smart_present_total = sum(float(mel_field_present_weighted_totals.get(field, 0.0)) for field in MEL_SMART_COVERAGE_FIELDS)
+    mel_smart_present_total = sum(
+        float(mel_field_present_weighted_totals.get(field, 0.0)) for field in MEL_SMART_COVERAGE_FIELDS
+    )
     mel_smart_total = mel_indicator_count_total * len(MEL_SMART_COVERAGE_FIELDS)
     mel_smart_field_coverage_rate = round(mel_smart_present_total / mel_smart_total, 4) if mel_smart_total else None
     mel_risk_level = _mel_risk_level(

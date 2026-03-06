@@ -98,7 +98,7 @@ jobs:
 
       - name: Run black (format check)
         run: |
-          python -m black --check grantflow/eval grantflow/core/job_runner.py scripts/build_llm_eval_summary.py
+          python -m black --check grantflow scripts
 
   mypy:
     runs-on: ubuntu-latest

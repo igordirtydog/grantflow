@@ -562,7 +562,9 @@ def test_grounded_tail_regression_snapshot_covers_grounded_tail_cases():
     cases = load_eval_cases(case_files=[Path("grantflow/eval/cases/grounded_tail_cases.json")])
     expected_case_ids = {str(case.get("case_id") or "").strip() for case in cases if case.get("case_id")}
     assert expected_case_ids, "Expected non-empty grounded tail case ids"
-    snapshot = json.loads(Path("grantflow/eval/fixtures/grounded_tail_regression_snapshot.json").read_text(encoding="utf-8"))
+    snapshot = json.loads(
+        Path("grantflow/eval/fixtures/grounded_tail_regression_snapshot.json").read_text(encoding="utf-8")
+    )
     snapshot_cases = snapshot.get("cases") if isinstance(snapshot.get("cases"), dict) else {}
     snapshot_case_ids = {str(case_id).strip() for case_id in snapshot_cases}
     assert snapshot_case_ids == expected_case_ids
@@ -656,6 +658,7 @@ def test_evaluate_seed_readiness_reports_missing_doc_families():
     assert usaid["missing_doc_families"] == ["country_context"]
     assert usaid["ready_doc_families"] == ["donor_policy"]
     assert usaid["coverage_rate"] == 0.5
+
 
 def test_eval_harness_cli_supports_suite_label_and_runtime_override_flags(tmp_path, monkeypatch):
     json_out = tmp_path / "llm-eval-report.json"

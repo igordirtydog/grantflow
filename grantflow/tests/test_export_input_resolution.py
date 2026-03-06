@@ -30,4 +30,3 @@ def test_resolve_export_inputs_reads_critic_findings_from_legacy_state_alias():
     assert finding["id"] == finding["finding_id"]
     assert finding["code"] == "LEGACY_UNSTRUCTURED_FINDING"
     assert finding["message"].startswith("Missing baseline and target")
-

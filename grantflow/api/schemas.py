@@ -1729,10 +1729,7 @@ class GenerateFromPresetBatchPublicResponse(BaseModel):
     total: int
     accepted_count: int
     error_count: int
-    results: list[
-        GenerateFromPresetBatchItemAcceptedPublicResponse
-        | GenerateFromPresetBatchItemErrorPublicResponse
-    ]
+    results: list[GenerateFromPresetBatchItemAcceptedPublicResponse | GenerateFromPresetBatchItemErrorPublicResponse]
 
     model_config = ConfigDict(extra="allow")
 

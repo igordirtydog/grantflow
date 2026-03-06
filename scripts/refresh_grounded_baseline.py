@@ -60,7 +60,9 @@ def refresh_grounded_baseline(
 
     suite = run_eval_suite(cases, suite_label=suite_label, skip_expectations=False)
     if not suite.get("all_passed") and not allow_failing_suite:
-        raise RuntimeError("Grounded suite failed; refuse to refresh baseline. Re-run with --allow-failing-suite to override.")
+        raise RuntimeError(
+            "Grounded suite failed; refuse to refresh baseline. Re-run with --allow-failing-suite to override."
+        )
 
     if seeded_summary is not None:
         suite["seeded_corpus"] = seeded_summary
@@ -72,7 +74,9 @@ def refresh_grounded_baseline(
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Refresh grounded regression baseline snapshot from current grounded suite.")
+    parser = argparse.ArgumentParser(
+        description="Refresh grounded regression baseline snapshot from current grounded suite."
+    )
     parser.add_argument(
         "--confirm-refresh",
         action="store_true",
@@ -135,7 +139,9 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     if not (bool(args.confirm_refresh) or _is_truthy(os.getenv("ALLOW_BASELINE_REFRESH"))):
-        print("FAILED: baseline refresh requires explicit confirmation. Use --confirm-refresh or ALLOW_BASELINE_REFRESH=1.")
+        print(
+            "FAILED: baseline refresh requires explicit confirmation. Use --confirm-refresh or ALLOW_BASELINE_REFRESH=1."
+        )
         return 1
     seed_manifest = None if bool(args.no_seed_rag) else Path(args.seed_rag_manifest)
     donor_filters = _split_csv_args(args.donor_id)

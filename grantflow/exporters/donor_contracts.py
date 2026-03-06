@@ -70,12 +70,16 @@ def evaluate_export_contract(
     required_sheets = list(DONOR_XLSX_REQUIRED_SHEETS.get(donor_key, []))
     workbook_validation_enabled = workbook_sheetnames is not None or workbook_primary_sheet_headers is not None
     actual_sheets = [str(x) for x in (workbook_sheetnames or [])] if workbook_validation_enabled else []
-    missing_required_sheets = [name for name in required_sheets if name not in actual_sheets] if workbook_validation_enabled else []
+    missing_required_sheets = (
+        [name for name in required_sheets if name not in actual_sheets] if workbook_validation_enabled else []
+    )
 
     expected_docx_headings = list(DONOR_DOCX_EXPECTED_HEADINGS.get(donor_key, []))
     primary_sheet = DONOR_XLSX_PRIMARY_SHEET.get(donor_key)
     primary_headers = list(DONOR_XLSX_PRIMARY_HEADERS.get(donor_key, []))
-    actual_primary_headers = [str(x) for x in (workbook_primary_sheet_headers or [])] if workbook_validation_enabled else []
+    actual_primary_headers = (
+        [str(x) for x in (workbook_primary_sheet_headers or [])] if workbook_validation_enabled else []
+    )
     missing_primary_sheet_headers = (
         [name for name in primary_headers if name not in actual_primary_headers]
         if workbook_validation_enabled and primary_headers

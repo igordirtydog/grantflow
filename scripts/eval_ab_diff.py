@@ -496,9 +496,7 @@ def _evaluate_guard(
             round(max_a_traceability_gap_rate, 4) if max_a_traceability_gap_rate is not None else None
         ),
         "min_a_non_retrieval_improvement_vs_b": (
-            round(min_a_non_retrieval_improvement_vs_b, 4)
-            if min_a_non_retrieval_improvement_vs_b is not None
-            else None
+            round(min_a_non_retrieval_improvement_vs_b, 4) if min_a_non_retrieval_improvement_vs_b is not None else None
         ),
         "min_a_retrieval_grounded_improvement_vs_b": (
             round(min_a_retrieval_grounded_improvement_vs_b, 4)

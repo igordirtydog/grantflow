@@ -768,7 +768,9 @@ def test_ready_endpoint_runtime_compatibility_warn_mode_does_not_block(monkeypat
     assert policy["status"]["supported"] is False
     assert policy["blocking"] is False
     alerts = policy["alerts"]
-    assert any(str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict))
+    assert any(
+        str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict)
+    )
 
 
 def test_ready_endpoint_runtime_compatibility_strict_mode_blocks(monkeypatch):
@@ -785,7 +787,9 @@ def test_ready_endpoint_runtime_compatibility_strict_mode_blocks(monkeypatch):
     assert policy["status"]["supported"] is False
     assert policy["blocking"] is True
     alerts = policy["alerts"]
-    assert any(str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict))
+    assert any(
+        str(item.get("code") or "") == "PYTHON_RUNTIME_COMPATIBILITY_RISK" for item in alerts if isinstance(item, dict)
+    )
 
 
 def test_ready_endpoint_tenant_authz_policy_warn_mode_does_not_block(monkeypatch):
@@ -804,7 +808,9 @@ def test_ready_endpoint_tenant_authz_policy_warn_mode_does_not_block(monkeypatch
     assert policy["status"]["valid"] is False
     assert policy["blocking"] is False
     alerts = policy["alerts"]
-    assert any(str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict))
+    assert any(
+        str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict)
+    )
 
 
 def test_ready_endpoint_tenant_authz_policy_strict_mode_blocks(monkeypatch):
@@ -824,7 +830,9 @@ def test_ready_endpoint_tenant_authz_policy_strict_mode_blocks(monkeypatch):
     assert policy["status"]["valid"] is False
     assert policy["blocking"] is True
     alerts = policy["alerts"]
-    assert any(str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict))
+    assert any(
+        str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict)
+    )
 
 
 def test_ready_endpoint_tenant_authz_policy_strict_mode_blocks_default_tenant_mismatch(monkeypatch):
@@ -844,7 +852,9 @@ def test_ready_endpoint_tenant_authz_policy_strict_mode_blocks_default_tenant_mi
     assert policy["status"]["valid"] is False
     assert policy["blocking"] is True
     alerts = policy["alerts"]
-    assert any(str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict))
+    assert any(
+        str(item.get("code") or "") == "TENANT_AUTHZ_CONFIGURATION_RISK" for item in alerts if isinstance(item, dict)
+    )
 
 
 def test_ready_endpoint_redis_dispatcher_mode_without_local_consumer(monkeypatch):
@@ -956,8 +966,7 @@ def test_ready_endpoint_warn_mode_allows_missing_dispatcher_heartbeat(monkeypatc
         (
             item
             for item in alerts
-            if isinstance(item, dict)
-            and str(item.get("code") or "") == "REDIS_DISPATCHER_WORKER_HEARTBEAT_MISSING"
+            if isinstance(item, dict) and str(item.get("code") or "") == "REDIS_DISPATCHER_WORKER_HEARTBEAT_MISSING"
         ),
         None,
     )
@@ -1209,9 +1218,7 @@ def test_health_endpoint_reports_tenant_authz_without_allowlist_warning(monkeypa
     assert response.status_code == 200
     body = response.json()
     warnings = body["diagnostics"].get("configuration_warnings") or []
-    assert any(
-        w.get("code") == "TENANT_AUTHZ_ENABLED_WITHOUT_ALLOWLIST" for w in warnings if isinstance(w, dict)
-    )
+    assert any(w.get("code") == "TENANT_AUTHZ_ENABLED_WITHOUT_ALLOWLIST" for w in warnings if isinstance(w, dict))
 
 
 def test_health_endpoint_reports_default_tenant_not_in_allowlist_warning(monkeypatch):
@@ -1234,9 +1241,7 @@ def test_health_endpoint_reports_python_version_warning(monkeypatch):
     body = response.json()
     warnings = body["diagnostics"].get("configuration_warnings") or []
     assert any(
-        w.get("code") == "PYTHON_VERSION_MAY_BE_UNSUPPORTED_BY_CHROMADB"
-        for w in warnings
-        if isinstance(w, dict)
+        w.get("code") == "PYTHON_VERSION_MAY_BE_UNSUPPORTED_BY_CHROMADB" for w in warnings if isinstance(w, dict)
     )
 
 
@@ -1301,9 +1306,7 @@ def test_ready_endpoint_reports_tenant_authz_without_allowlist_warning(monkeypat
     assert response.status_code == 200
     body = response.json()
     warnings = body["checks"].get("configuration_warnings") or []
-    assert any(
-        w.get("code") == "TENANT_AUTHZ_ENABLED_WITHOUT_ALLOWLIST" for w in warnings if isinstance(w, dict)
-    )
+    assert any(w.get("code") == "TENANT_AUTHZ_ENABLED_WITHOUT_ALLOWLIST" for w in warnings if isinstance(w, dict))
 
 
 def test_ready_endpoint_reports_default_tenant_not_in_allowlist_warning(monkeypatch):
@@ -1326,9 +1329,7 @@ def test_ready_endpoint_reports_python_version_warning(monkeypatch):
     body = response.json()
     warnings = body["checks"].get("configuration_warnings") or []
     assert any(
-        w.get("code") == "PYTHON_VERSION_MAY_BE_UNSUPPORTED_BY_CHROMADB"
-        for w in warnings
-        if isinstance(w, dict)
+        w.get("code") == "PYTHON_VERSION_MAY_BE_UNSUPPORTED_BY_CHROMADB" for w in warnings if isinstance(w, dict)
     )
 
 
@@ -1356,12 +1357,16 @@ def test_get_demo_presets_bundle():
     ingest_keys = {str(item.get("preset_key") or "") for item in ingest_presets if isinstance(item, dict)}
     assert "usaid_gov_ai_kazakhstan" in ingest_keys
     sample_generate = next(
-        item for item in generate_presets if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
+        item
+        for item in generate_presets
+        if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
     )
     assert isinstance(sample_generate.get("generate_payload"), dict)
     assert isinstance(str(sample_generate.get("label") or ""), str)
     sample_ingest = next(
-        item for item in ingest_presets if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
+        item
+        for item in ingest_presets
+        if isinstance(item, dict) and item.get("preset_key") == "usaid_gov_ai_kazakhstan"
     )
     assert isinstance(sample_ingest.get("metadata"), dict)
     assert isinstance(sample_ingest.get("checklist_items"), list)
@@ -4365,7 +4370,7 @@ def test_status_events_export_endpoint_supports_csv_json_and_gzip():
     export_csv = client.get(f"/status/{job_id}/events/export", params={"format": "csv"})
     assert export_csv.status_code == 200
     assert "text/csv" in (export_csv.headers.get("content-type") or "")
-    assert f'grantflow_job_events_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert f"grantflow_job_events_{job_id}.csv" in (export_csv.headers.get("content-disposition") or "")
     assert "event_id,ts,type,status,from_status,to_status,checkpoint_id" in export_csv.text
     assert "review_workflow_sla_recomputed" in export_csv.text
     assert "applied_finding_sla_hours" in export_csv.text
@@ -4384,7 +4389,7 @@ def test_status_events_export_endpoint_supports_csv_json_and_gzip():
     )
     assert export_csv_gzip.status_code == 200
     assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
-    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith('.csv.gz"')
 
 
 def test_versions_and_diff_endpoints():
@@ -4573,7 +4578,7 @@ def test_status_comments_export_endpoint_supports_filters_csv_json_and_gzip():
     )
     assert export_csv.status_code == 200
     assert "text/csv" in (export_csv.headers.get("content-type") or "")
-    assert f'grantflow_comments_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert f"grantflow_comments_{job_id}.csv" in (export_csv.headers.get("content-disposition") or "")
     assert "comment_id,ts,section,status,message,author,version_id" in export_csv.text
     assert "c-1" in export_csv.text
     assert "c-2" not in export_csv.text
@@ -4595,7 +4600,7 @@ def test_status_comments_export_endpoint_supports_filters_csv_json_and_gzip():
     )
     assert export_csv_gzip.status_code == 200
     assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
-    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith('.csv.gz"')
 
 
 def test_status_comments_create_request_id_is_idempotent():
@@ -10798,7 +10803,10 @@ def test_openapi_declares_api_key_security_scheme():
         .get("schema")
     )
     generate_presets_detail_response_schema = (
-        ((((spec.get("paths") or {}).get("/generate/presets/{preset_key}") or {}).get("get") or {}).get("responses") or {})
+        (
+            (((spec.get("paths") or {}).get("/generate/presets/{preset_key}") or {}).get("get") or {}).get("responses")
+            or {}
+        )
         .get("200", {})
         .get("content", {})
         .get("application/json", {})
@@ -11331,7 +11339,9 @@ def test_openapi_declares_api_key_security_scheme():
     assert generate_presets_legacy_detail_response_schema == {
         "$ref": "#/components/schemas/GenerateLegacyPresetDetailPublicResponse"
     }
-    assert generate_presets_rbm_list_response_schema == {"$ref": "#/components/schemas/RBMSamplePresetListPublicResponse"}
+    assert generate_presets_rbm_list_response_schema == {
+        "$ref": "#/components/schemas/RBMSamplePresetListPublicResponse"
+    }
     assert generate_presets_rbm_detail_response_schema == {
         "$ref": "#/components/schemas/RBMSamplePresetDetailPublicResponse"
     }
@@ -13431,7 +13441,7 @@ def test_export_docx_includes_mel_indicator_summary_section():
     status = _wait_for_terminal_status(job_id)
     assert status["status"] == "done"
     state = status["state"]
-    indicators = ((state.get("logframe_draft") or {}).get("indicators") or [])
+    indicators = (state.get("logframe_draft") or {}).get("indicators") or []
     assert isinstance(indicators, list) and indicators
 
     export = client.post("/export", json={"payload": state, "format": "docx"})
@@ -13568,7 +13578,7 @@ def test_status_hitl_history_endpoint_lists_and_filters_events():
     export_csv = client.get(f"/status/{job_id}/hitl/history/export", params={"format": "csv"})
     assert export_csv.status_code == 200
     assert "text/csv" in (export_csv.headers.get("content-type") or "")
-    assert f'grantflow_hitl_history_{job_id}.csv' in (export_csv.headers.get("content-disposition") or "")
+    assert f"grantflow_hitl_history_{job_id}.csv" in (export_csv.headers.get("content-disposition") or "")
     assert "event_id,ts,type,status,from_status,to_status,checkpoint_id" in export_csv.text
     assert "hitl_checkpoint_decision" in export_csv.text
 
@@ -13588,7 +13598,7 @@ def test_status_hitl_history_endpoint_lists_and_filters_events():
     )
     assert export_csv_gzip.status_code == 200
     assert "application/gzip" in (export_csv_gzip.headers.get("content-type") or "")
-    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith(".csv.gz\"")
+    assert (export_csv_gzip.headers.get("content-disposition") or "").endswith('.csv.gz"')
 
 
 def test_hitl_approve_request_id_is_idempotent():

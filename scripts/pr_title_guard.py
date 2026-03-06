@@ -7,9 +7,7 @@ import os
 import re
 from pathlib import Path
 
-CONVENTIONAL_PR_TITLE = re.compile(
-    r"^(feat|fix|refactor|docs|test|chore)(\([a-z0-9._/-]+\))?: .+"
-)
+CONVENTIONAL_PR_TITLE = re.compile(r"^(feat|fix|refactor|docs|test|chore)(\([a-z0-9._/-]+\))?: .+")
 
 
 def _extract_pr_title_from_event(path: str) -> str:

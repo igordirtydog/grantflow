@@ -61,7 +61,9 @@ def _build_readiness_payload() -> dict[str, Any]:
     if dead_letter_alert_triggered and api_app_module._dead_letter_alert_blocking():
         job_runner_ready = False
     runtime_compatibility_supported = bool(runtime_compatibility_status.get("supported"))
-    runtime_compatibility_blocking = runtime_compatibility_policy_mode == "strict" and not runtime_compatibility_supported
+    runtime_compatibility_blocking = (
+        runtime_compatibility_policy_mode == "strict" and not runtime_compatibility_supported
+    )
     runtime_compatibility_alerts: list[dict[str, Any]] = []
     if not runtime_compatibility_supported:
         runtime_compatibility_alerts.append(
@@ -80,7 +82,9 @@ def _build_readiness_payload() -> dict[str, Any]:
     tenant_authz_alerts: list[dict[str, Any]] = []
     if not tenant_authz_valid:
         if "allowlist_empty" in tenant_authz_issues:
-            tenant_authz_message = "Tenant authz is enabled but allowlist is empty; configure GRANTFLOW_ALLOWED_TENANTS."
+            tenant_authz_message = (
+                "Tenant authz is enabled but allowlist is empty; configure GRANTFLOW_ALLOWED_TENANTS."
+            )
         elif "default_tenant_not_in_allowlist" in tenant_authz_issues:
             tenant_authz_message = (
                 "Tenant authz default tenant is not in allowlist; align GRANTFLOW_DEFAULT_TENANT with "

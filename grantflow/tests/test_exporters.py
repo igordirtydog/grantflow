@@ -283,7 +283,10 @@ def test_word_export_includes_export_contract_section():
     assert "Export Contract Check" in text
     assert "Status: WARNING" in text
     assert "Missing required ToC sections: specific_objectives, expected_outcomes" in text
-    assert "Expected donor headings: EU Intervention Logic, Overall Objective, Specific Objectives, Expected Outcomes" in text
+    assert (
+        "Expected donor headings: EU Intervention Logic, Overall Objective, Specific Objectives, Expected Outcomes"
+        in text
+    )
 
 
 def test_excel_export_includes_citations_sheet():

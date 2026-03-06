@@ -83,7 +83,9 @@ def _evaluate_mel_grounding_policy_from_state(state: Any) -> Dict[str, Any]:
     mel_traceability_complete_rate = (
         round(mel_traceability_complete_count / mel_citation_count, 4) if mel_citation_count else None
     )
-    mel_traceability_gap_rate = round(mel_traceability_gap_count / mel_citation_count, 4) if mel_citation_count else None
+    mel_traceability_gap_rate = (
+        round(mel_traceability_gap_count / mel_citation_count, 4) if mel_citation_count else None
+    )
 
     reasons: list[str] = []
     risk_level = "low"

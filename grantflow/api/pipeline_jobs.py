@@ -125,7 +125,9 @@ def _run_pipeline_to_completion_by_job_id(job_id: str) -> None:
         return
     state = job.get("state")
     if not isinstance(state, dict):
-        api_app_module._set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False})
+        api_app_module._set_job(
+            job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": False}
+        )
         return
     _run_pipeline_to_completion(job_id, state)
 
@@ -250,7 +252,9 @@ def _run_hitl_pipeline_by_job_id(job_id: str, start_at: HITLStartAt) -> None:
         return
     state = job.get("state")
     if not isinstance(state, dict):
-        api_app_module._set_job(job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": True})
+        api_app_module._set_job(
+            job_id, {"status": "error", "error": "Job state is missing or invalid", "hitl_enabled": True}
+        )
         return
     _run_hitl_pipeline(job_id, state, start_at)
 

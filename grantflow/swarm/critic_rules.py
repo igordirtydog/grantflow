@@ -402,7 +402,11 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
             or repeated_ratio >= TOC_REPETITION_WARN_RATIO_THRESHOLD
         ):
             repeated_samples = sorted(
-                [str(row.get("sample") or "").strip() for row in repeated_groups if str(row.get("sample") or "").strip()],
+                [
+                    str(row.get("sample") or "").strip()
+                    for row in repeated_groups
+                    if str(row.get("sample") or "").strip()
+                ],
                 key=len,
                 reverse=True,
             )
@@ -443,7 +447,9 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
             )
 
     raw_toc_validation = state.get("toc_validation")
-    toc_validation: Dict[str, Any] = cast(Dict[str, Any], raw_toc_validation) if isinstance(raw_toc_validation, dict) else {}
+    toc_validation: Dict[str, Any] = (
+        cast(Dict[str, Any], raw_toc_validation) if isinstance(raw_toc_validation, dict) else {}
+    )
     if toc_validation:
         if toc_validation.get("valid") is True:
             checks.append(RuleCheckResult(code="TOC_SCHEMA_VALID", status="pass", section="toc"))
@@ -624,11 +630,15 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
         )
         if fallback_claim_ratio < 0.5:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="pass", section="toc", detail=fallback_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_GROUNDING_BALANCE", status="pass", section="toc", detail=fallback_detail
+                )
             )
         elif fallback_claim_ratio < 0.8:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="warn", section="toc", detail=fallback_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_GROUNDING_BALANCE", status="warn", section="toc", detail=fallback_detail
+                )
             )
             if architect_rag_enabled:
                 _add_flaw(
@@ -642,7 +652,9 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
                 )
         else:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_GROUNDING_BALANCE", status="fail", section="toc", detail=fallback_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_GROUNDING_BALANCE", status="fail", section="toc", detail=fallback_detail
+                )
             )
             if architect_rag_enabled:
                 _add_flaw(
@@ -675,11 +687,15 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
         )
         if traceability_gap_ratio < 0.3:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="pass", section="toc", detail=traceability_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_TRACEABILITY_GAP", status="pass", section="toc", detail=traceability_detail
+                )
             )
         elif traceability_gap_ratio < 0.6:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="warn", section="toc", detail=traceability_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_TRACEABILITY_GAP", status="warn", section="toc", detail=traceability_detail
+                )
             )
             if architect_rag_enabled:
                 _add_flaw(
@@ -693,7 +709,9 @@ def evaluate_rule_based_critic(state: Dict[str, Any]) -> RuleCriticReport:
                 )
         else:
             checks.append(
-                RuleCheckResult(code="TOC_CLAIM_TRACEABILITY_GAP", status="fail", section="toc", detail=traceability_detail)
+                RuleCheckResult(
+                    code="TOC_CLAIM_TRACEABILITY_GAP", status="fail", section="toc", detail=traceability_detail
+                )
             )
             if architect_rag_enabled:
                 _add_flaw(
