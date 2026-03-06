@@ -222,6 +222,38 @@ def test_mel_worldbank_defaults_are_results_framework_shaped():
     assert "results framework updates" in str(indicator["data_source"]).lower()
 
 
+def test_mel_usaid_and_eu_defaults_are_review_ready_shaped():
+    usaid_item = mel_module._apply_indicator_defaults(
+        {
+            "indicator_id": "IND_001",
+            "name": "Improve service coverage adoption across target districts",
+            "justification": "stub",
+            "citation": "stub",
+        },
+        donor_id="usaid",
+        toc_statement_path="toc.development_objectives[0].description",
+    )
+    eu_item = mel_module._apply_indicator_defaults(
+        {
+            "indicator_id": "IND_002",
+            "name": "Strengthen institutional service adoption performance",
+            "justification": "stub",
+            "citation": "stub",
+        },
+        donor_id="eu",
+        toc_statement_path="toc.specific_objectives[0].title",
+    )
+
+    assert "spot-check verification" in str(usaid_item["definition"]).lower()
+    assert "verification spot-checks" in str(usaid_item["data_source"]).lower()
+    assert "cor-aligned activity team" in str(usaid_item["owner"]).lower()
+    assert "pmp records" in str(usaid_item["means_of_verification"]).lower()
+    assert "delivery-oriented evidence review" in str(eu_item["definition"]).lower()
+    assert "intervention logic tracking tables" in str(eu_item["data_source"]).lower()
+    assert "intervention logic lead" in str(eu_item["owner"]).lower()
+    assert "means of verification annexes" in str(eu_item["means_of_verification"]).lower()
+
+
 def test_mel_state_department_defaults_are_media_resilience_shaped():
     indicator = mel_module._apply_indicator_defaults(
         {
@@ -815,7 +847,7 @@ def test_mel_donor_aware_indicator_governance_defaults():
     assert eu_item is not None
     assert wb_item is not None
     assert "means of verification" in str(eu_item["definition"]).lower()
-    assert eu_item["owner"] == "Project M&E manager and partner focal points"
+    assert eu_item["owner"] == "Project M&E manager, partner focal points, and intervention logic lead"
     assert "means of verification annexes" in str(eu_item["means_of_verification"]).lower()
     assert eu_item["disaggregation"] == ["location", "service_type"]
     assert wb_item["owner"] == "PIU results lead and implementing agency performance focal points"

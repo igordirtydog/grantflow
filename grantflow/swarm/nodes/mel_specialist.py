@@ -339,6 +339,13 @@ def _default_data_source_for_donor(donor_id: str, *, result_level: str, indicato
         "impact": "Evaluation studies and administrative datasets",
     }
     if donor == "usaid":
+        if any(token in name for token in ("service", "coverage", "adoption", "policy", "capacity", "governance")):
+            sources = {
+                "output": "IP activity records, training records, and partner performance reports",
+                "outcome": "PMP tracking tables, partner performance reports, and verification spot-checks",
+                "impact": "CLA evidence, evaluation studies, and validated administrative datasets",
+            }
+            return sources.get(level, sources["outcome"])
         sources = {
             "output": "IP performance monitoring records and partner reports",
             "outcome": "Performance monitoring plan (PMP) datasets and verification records",
@@ -346,6 +353,13 @@ def _default_data_source_for_donor(donor_id: str, *, result_level: str, indicato
         }
         return sources.get(level, sources["outcome"])
     if donor == "eu":
+        if any(token in name for token in ("service", "coverage", "institutional", "adoption", "performance")):
+            sources = {
+                "output": "Action implementation trackers, partner reports, and verification files",
+                "outcome": "Intervention logic tracking tables, means of verification annexes, and partner validation records",
+                "impact": "External evaluations, official statistics, and programme review evidence",
+            }
+            return sources.get(level, sources["outcome"])
         sources = {
             "output": "Action logframe monitoring records and partner progress reports",
             "outcome": "Logframe outcome tracking datasets and verification missions",
@@ -393,11 +407,21 @@ def _default_indicator_definition_for_donor(indicator_name: str, *, donor_id: st
     label = str(indicator_name or "Indicator").strip() or "Indicator"
     name = label.lower()
     if donor == "usaid":
+        if any(token in name for token in ("service", "coverage", "adoption", "policy", "capacity", "governance")):
+            return (
+                f"{label} measured at {level} level using USAID-style performance monitoring definitions, "
+                "disaggregation expectations, and documented spot-check verification."
+            )
         return (
             f"{label} measured at {level} level using USAID-style performance monitoring definitions and "
             "documented verification criteria."
         )
     if donor == "eu":
+        if any(token in name for token in ("service", "coverage", "institutional", "adoption", "performance")):
+            return (
+                f"{label} measured at {level} level in the EU intervention logic with explicit means of verification, "
+                "partner validation, and delivery-oriented evidence review."
+            )
         return (
             f"{label} measured at {level} level in the intervention logic with explicit means of verification "
             "and periodic partner validation."
@@ -497,8 +521,12 @@ def _default_owner_for_donor(donor_id: str, *, result_level: str, indicator_name
     level = str(result_level or "outcome").strip().lower() or "outcome"
     name = str(indicator_name or "").strip().lower()
     if donor == "usaid":
+        if any(token in name for token in ("service", "coverage", "adoption", "policy", "capacity", "governance")):
+            return "MEL lead, COR-aligned activity team, and implementing partner M&E focal points"
         return "MEL lead and implementing partner M&E team" if level != "impact" else "CLA/MEL lead"
     if donor == "eu":
+        if any(token in name for token in ("service", "coverage", "institutional", "adoption", "performance")):
+            return "Project M&E manager, partner focal points, and intervention logic lead"
         return "Project M&E manager and partner focal points"
     if donor == "worldbank":
         if any(
@@ -520,6 +548,13 @@ def _default_means_of_verification_for_donor(donor_id: str, *, result_level: str
     level = str(result_level or "outcome").strip().lower() or "outcome"
     name = str(indicator_name or "").strip().lower()
     if donor == "usaid":
+        if any(token in name for token in ("service", "coverage", "adoption", "policy", "capacity", "governance")):
+            mapping = {
+                "output": "Partner delivery records, attendance sheets, and implementation evidence files",
+                "outcome": "PMP records, verification spot-checks, and partner evidence files",
+                "impact": "Evaluation reports, CLA evidence, and validated administrative datasets",
+            }
+            return mapping.get(level, mapping["outcome"])
         mapping = {
             "output": "Partner delivery records, attendance sheets, and activity reports",
             "outcome": "Verified PMP datasets, spot checks, and partner evidence files",
@@ -527,6 +562,13 @@ def _default_means_of_verification_for_donor(donor_id: str, *, result_level: str
         }
         return mapping.get(level, mapping["outcome"])
     if donor == "eu":
+        if any(token in name for token in ("service", "coverage", "institutional", "adoption", "performance")):
+            mapping = {
+                "output": "Implementation trackers, partner reports, and verification files",
+                "outcome": "Intervention logic tracking tables, means of verification annexes, and field validation notes",
+                "impact": "External evaluations, official statistics, and programme review evidence",
+            }
+            return mapping.get(level, mapping["outcome"])
         mapping = {
             "output": "Logframe monitoring tables, partner reports, and verification files",
             "outcome": "Outcome tracking tables, means of verification annexes, and field validation notes",

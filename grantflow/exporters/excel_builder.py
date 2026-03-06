@@ -13,6 +13,50 @@ from grantflow.exporters.template_profile import build_export_template_profile, 
 from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 
+def _review_readiness_rows(
+    *,
+    quality_summary: dict[str, Any],
+    citations: list[Dict[str, Any]],
+    critic_findings: list[Dict[str, Any]],
+    review_comments: list[Dict[str, Any]],
+) -> list[tuple[str, Any]]:
+    open_findings = [
+        item
+        for item in critic_findings
+        if isinstance(item, dict) and str(item.get("status") or "open").strip().lower() not in {"resolved", "closed"}
+    ]
+    high_findings = [
+        item
+        for item in open_findings
+        if str(item.get("severity") or "").strip().lower() in {"high", "critical", "fatal"}
+    ]
+    open_comments = [
+        item
+        for item in review_comments
+        if isinstance(item, dict) and str(item.get("status") or "open").strip().lower() not in {"resolved", "closed"}
+    ]
+    low_confidence = [
+        item
+        for item in citations
+        if isinstance(item, dict) and str(item.get("citation_type") or "").strip().lower() == "rag_low_confidence"
+    ]
+    fallback = [
+        item
+        for item in citations
+        if isinstance(item, dict)
+        and str(item.get("citation_type") or "").strip().lower() in {"fallback_namespace", "strategy_reference"}
+    ]
+    rows = [
+        ("Needs revision", quality_summary.get("needs_revision")),
+        ("Open critic findings", len(open_findings)),
+        ("High-severity open findings", len(high_findings)),
+        ("Open review comments", len(open_comments)),
+        ("Low-confidence citations", len(low_confidence)),
+        ("Fallback/strategy citations", len(fallback)),
+    ]
+    return [(label, value) for label, value in rows if value is not None and value != ""]
+
+
 def _autosize_columns(ws) -> None:
     for col in ws.columns:
         max_length = 0
@@ -151,6 +195,32 @@ def _add_quality_summary_sheet(wb: Workbook, quality_summary: dict[str, Any]) ->
     ws = wb.create_sheet("Quality Summary")
     border = _apply_table_header(ws, ["Field", "Value"])
     for row_idx, (field_name, value) in enumerate(present_rows, start=2):
+        ws.append([field_name, value])
+        ws.cell(row=row_idx, column=1).border = border
+        ws.cell(row=row_idx, column=2).border = border
+    _autosize_columns(ws)
+
+
+def _add_review_readiness_sheet(
+    wb: Workbook,
+    *,
+    quality_summary: dict[str, Any],
+    citations: list[Dict[str, Any]],
+    critic_findings: list[Dict[str, Any]],
+    review_comments: list[Dict[str, Any]],
+) -> None:
+    rows = _review_readiness_rows(
+        quality_summary=quality_summary,
+        citations=citations,
+        critic_findings=critic_findings,
+        review_comments=review_comments,
+    )
+    if not rows:
+        return
+
+    ws = wb.create_sheet("Review Readiness")
+    border = _apply_table_header(ws, ["Field", "Value"])
+    for row_idx, (field_name, value) in enumerate(rows, start=2):
         ws.append([field_name, value])
         ws.cell(row=row_idx, column=1).border = border
         ws.cell(row=row_idx, column=2).border = border
@@ -681,9 +751,19 @@ def build_xlsx_from_logframe(
     )
     _add_export_contract_sheet(wb, contract)
     _add_quality_summary_sheet(wb, quality_summary or {})
-    _add_citations_sheet(wb, citations or logframe_draft.get("citations") or [])
-    _add_critic_findings_sheet(wb, critic_findings or [])
-    _add_review_comments_sheet(wb, review_comments or [])
+    export_citations = citations or logframe_draft.get("citations") or []
+    export_findings = critic_findings or []
+    export_comments = review_comments or []
+    _add_review_readiness_sheet(
+        wb,
+        quality_summary=quality_summary or {},
+        citations=export_citations,
+        critic_findings=export_findings,
+        review_comments=export_comments,
+    )
+    _add_citations_sheet(wb, export_citations)
+    _add_critic_findings_sheet(wb, export_findings)
+    _add_review_comments_sheet(wb, export_comments)
 
     bio = BytesIO()
     wb.save(bio)

@@ -34,7 +34,22 @@ def _sample_citations():
             "citation_confidence": 0.82,
             "result_level": "outcome",
             "statement_path": "toc.development_objectives[0].description",
-        }
+        },
+        {
+            "stage": "architect",
+            "citation_type": "strategy_reference",
+            "namespace": "usaid_ads201",
+            "source": "strategy::usaid",
+            "page": "",
+            "chunk": "",
+            "chunk_id": "strategy::usaid::toc",
+            "used_for": "toc_claim",
+            "label": "Strategy reference",
+            "excerpt": "",
+            "citation_confidence": 0.75,
+            "result_level": "general",
+            "statement_path": "toc.project_goal",
+        },
     ]
 
 
@@ -112,6 +127,11 @@ def test_word_export_includes_citation_traceability_section():
     assert "Quality Summary" in text
     assert "Quality score: 8.5" in text
     assert "Fatal flaw count: 1" in text
+    assert "Review Readiness" in text
+    assert "Open critic findings: 1" in text
+    assert "High-severity open findings: 1" in text
+    assert "Open review comments: 0" in text
+    assert "Fallback/strategy citations: 1" in text
 
 
 def test_word_export_uses_donor_specific_sections_for_usaid_eu_worldbank():
@@ -338,6 +358,7 @@ def test_excel_export_includes_citations_sheet():
     wb = load_workbook(BytesIO(content))
     assert "LogFrame" in wb.sheetnames
     assert "Quality Summary" in wb.sheetnames
+    assert "Review Readiness" in wb.sheetnames
     assert "Citations" in wb.sheetnames
     assert "Critic Findings" in wb.sheetnames
     assert "Review Comments" in wb.sheetnames
@@ -363,6 +384,13 @@ def test_excel_export_includes_citations_sheet():
     assert quality_map["Quality score"] == 8.5
     assert quality_map["Critic engine"] == "rules+llm"
     assert quality_map["Fatal flaw count"] == 1
+
+    readiness_rows = list(wb["Review Readiness"].iter_rows(values_only=True))
+    readiness_map = {str(row[0]): row[1] for row in readiness_rows[1:] if row and row[0]}
+    assert readiness_map["Open critic findings"] == 1
+    assert readiness_map["High-severity open findings"] == 1
+    assert readiness_map["Open review comments"] == 0
+    assert readiness_map["Fallback/strategy citations"] == 1
 
 
 def test_excel_export_logframe_sheet_includes_smart_indicator_columns():

@@ -13,6 +13,50 @@ from grantflow.exporters.template_profile import build_export_template_profile, 
 from grantflow.exporters.toc_normalization import normalize_toc_for_export, unwrap_toc_payload
 
 
+def _review_readiness_rows(
+    *,
+    quality_summary: dict[str, Any],
+    citations: list[Dict[str, Any]],
+    critic_findings: list[Dict[str, Any]],
+    review_comments: list[Dict[str, Any]],
+) -> list[tuple[str, Any]]:
+    open_findings = [
+        item
+        for item in critic_findings
+        if isinstance(item, dict) and str(item.get("status") or "open").strip().lower() not in {"resolved", "closed"}
+    ]
+    high_findings = [
+        item
+        for item in open_findings
+        if str(item.get("severity") or "").strip().lower() in {"high", "critical", "fatal"}
+    ]
+    open_comments = [
+        item
+        for item in review_comments
+        if isinstance(item, dict) and str(item.get("status") or "open").strip().lower() not in {"resolved", "closed"}
+    ]
+    low_confidence = [
+        item
+        for item in citations
+        if isinstance(item, dict) and str(item.get("citation_type") or "").strip().lower() == "rag_low_confidence"
+    ]
+    fallback = [
+        item
+        for item in citations
+        if isinstance(item, dict)
+        and str(item.get("citation_type") or "").strip().lower() in {"fallback_namespace", "strategy_reference"}
+    ]
+    rows = [
+        ("Needs revision", quality_summary.get("needs_revision")),
+        ("Open critic findings", len(open_findings)),
+        ("High-severity open findings", len(high_findings)),
+        ("Open review comments", len(open_comments)),
+        ("Low-confidence citations", len(low_confidence)),
+        ("Fallback/strategy citations", len(fallback)),
+    ]
+    return [(label, value) for label, value in rows if value is not None and value != ""]
+
+
 def _citation_summary_line(citation: Dict[str, Any]) -> str:
     stage = citation.get("stage", "")
     ctype = citation.get("citation_type", "")
@@ -144,6 +188,29 @@ def _add_quality_summary_section(doc: Document, quality_summary: dict[str, Any])
     doc.add_heading("Quality Summary", level=1)
     doc.add_paragraph("Snapshot of current draft quality, critic status, and citation volume at export time.")
     for label, value in present_rows:
+        doc.add_paragraph(f"{label}: {value}", style="List Bullet")
+
+
+def _add_review_readiness_section(
+    doc: Document,
+    *,
+    quality_summary: dict[str, Any],
+    citations: list[Dict[str, Any]],
+    critic_findings: list[Dict[str, Any]],
+    review_comments: list[Dict[str, Any]],
+) -> None:
+    rows = _review_readiness_rows(
+        quality_summary=quality_summary,
+        citations=citations,
+        critic_findings=critic_findings,
+        review_comments=review_comments,
+    )
+    if not rows:
+        return
+
+    doc.add_heading("Review Readiness", level=1)
+    doc.add_paragraph("Compact reviewer snapshot for triage before sign-off or export handoff.")
+    for label, value in rows:
         doc.add_paragraph(f"{label}: {value}", style="List Bullet")
 
 
@@ -589,6 +656,13 @@ def build_docx_from_toc(
     _add_template_profile_section(doc, profile)
     _add_export_contract_section(doc, contract)
     _add_quality_summary_section(doc, quality_summary or {})
+    _add_review_readiness_section(
+        doc,
+        quality_summary=quality_summary or {},
+        citations=citations or toc_draft.get("citations") or [],
+        critic_findings=critic_findings or [],
+        review_comments=review_comments or [],
+    )
 
     donor_key = normalize_export_template_key(donor_id)
     if donor_key == "usaid":
