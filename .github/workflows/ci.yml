@@ -123,6 +123,47 @@ jobs:
         run: |
           python -m mypy grantflow
 
+  prod-preflight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run production preflight (API profile)
+        env:
+          GRANTFLOW_ENV: production
+          GRANTFLOW_JOB_RUNNER_MODE: redis_queue
+          GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED: "false"
+          GRANTFLOW_JOB_RUNNER_REDIS_URL: redis://127.0.0.1:6379/0
+          GRANTFLOW_JOB_STORE: sqlite
+          GRANTFLOW_HITL_STORE: sqlite
+          GRANTFLOW_INGEST_STORE: sqlite
+          GRANTFLOW_SQLITE_PATH: ./.data/grantflow_state.db
+          GRANTFLOW_API_KEY: ci-preflight-secret
+          GRANTFLOW_REQUIRE_API_KEY_ON_STARTUP: "true"
+          GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP: "true"
+        run: |
+          make preflight-prod-api
+
+      - name: Run production preflight (worker profile)
+        env:
+          GRANTFLOW_ENV: production
+          GRANTFLOW_JOB_RUNNER_MODE: redis_queue
+          GRANTFLOW_JOB_RUNNER_CONSUMER_ENABLED: "true"
+          GRANTFLOW_JOB_RUNNER_REDIS_URL: redis://127.0.0.1:6379/0
+          GRANTFLOW_JOB_STORE: sqlite
+          GRANTFLOW_HITL_STORE: sqlite
+          GRANTFLOW_INGEST_STORE: sqlite
+          GRANTFLOW_SQLITE_PATH: ./.data/grantflow_state.db
+          GRANTFLOW_REQUIRE_API_KEY_ON_STARTUP: "true"
+          GRANTFLOW_REQUIRE_PERSISTENT_STORES_ON_STARTUP: "true"
+        run: |
+          make preflight-prod-worker
+
   eval:
     runs-on: ubuntu-latest
     env:
