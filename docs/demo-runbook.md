@@ -59,6 +59,7 @@ make pilot-refresh-fast
 make verify-latest-stack
 make verify-latest-stack-refresh
 make release-demo-bundle
+make release-demo-bundle-fast
 make buyer-demo-open
 make buyer-demo-open-refresh
 make ci-demo-smoke
@@ -97,6 +98,7 @@ This writes a ready-to-review bundle to `build/demo-pack/` using live API runs a
 `make verify-latest-stack` verifies that `build/latest-*` symlinks and key files exist.
 `make verify-latest-stack-refresh` rebuilds the chain first, then verifies the latest stack.
 `make release-demo-bundle` rebuilds and packages the latest stack into a send-ready folder plus zip.
+`make release-demo-bundle-fast` rebuilds only the fast buyer path, then packages `pilot-handout`, `latest-open-order`, and the current `executive-pack` into a lighter send-ready folder plus zip.
 `make buyer-demo-open` prints the buyer-facing open order from the current `build/latest-*` stack. Set `BUYER_DEMO_OPEN_MODE=open` on macOS to open the files directly.
 `make buyer-demo-open-refresh` rebuilds the fast buyer path first, then prints or opens that stack.
 `make ci-demo-smoke` runs the minimal buyer-chain smoke path on a single preset and asserts that the key demo artifacts exist.
@@ -252,6 +254,7 @@ make pilot-refresh-fast PILOT_HANDOUT_PRESET_KEY=usaid_gov_ai_kazakhstan PILOT_H
 make verify-latest-stack VERIFY_LATEST_STACK_BUILD_DIR=build
 make verify-latest-stack-refresh VERIFY_LATEST_STACK_BUILD_DIR=build
 make release-demo-bundle RELEASE_DEMO_BUNDLE_BUILD_DIR=build RELEASE_DEMO_BUNDLE_OUT_DIR=build/release-demo-bundle RELEASE_DEMO_BUNDLE_NAME=grantflow-demo-bundle
+make release-demo-bundle-fast RELEASE_DEMO_BUNDLE_BUILD_DIR=build RELEASE_DEMO_BUNDLE_FAST_OUT_DIR=build/release-demo-bundle-fast RELEASE_DEMO_BUNDLE_FAST_NAME=grantflow-demo-bundle-fast
 make buyer-demo-open BUYER_DEMO_OPEN_BUILD_DIR=build BUYER_DEMO_OPEN_MODE=print
 make buyer-demo-open-refresh BUYER_DEMO_OPEN_BUILD_DIR=build BUYER_DEMO_OPEN_MODE=open
 make ci-demo-smoke CI_DEMO_SMOKE_ROOT=build/ci-demo-smoke CI_DEMO_SMOKE_PRESET_KEY=usaid_gov_ai_kazakhstan

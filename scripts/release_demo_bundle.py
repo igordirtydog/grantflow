@@ -14,6 +14,15 @@ def _copy_if_exists(src: Path, dst: Path) -> None:
     shutil.copy2(src, dst)
 
 
+def _copy_tree_if_exists(src: Path, dst: Path) -> None:
+    if not src.exists():
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
+
+
 def _resolve_latest_archive_zip(build_dir: Path) -> Path | None:
     archive_link = build_dir / "latest-pilot-archive"
     if not archive_link.exists() and not archive_link.is_symlink():
@@ -36,7 +45,14 @@ def _readlink_name(path: Path) -> str:
     return str(path.readlink()) if path.is_symlink() else path.name
 
 
-def _build_readme(*, build_dir: Path, bundle_name: str, archive_zip_name: str | None) -> str:
+def _build_readme(
+    *,
+    build_dir: Path,
+    bundle_name: str,
+    archive_zip_name: str | None,
+    include_diligence_index: bool,
+    include_executive_pack: bool,
+) -> str:
     lines: list[str] = []
     lines.append("# GrantFlow Release Demo Bundle")
     lines.append("")
@@ -47,7 +63,10 @@ def _build_readme(*, build_dir: Path, bundle_name: str, archive_zip_name: str | 
     lines.append("## Included")
     lines.append("- `pilot-handout.md`: single-file buyer summary")
     lines.append("- `latest-open-order.md`: what to open and in which order")
-    lines.append("- `diligence-index.md`: index of generated local artifacts")
+    if include_diligence_index:
+        lines.append("- `diligence-index.md`: index of generated local artifacts")
+    if include_executive_pack:
+        lines.append("- `executive-pack/`: current buyer-facing package")
     if archive_zip_name:
         lines.append(f"- `artifacts/{archive_zip_name}`: sendable demo archive")
     lines.append("")
@@ -59,9 +78,14 @@ def _build_readme(*, build_dir: Path, bundle_name: str, archive_zip_name: str | 
     lines.append(f"- Pilot archive: `{_readlink_name(build_dir / 'latest-pilot-archive')}`")
     lines.append("")
     lines.append("## Send Order")
-    lines.append("1. Share `pilot-handout.md` first.")
-    lines.append("2. If needed, share the zip under `artifacts/`.")
-    lines.append("3. Use `latest-open-order.md` to walk the recipient through the materials.")
+    send_order = ["Share `pilot-handout.md` first."]
+    if include_executive_pack:
+        send_order.append("Use `executive-pack/` for the buyer-facing packet.")
+    if archive_zip_name:
+        send_order.append("If needed, share the zip under `artifacts/`.")
+    send_order.append("Use `latest-open-order.md` to walk the recipient through the materials.")
+    for index, item in enumerate(send_order, start=1):
+        lines.append(f"{index}. {item}")
     lines.append("")
     lines.append("## Notes")
     lines.append("- This is a demo/pilot sharing bundle, not a final donor submission package.")
@@ -76,6 +100,9 @@ def main() -> int:
     parser.add_argument("--build-dir", default="build")
     parser.add_argument("--output-dir", default="build/release-demo-bundle")
     parser.add_argument("--bundle-name", default="grantflow-demo-bundle")
+    parser.add_argument("--include-executive-pack", action="store_true")
+    parser.add_argument("--skip-archive", action="store_true")
+    parser.add_argument("--skip-diligence-index", action="store_true")
     args = parser.parse_args()
 
     build_dir = Path(str(args.build_dir)).resolve()
@@ -89,11 +116,18 @@ def main() -> int:
 
     _copy_if_exists(build_dir / "pilot-handout.md", bundle_root / "pilot-handout.md")
     _copy_if_exists(build_dir / "latest-open-order.md", bundle_root / "latest-open-order.md")
-    _copy_if_exists(build_dir / "diligence-index.md", bundle_root / "diligence-index.md")
+    include_diligence_index = not bool(args.skip_diligence_index)
+    if include_diligence_index:
+        _copy_if_exists(build_dir / "diligence-index.md", bundle_root / "diligence-index.md")
+    include_executive_pack = bool(args.include_executive_pack)
+    if include_executive_pack:
+        executive_pack_link = build_dir / "latest-executive-pack"
+        if executive_pack_link.exists() or executive_pack_link.is_symlink():
+            _copy_tree_if_exists(executive_pack_link.resolve(), bundle_root / "executive-pack")
 
     archive_zip = _resolve_latest_archive_zip(build_dir)
     archive_zip_name = None
-    if archive_zip is not None:
+    if archive_zip is not None and not bool(args.skip_archive):
         archive_zip_name = archive_zip.name
         _copy_if_exists(archive_zip, bundle_root / "artifacts" / archive_zip.name)
 
@@ -102,6 +136,8 @@ def main() -> int:
             build_dir=build_dir,
             bundle_name=bundle_name,
             archive_zip_name=archive_zip_name,
+            include_diligence_index=include_diligence_index,
+            include_executive_pack=include_executive_pack,
         ),
         encoding="utf-8",
     )
